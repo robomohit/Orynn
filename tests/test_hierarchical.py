@@ -18,7 +18,7 @@ async def test_hierarchical_success(monkeypatch, workspace):
     monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
     monkeypatch.setattr("app.providers.PlannerProvider.evaluate", lambda *a, **k: {"complete": True, "reason": "done"})
     
-    await s.run_task("t1", "goal")
+    await s.run_task("t1", "refactor")
     out = s.memory.search("task_outcome")
     assert any("Outcome: True" in m.content for m in out)
 
@@ -39,7 +39,7 @@ async def test_hierarchical_retry(monkeypatch, workspace):
     monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", mock_reflect)
     monkeypatch.setattr("app.providers.PlannerProvider.evaluate", lambda *a, **k: {"complete": True, "reason": "done"})
     
-    await s.run_task("t2", "goal")
+    await s.run_task("t2", "refactor")
     out = s.memory.search("task_outcome")
     assert any("Outcome: True" in m.content for m in out)
 

@@ -35,7 +35,7 @@ Return ONLY valid JSON with shape:
     }}
   ]
 }}
-Decompose the goal into sequential or parallel sub-tasks. Each sub-task should be independently verifiable.
+For simple one-action tasks, use exactly 1 sub-task. For complex tasks, decompose into 2-8 sequential sub-tasks. Each sub-task should be independently verifiable.
 If multiple sub-tasks can run safely in parallel (without touching the same files/directories), set execution_mode to "parallel".
 
 Available actions:
@@ -109,6 +109,7 @@ Return ONLY valid JSON with shape:
     }}
   ]
 }}
+For simple one-action tasks, use exactly 1 sub-task. For complex tasks, decompose into 2-8 sequential sub-tasks.
 
 Available actions:
 {tool_guidance}
@@ -364,6 +365,19 @@ def _extract_chat_message_text(payload: Dict[str, Any]) -> str:
         return choices[0]["text"]
 
     raise RuntimeError(f"Provider response contained choices but no readable text: {json.dumps(choices[0])}")
+
+
+def classify_task_complexity(goal: str) -> str:
+    """Returns 'atomic' or 'complex' based on keyword analysis."""
+    g = goal.lower()
+    words = g.split()
+    atomic_signals = ["write", "create file", "rename", "delete", "move file", "print", "run", "execute", "install", "append", "touch", "mkdir", "echo", "copy file", "read file", "hello world", "to a file", "save to"]
+    complex_signals = ["refactor", "redesign", "improve", "optimize", "analyze", "architect", "fix all", "migrate", "integrate", "full", "entire", "build an app", "create a server"]
+
+    if len(words) <= 25 and any(k in g for k in atomic_signals):
+        if not any(k in g for k in complex_signals):
+            return "atomic"
+    return "complex"
 
 
 class PlannerProvider:
@@ -653,7 +667,7 @@ class PlannerProvider:
         memory_context: Optional[str] = None,
         mode: str = "computer",
     ) -> HierarchicalPlan:
-        prompt = f"Goal: {goal}\n\nDecompose this goal into 2-8 sequential sub-tasks with concrete actions."
+        prompt = f"Goal: {goal}\n\nFor simple one-action tasks, use exactly 1 sub-task. For complex tasks, decompose into 2-8 sequential sub-tasks with concrete actions."
         if memory_context:
             prompt = f"Relevant past experience:\n{memory_context}\n\n{prompt}"
         
@@ -722,3 +736,15 @@ class PlannerProvider:
         else:
             raw_text = self._call_llm(EVALUATE_SYSTEM_PROMPT, prompt, latest_screenshot_b64)
         return _extract_json(raw_text)
+
+
+__all__ = [
+    "PlannerProvider",
+    "detect_task_mode",
+    "classify_task_complexity",
+    "_capture_screenshot_b64",
+    "_extract_json",
+    "CODING_SYSTEM_PROMPT",
+    "HIERARCHICAL_SYSTEM_PROMPT",
+    "COMPUTER_USE_SYSTEM_PROMPT"
+]

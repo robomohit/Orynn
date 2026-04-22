@@ -15,6 +15,6 @@ async def test_post_action_screenshot_added(monkeypatch, workspace):
     monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
     monkeypatch.setattr("app.providers.PlannerProvider.evaluate", lambda *a, **k: {"complete": True, "reason": "done"})
     
-    await s.run_task("t3", "goal")
+    await s.run_task("t3", "refactor")
     out = s.memory.search("task_outcome")
     assert any("Outcome: True" in m.content for m in out)

@@ -346,15 +346,22 @@ class AgentService:
                         else:
                             # Sub-task failed — we currently stop the whole goal
                             self._finalize(task_id, "failed", f"Sub-task {st_id} failed.")
+
+                            # Evaluation
+                            eval_screenshot = None if runs_in_background else _capture_screenshot_b64(screen_width, screen_height)
+                            eval_res = await self._run_with_phase_updates(task_id, "Evaluating...", "Evaluation", provider.evaluate, goal, history, eval_screenshot, mode)
+                            self.memory.add("task_outcome", f"Goal: {goal} | Outcome: {eval_res.get('complete')} | Reason: {eval_res.get('reason')}")
+
                             return
 
-            # Final Evaluation
+            # Ensure evaluation runs for ALL tasks
             eval_screenshot = None if runs_in_background else _capture_screenshot_b64(screen_width, screen_height)
             eval_res = await self._run_with_phase_updates(task_id, "Evaluating...", "Evaluation", provider.evaluate, goal, history, eval_screenshot, mode)
             
             status = "done" if eval_res.get("complete") else "failed"
             self._finalize(task_id, status, eval_res.get("reason", ""))
             await self._emit(task_id, "done", {**eval_res, "finished_at": datetime.now(timezone.utc).isoformat()})
+            self.memory.add("task_outcome", f"Goal: {goal} | Outcome: {eval_res.get('complete')} | Reason: {eval_res.get('reason')}")
 
         except Exception as e:
             _log.exception("Task Execution Failed")
