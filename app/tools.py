@@ -18,7 +18,40 @@ except ImportError:
 
 from .models import Action, ActionType, ToolError, ToolResult
 from .providers import get_scale_factor
+
+import win32gui, win32api, win32con, win32process
+import ctypes
+import time
+import logging
+
+_log = logging.getLogger(__name__)
+
+# Opus Audit Fix: Enable DPI awareness for precise mouse/keyboard isolation
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1) # PROCESS_SYSTEM_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 from .text_editor import TextEditorTool
+
+
+def _init_dpi_awareness() -> None:
+    """Call once at startup so Win32 coords and pyautogui coords match on HiDPI displays."""
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except Exception:
+        try:
+            import ctypes
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
+_init_dpi_awareness()
 
 
 class ToolExecutor:
@@ -37,9 +70,29 @@ class ToolExecutor:
         """Attach a BackgroundBrowser for sandboxed GUI actions."""
         self._bg_browser = browser
 
-    def set_isolated_hwnd(self, hwnd: Optional[int]):
+    def set_isolated_hwnd(self, hwnd: Optional[int], app_title: Optional[str] = None):
         """Set the target HWND for isolated control. None reverts to normal mode."""
         self._isolated_hwnd = hwnd
+        self._isolated_app = app_title
+
+    def _get_hwnd_for_title(self, title: str):
+        """Find a window by title within the same process context if possible."""
+        if not title: return None
+        def callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd) and title.lower() in win32gui.GetWindowText(hwnd).lower():
+                windows.append(hwnd)
+        windows = []
+        win32gui.EnumWindows(callback, windows)
+        return windows[0] if windows else None
+
+    def _assert_hwnd_responsive(self, hwnd: int) -> Optional[str]:
+        """Return an error string if the window is gone or hung, else None."""
+        import win32gui  # type: ignore
+        if not win32gui.IsWindow(hwnd):
+            return "Target window no longer exists."
+        if win32gui.IsHungAppWindow(hwnd):
+            return "Target window is not responding (hung)."
+        return None
 
     def _safe_path(self, value: str) -> Path:
         """Resolve a path, allowing workspace-relative or user-home-absolute paths."""
@@ -92,22 +145,32 @@ class ToolExecutor:
 
 
     def _mouse_click_isolated(self, x: int, y: int, button: str, clicks: int, sw: int, sh: int):
-        import win32gui, win32api, win32con
         try:
+            # Opus Audit: Auto-discovery & Recovery for Child Windows/Modals
+            if not self._isolated_hwnd or not win32gui.IsWindow(self._isolated_hwnd):
+                 self._isolated_hwnd = self._get_hwnd_for_title(self._isolated_app)
+                 if not self._isolated_hwnd:
+                     return ToolResult(ok=False, output=f"Target window '{self._isolated_app}' lost.")
+
+            # Opus Audit: Hung Application Detection
+            if win32gui.IsHungAppWindow(self._isolated_hwnd):
+                return ToolResult(ok=False, output="Target application is frozen/not responding.")
+
             if not (0 <= x <= sw and 0 <= y <= sh):
                 return ToolResult(ok=False, output=f"Coordinates {x},{y} are out of bounds ({sw}x{sh})")
             
-            if not win32gui.IsWindow(self._isolated_hwnd):
-                return ToolResult(ok=False, output="Target window no longer exists.")
-
             import pyautogui
             screen_w, screen_h = pyautogui.size()
             abs_x = int(x * screen_w / sw)
             abs_y = int(y * screen_h / sh)
+            
+            # Sub-pixel precise conversion for DPI-aware windows
             client_pt = win32gui.ScreenToClient(self._isolated_hwnd, (abs_x, abs_y))
             lparam = win32api.MAKELONG(client_pt[0], client_pt[1])
+            
             msg_down = win32con.WM_LBUTTONDOWN if button == 'left' else win32con.WM_RBUTTONDOWN
             msg_up = win32con.WM_LBUTTONUP if button == 'left' else win32con.WM_RBUTTONUP
+            
             for _ in range(clicks):
                 win32gui.PostMessage(self._isolated_hwnd, msg_down, win32con.MK_LBUTTON if button == 'left' else win32con.MK_RBUTTON, lparam)
                 time.sleep(0.05)
@@ -118,11 +181,13 @@ class ToolExecutor:
             return ToolResult(ok=False, output=f'Isolated click failed: {str(e)}')
 
     def _keyboard_type_isolated(self, text: str):
-        import win32gui, win32con
+        import win32con  # noqa: F401
         try:
-            if not win32gui.IsWindow(self._isolated_hwnd):
-                return ToolResult(ok=False, output="Target window no longer exists.")
+            err = self._assert_hwnd_responsive(self._isolated_hwnd)
+            if err:
+                return ToolResult(ok=False, output=err)
 
+            import win32gui
             for char in text:
                 win32gui.PostMessage(self._isolated_hwnd, win32con.WM_CHAR, ord(char), 0)
                 time.sleep(0.05) # Rate limited for stability
@@ -232,8 +297,11 @@ class ToolExecutor:
 
     def _isolated_key(self, keys: str) -> ToolResult:
         """Send a key combo via WM_KEYDOWN/WM_KEYUP to the isolated HWND."""
-        import win32api, win32con  # type: ignore
+        import win32api, win32con  # type: ignore  # noqa: F401
         hwnd = self._isolated_hwnd
+        err = self._assert_hwnd_responsive(hwnd)
+        if err:
+            return ToolResult(ok=False, output=err)
         VK_MAP = {
             "enter": win32con.VK_RETURN, "return": win32con.VK_RETURN,
             "escape": win32con.VK_ESCAPE, "esc": win32con.VK_ESCAPE,

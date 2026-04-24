@@ -1516,6 +1516,7 @@
   let screenshots = [];
   let currentMode = 'coding';
   let currentBackgroundMode = true;
+  let currentStatus = 'ready';
   let lastActionId = null;
   let terminalStateKey = null;
   const actionCards = {};
@@ -1643,6 +1644,7 @@
       cancelled: 'Cancelled'
     };
     const key = (status || 'ready').toLowerCase();
+    currentStatus = key;
     $('status-pill').className = `pill status-${key}`;
     $('status-pill').innerHTML = `<strong>${map[key] || humanize(key)}</strong>`;
   };
@@ -2874,6 +2876,35 @@
   $('btn-retry').onclick = retryTask;
   $('btn-copy-log').onclick = copyCurrentLog;
   $('btn-download-log').onclick = downloadCurrentLog;
+
+  // V2 UI Safety Layer (Master Plan Implementation)
+  let focusSafetyTimer = null;
+  window.addEventListener('blur', () => {
+    if (activeTaskId && !isPaused) {
+      console.warn("Dashboard focus lost. Starting 5s safety timer...");
+      focusSafetyTimer = setTimeout(() => {
+        if (!isPaused) {
+          console.warn("Safety trigger: 5s focus loss reached. Pausing task.");
+          togglePause();
+        }
+      }, 5000);
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    if (focusSafetyTimer) {
+      clearTimeout(focusSafetyTimer);
+      focusSafetyTimer = null;
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && activeTaskId) {
+      console.warn("Emergency Kill-Switch (ESC) triggered.");
+      stopEverything();
+      cancelTask();
+    }
+  });
   $('new-session-btn').onclick = newSession;
   $('history-search').addEventListener('input', filterHistory);
   $('nav-toggle').onclick = () => document.body.classList.toggle('nav-open');
@@ -2920,6 +2951,7 @@
         event.preventDefault();
         sendApproval(false);
       }
+      return;
     }
 
     if ($('permission').classList.contains('show')) {
@@ -2931,11 +2963,49 @@
         event.preventDefault();
         sendPermission(false);
       }
+      return;
     }
 
     if ($('lightbox').classList.contains('show') && event.key === 'Escape') {
       event.preventDefault();
       closeLightbox();
+      return;
+    }
+
+    // Escape kill-switch: cancel any running task when no modal is open
+    if (event.key === 'Escape' && task && !isTerminalStatus(currentStatus)) {
+      event.preventDefault();
+      toast('Task cancelled via Escape.', 'warn');
+      cancelTask();
+    }
+  });
+
+  // 5-second focus-loss pause: pause a running task when the tab goes hidden
+  let _focusLossTimer = null;
+  let _pausedByFocusLoss = false;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (task && !isTerminalStatus(currentStatus) && !isPaused) {
+        _focusLossTimer = setTimeout(async () => {
+          if (task && !isTerminalStatus(currentStatus) && !isPaused) {
+            _pausedByFocusLoss = true;
+            isPaused = true;
+            await api(`/api/tasks/${task}/pause`, 'POST');
+            $('btn-pause').textContent = 'Resume';
+            setStatus('paused');
+          }
+        }, 5000);
+      }
+    } else {
+      clearTimeout(_focusLossTimer);
+      _focusLossTimer = null;
+      if (_pausedByFocusLoss && task && isPaused) {
+        _pausedByFocusLoss = false;
+        isPaused = false;
+        api(`/api/tasks/${task}/resume`, 'POST').catch(() => {});
+        $('btn-pause').textContent = 'Pause';
+        setStatus('running');
+      }
     }
   });
 

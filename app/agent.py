@@ -30,6 +30,8 @@ from .plugins import PluginRegistry
 
 _log = logging.getLogger("agent")
 
+TOKEN_BUDGET_DEFAULT = 100_000  # max combined input+output tokens per task
+
 _SCREENSHOT_ACTIONS = {
     ActionType.mouse_click,
     ActionType.keyboard_type,
@@ -95,6 +97,12 @@ class SubTaskWorker:
 
         try:
             for action_data in self.sub_task.actions:
+                # Opus Audit: Emergency Kill-Switch Check
+                if self.agent_service.is_killed(self.task_id):
+                    _log.warning(f"Task {self.task_id} KILLED by user. Worker {self.worker_id} stopping.")
+                    self.sub_task.status = TaskStatus.failed
+                    return False
+
                 if self.action_count >= self.max_actions:
                     _log.warning(f"Worker {self.worker_id} hit action limit.")
                     break
@@ -254,6 +262,21 @@ class AgentService:
         self._pause_events: Dict[str, asyncio.Event] = {}
         self._on_task_complete: Optional[Callable[[str, str, str], None]] = None
         self._bg_browsers: Dict[str, BackgroundBrowser] = {}
+        self._killed_tasks: Set[str] = set()
+        self._total_tokens_spent: int = 0
+        self._token_budgets: Dict[str, int] = {}
+
+    def kill_task(self, task_id: str):
+        """Mark a task for immediate termination."""
+        self._killed_tasks.add(task_id)
+
+    def is_killed(self, task_id: str) -> bool:
+        """Check if a task has been killed."""
+        return task_id in self._killed_tasks
+
+    def update_token_usage(self, tokens: int):
+        """Track global token usage."""
+        self._total_tokens_spent += tokens
 
     async def _emit(self, task_id: str, event: str, data: Dict[str, Any]):
         self.log_emitter.emit(task_id, event, data)
@@ -282,14 +305,27 @@ class AgentService:
             await self._emit(task_id, "status", {"message": f"{progress_label}... {elapsed}s", "elapsed_seconds": elapsed, "heartbeat": True})
         return await work
 
-    def init_task(self, task_id: str, goal: str, screen_width: int = 1280, screen_height: int = 800, model: str = "claude-3-5-sonnet-20241022", mode: str = "auto", isolated_app: Optional[str] = None) -> TaskRecord:
+    def init_task(self, task_id: str, goal: str, screen_width: int = 1280, screen_height: int = 800, model: str = "claude-3-5-sonnet-20241022", mode: str = "auto", isolated_app: Optional[str] = None, token_budget: int = TOKEN_BUDGET_DEFAULT) -> TaskRecord:
         detected_mode = detect_task_mode(goal, mode if mode != "auto" else None)
         context = AgentContext(goal=goal, screen_width=screen_width, screen_height=screen_height, isolated_app=isolated_app)
         record = TaskRecord(id=task_id, status="running", context=context, goal=goal, model=model, mode=detected_mode)
-        self._active_tasks[task_id] = asyncio.create_task(self.run_task(task_id, goal, screen_width, screen_height, model, detected_mode, isolated_app=isolated_app))
+        self._active_tasks[task_id] = asyncio.create_task(self.run_task(task_id, goal, screen_width, screen_height, model, detected_mode, isolated_app=isolated_app, token_budget=token_budget))
         return record
 
-    async def run_task(self, task_id: str, goal: str, screen_width: int = 1280, screen_height: int = 800, model: str = "claude-3-5-sonnet-20241022", mode: str = "coding", isolated_app: Optional[str] = None):
+    async def _check_token_budget(self, task_id: str, provider: "PlannerProvider", budget: int) -> bool:
+        """Emit a warning/abort if the provider has exceeded the token budget. Returns True if over budget."""
+        used = provider.total_tokens
+        if used >= budget:
+            msg = f"Token budget exhausted: {used:,} tokens used (limit {budget:,})."
+            _log.warning(msg)
+            await self._emit(task_id, "token_budget", {"used": used, "budget": budget, "exhausted": True})
+            self._finalize(task_id, "failed", msg)
+            return True
+        if used >= int(budget * 0.8):
+            await self._emit(task_id, "token_budget", {"used": used, "budget": budget, "exhausted": False, "warning": True})
+        return False
+
+    async def run_task(self, task_id: str, goal: str, screen_width: int = 1280, screen_height: int = 800, model: str = "claude-3-5-sonnet-20241022", mode: str = "coding", isolated_app: Optional[str] = None, token_budget: int = TOKEN_BUDGET_DEFAULT):
         provider = PlannerProvider(model=model)
         is_coding = mode == "coding"
         is_computer_use = mode == "computer_use"
@@ -402,6 +438,9 @@ class AgentService:
             else:
                 win_info = f"\nTarget window locked: {isolated_app}" if is_isolated else ""
                 plan = await self._run_with_phase_updates(task_id, "Planning...", "Planning", provider.plan_hierarchical, goal + env_context + win_info, screenshot_b64, mem_context, mode)
+
+            if await self._check_token_budget(task_id, provider, token_budget):
+                return
             
             await self._emit(task_id, "plan", plan.model_dump())
             
@@ -452,7 +491,8 @@ class AgentService:
                             
                             eval_screenshot = None if runs_in_background else _capture_screenshot_b64(screen_width, screen_height)
                             eval_res = await self._run_with_phase_updates(task_id, "Evaluating failure...", "Evaluation", provider.evaluate, goal, history, eval_screenshot, mode)
-                            
+                            if await self._check_token_budget(task_id, provider, token_budget):
+                                return
                             if eval_res.get("complete"):
                                 # Somehow it's done anyway?
                                 completed_tasks.add(st_id)
@@ -473,7 +513,8 @@ class AgentService:
 
             eval_screenshot = None if runs_in_background else _capture_screenshot_b64(screen_width, screen_height)
             eval_res = await self._run_with_phase_updates(task_id, "Evaluating...", "Evaluation", provider.evaluate, goal, history, eval_screenshot, mode)
-            
+            if await self._check_token_budget(task_id, provider, token_budget):
+                return
             status = "done" if eval_res.get("complete") else "failed"
             self._finalize(task_id, status, eval_res.get("reason", ""))
 
