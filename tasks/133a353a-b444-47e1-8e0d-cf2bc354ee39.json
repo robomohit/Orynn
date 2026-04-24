@@ -1,0 +1,21 @@
+{
+  "id": "133a353a-b444-47e1-8e0d-cf2bc354ee39",
+  "status": "failed",
+  "context": {
+    "goal": "magic_test_delegation_goal",
+    "history": [],
+    "screen_width": 1280,
+    "screen_height": 800,
+    "isolated_app": null,
+    "active_skills": []
+  },
+  "paused": false,
+  "created_at": "2026-04-24T06:31:22.479486+00:00",
+  "finished_at": "2026-04-24T06:31:48.017540+00:00",
+  "goal": "magic_test_delegation_goal",
+  "reason": "Max steps reached without finish action.",
+  "model": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+  "mode": "coding",
+  "execution_mode": "serial",
+  "max_parallel_workers": 1
+}

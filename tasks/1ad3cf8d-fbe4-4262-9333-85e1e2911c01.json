@@ -1,0 +1,21 @@
+{
+  "id": "1ad3cf8d-fbe4-4262-9333-85e1e2911c01",
+  "status": "done",
+  "context": {
+    "goal": "magic_test_delegation_goal",
+    "history": [],
+    "screen_width": 1280,
+    "screen_height": 800,
+    "isolated_app": null,
+    "active_skills": []
+  },
+  "paused": false,
+  "created_at": "2026-04-24T06:33:47.474938+00:00",
+  "finished_at": "2026-04-24T06:33:48.799337+00:00",
+  "goal": "magic_test_delegation_goal",
+  "reason": "Task marked complete by agent.",
+  "model": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+  "mode": "coding",
+  "execution_mode": "serial",
+  "max_parallel_workers": 1
+}

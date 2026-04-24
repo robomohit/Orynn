@@ -75,6 +75,7 @@ class ActionType(str, Enum):
     web_search = "web_search"
     list_processes = "list_processes"
     kill_process = "kill_process"
+    mcp_tool = "mcp_tool"
 
 
 class Action(BaseModel):
@@ -110,6 +111,7 @@ class AgentContext(BaseModel):
     screen_width: int = 1280
     screen_height: int = 800
     isolated_app: Optional[str] = None
+    active_skills: List[str] = Field(default_factory=list)
 
 
 class TaskRecord(BaseModel):

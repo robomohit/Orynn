@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from .agent import AgentService
 from .log_emitter import log_emitter
 from .models import AgentContext, TaskRecord
+from .skills import skill_manager
 
 API_KEY = os.environ.get("AGENT_API_KEY") or secrets.token_hex(32)
 _masked = API_KEY[:6] + "***" + API_KEY[-4:] if len(API_KEY) > 10 else "***"
@@ -25,6 +26,8 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def _lifespan(application):
+    from .mcp_manager import mcp_manager
+    asyncio.create_task(mcp_manager.initialize_default_servers(str(Path(".").absolute())))
     yield
     # Shutdown: clean up background browsers
     await service.shutdown()
@@ -179,6 +182,7 @@ class TaskIn(BaseModel):
     screen_width: int = 1280
     screen_height: int = 800
     isolated_app: Optional[str] = None  # partial window title to target in isolated mode
+    active_skills: List[str] = []
 
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
@@ -219,7 +223,7 @@ async def root():
 @app.get("/v2")
 async def root_v2():
     return FileResponse(
-        "static/index_v2.html",
+        "static/index.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
     )
 
@@ -233,6 +237,21 @@ async def health():
         "version": "1.0.0",
         "uptime_seconds": time.time() - START_TIME
     }
+
+@app.get("/api/skills")
+async def get_skills():
+    return {"skills": skill_manager.get_all_skills()}
+
+@app.get("/api/mcp")
+async def get_mcp():
+    from .mcp_manager import mcp_manager
+    servers = []
+    for name, srv in mcp_manager.servers.items():
+        servers.append({
+            "name": name,
+            "tools": srv.tools
+        })
+    return {"servers": servers}
 
 @app.get("/api/config")
 async def config():
@@ -383,6 +402,7 @@ async def create_task(body: TaskIn):
             model=selected_model,
             mode=body.mode or "auto",
             isolated_app=body.isolated_app,
+            active_skills=body.active_skills,
         )
         _tasks[body.task_id] = record
         _save_task_record(record)

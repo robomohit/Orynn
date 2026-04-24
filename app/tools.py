@@ -828,6 +828,15 @@ class ToolExecutor:
             except Exception as e:
                 return ToolResult(ok=False, output=f"Error executing {action.type}: {str(e)}")
 
+        if action.type == ActionType.mcp_tool:
+            try:
+                from .mcp_manager import mcp_manager
+                await mcp_manager.initialize_default_servers(str(self.workspace))
+                res = await mcp_manager.call_tool(action.args["server_name"], action.args["tool_name"], action.args.get("tool_args", {}))
+                return ToolResult(ok=True, output=res)
+            except Exception as e:
+                return ToolResult(ok=False, output=f"Error executing MCP tool: {str(e)}")
+
         handlers = {
             ActionType.mouse_move: lambda a: self.mouse_move(a.args["x"], a.args["y"], sw, sh),
             ActionType.mouse_click: lambda a: self.mouse_click(a.args["x"], a.args["y"], a.args.get("button", "left"), 1, sw, sh),

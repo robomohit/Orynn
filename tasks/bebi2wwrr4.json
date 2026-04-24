@@ -1,0 +1,21 @@
+{
+  "id": "bebi2wwrr4",
+  "status": "failed",
+  "context": {
+    "goal": "magic_test_plan",
+    "history": [],
+    "screen_width": 1280,
+    "screen_height": 800,
+    "isolated_app": null,
+    "active_skills": []
+  },
+  "paused": false,
+  "created_at": "2026-04-24T07:01:01.309601+00:00",
+  "finished_at": "2026-04-24T07:01:01.723326+00:00",
+  "goal": "magic_test_plan",
+  "reason": "Max steps reached without finish action.",
+  "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+  "mode": "coding",
+  "execution_mode": "serial",
+  "max_parallel_workers": 1
+}

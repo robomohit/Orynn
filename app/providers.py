@@ -247,7 +247,7 @@ def _get_active_window_rect(sw: int, sh: int) -> Optional[Dict[str, Any]]:
 
 
 def _get_hwnd_for_title(partial_title: str) -> Optional[int]:
-    """Find a visible top-level HWND by partial title match (case-insensitive)."""
+    """Find a visible HWND by partial title match; checks top-level then child windows."""
     try:
         import win32gui  # type: ignore
         found: List[int] = []
@@ -259,7 +259,23 @@ def _get_hwnd_for_title(partial_title: str) -> Optional[int]:
                     found.append(hwnd)
 
         win32gui.EnumWindows(_enum, None)
-        return found[0] if found else None
+        if not found:
+            return None
+        top_hwnd = found[0]
+
+        # Try to lock onto a more specific child window (e.g., MDI children or document panes)
+        children: List[int] = []
+
+        def _enum_children(hwnd: int, _: Any) -> None:
+            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
+                children.append(hwnd)
+
+        try:
+            win32gui.EnumChildWindows(top_hwnd, _enum_children, None)
+        except Exception:
+            pass
+
+        return children[0] if children else top_hwnd
     except Exception:
         return None
 
@@ -475,6 +491,12 @@ class PlannerProvider:
         self._google_key: Optional[str] = os.environ.get("GOOGLE_API_KEY")
         self._openrouter_key: Optional[str] = os.environ.get("OPENROUTER_API_KEY")
         self._groq_key: Optional[str] = os.environ.get("GROQ_API_KEY")
+        self._total_input_tokens: int = 0
+        self._total_output_tokens: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self._total_input_tokens + self._total_output_tokens
 
     def _is_anthropic(self) -> bool:
         return self.model.startswith("claude") and not self.model.startswith("openrouter/")
@@ -515,7 +537,11 @@ class PlannerProvider:
                         json=payload,
                     )
                     resp.raise_for_status()
-                    return resp.json()["content"][0]["text"]
+                    data = resp.json()
+                    usage = data.get("usage", {})
+                    self._total_input_tokens += usage.get("input_tokens", 0)
+                    self._total_output_tokens += usage.get("output_tokens", 0)
+                    return data["content"][0]["text"]
             except httpx.HTTPStatusError as e:
                 last_err = e
                 if e.response.status_code == 429 or e.response.status_code >= 500:
@@ -547,7 +573,11 @@ class PlannerProvider:
                         json=payload,
                     )
                     resp.raise_for_status()
-                    return _extract_chat_message_text(resp.json())
+                    data = resp.json()
+                    usage = data.get("usage", {})
+                    self._total_input_tokens += usage.get("prompt_tokens", 0)
+                    self._total_output_tokens += usage.get("completion_tokens", 0)
+                    return _extract_chat_message_text(data)
             except httpx.HTTPStatusError as e:
                 last_err = e
                 if e.response.status_code == 429 or e.response.status_code >= 500:
@@ -747,12 +777,68 @@ class PlannerProvider:
             # All fallbacks exhausted — raise original error
             raise primary_err
 
+    async def stream_chat(self, system: str, messages: List[Dict[str, Any]], screenshot_b64: Optional[str] = None):
+        """Async generator that streams tokens from OpenRouter/OpenAI."""
+        import httpx
+        
+        # If no key, fallback to standard error
+        if not self._openrouter_key and not self._openai_key and not self._groq_key:
+             raise RuntimeError("No API key available for streaming (OPENROUTER/OPENAI/GROQ).")
+        
+        # Determine endpoint and key
+        if self._is_openai():
+            url = "https://api.openai.com/v1/chat/completions"
+            key = self._openai_key
+            model = self.model
+        elif self._is_groq():
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            key = self._groq_key
+            model = self.model.replace("groq/", "")
+        else: # Default OpenRouter
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            key = self._openrouter_key
+            model = self.model.replace("openrouter/", "")
+
+        formatted_messages = [{"role": "system", "content": system}]
+        for m in messages:
+            if m["role"] == "user" and screenshot_b64 and m == messages[-1]:
+                # Attach screenshot to the latest user message if vision is supported
+                formatted_messages.append({
+                    "role": "user", 
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}},
+                        {"type": "text", "text": m["content"]}
+                    ]
+                })
+            else:
+                formatted_messages.append({"role": m["role"], "content": [{"type": "text", "text": m["content"]}]})
+
+        payload = {"model": model, "messages": formatted_messages, "stream": True}
+        
+        async with httpx.AsyncClient(timeout=300) as client:
+            async with client.stream("POST", url, headers={"Authorization": f"Bearer {key}"}, json=payload) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_lines():
+                    if chunk.startswith("data: "):
+                        data_str = chunk[6:]
+                        if data_str.strip() == "[DONE]": 
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            if "choices" in data and len(data["choices"]) > 0:
+                                delta = data["choices"][0].get("delta", {})
+                                if "content" in delta and delta["content"]:
+                                    yield delta["content"]
+                        except json.JSONDecodeError:
+                            pass
+
     def plan_hierarchical(
         self,
         goal: str,
         latest_screenshot_b64: Optional[str] = None,
         memory_context: Optional[str] = None,
         mode: str = "computer",
+        system_prompt_extension: Optional[str] = None,
     ) -> HierarchicalPlan:
         prompt = f"Goal: {goal}\n\nFor simple one-action tasks, use exactly 1 sub-task. For complex tasks, decompose into 2-8 sequential sub-tasks with concrete actions."
         if memory_context:
@@ -763,9 +849,18 @@ class PlannerProvider:
         
         if mode == "coding":
             system = CODING_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
-            raw_text = self._call_llm(system, prompt)  # no screenshot for coding
         elif mode == "computer_use":
             system = COMPUTER_USE_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
+        else:
+            from .providers import HIERARCHICAL_SYSTEM_PROMPT
+            system = HIERARCHICAL_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
+
+        if system_prompt_extension:
+            system = f"{system}\n\n{system_prompt_extension}"
+
+        if mode == "coding":
+            raw_text = self._call_llm(system, prompt)  # no screenshot for coding
+        elif mode == "computer_use":
             raw_text = self._call_llm(system, prompt)  # no screenshot — DOM-based
         else:
             system = HIERARCHICAL_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
@@ -780,6 +875,7 @@ class PlannerProvider:
         results: List[str],
         post_screenshot_b64: Optional[str] = None,
         mode: str = "computer",
+        system_prompt_extension: Optional[str] = None,
     ) -> Dict[str, Any]:
         packs = get_mode_packs(mode)
         tool_guidance = get_tool_guidance(packs)
@@ -807,7 +903,10 @@ class PlannerProvider:
                 f"Results:\n{json.dumps(results, indent=2)}\n\n"
                 "Based on the screenshot and results, did this sub-task succeed?"
             )
-            raw_text = self._call_llm(REFLECT_SYSTEM_PROMPT, prompt, post_screenshot_b64)
+            system = REFLECT_SYSTEM_PROMPT
+            if system_prompt_extension:
+                system = f"{system}\n\n{system_prompt_extension}"
+            raw_text = self._call_llm(system, prompt, post_screenshot_b64)
         try:
             result = _extract_json(raw_text)
             if not isinstance(result, dict):
@@ -819,6 +918,7 @@ class PlannerProvider:
     def evaluate(
         self, goal: str, history: List[str], latest_screenshot_b64: Optional[str] = None,
         mode: str = "computer",
+        system_prompt_extension: Optional[str] = None,
     ) -> Dict[str, Any]:
         recent = history[-20:]
         prompt = f"Goal: {goal}\n\nRecent action history:\n" + "\n".join(recent) + "\n\nIs the overall goal now complete?"
@@ -827,7 +927,10 @@ class PlannerProvider:
         elif mode == "computer_use":
             raw_text = self._call_llm(COMPUTER_USE_EVALUATE_PROMPT, prompt)  # no screenshot
         else:
-            raw_text = self._call_llm(EVALUATE_SYSTEM_PROMPT, prompt, latest_screenshot_b64)
+            system = EVALUATE_SYSTEM_PROMPT
+            if system_prompt_extension:
+                system = f"{system}\n\n{system_prompt_extension}"
+            raw_text = self._call_llm(system, prompt, latest_screenshot_b64)
         try:
             result = _extract_json(raw_text)
             if not isinstance(result, dict):

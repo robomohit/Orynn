@@ -39,6 +39,7 @@ TOOL_DESCRIPTIONS = {
     ActionType.computer: "computer: {\"action\": str, \"x\": int, \"y\": int, \"text\": str, \"keys\": str} — high-level computer action (screenshot, mouse_move, left_click, right_click, double_click, key, type, scroll, cursor_position).",
     ActionType.virtual_input: "virtual_input: {\"action\": str, \"text\": str, \"keys\": str} — alias for high-level isolated input.",
     ActionType.finish: "finish: {\"reason\": str} — complete the task.",
+    ActionType.mcp_tool: "mcp_tool: {\"server_name\": str, \"tool_name\": str, \"tool_args\": dict} — call an MCP server tool dynamically.",
 }
 
 TOOL_PACKS = {
@@ -49,7 +50,7 @@ TOOL_PACKS = {
     "browser": [ActionType.browser_open, ActionType.browser_accessibility_tree, ActionType.browser_click, ActionType.browser_type, ActionType.browser_scroll, ActionType.browser_get_text, ActionType.browser_navigate_back, ActionType.browser_close, ActionType.wait_action],
     "computer": [ActionType.mouse_click, ActionType.keyboard_type, ActionType.screenshot, ActionType.ocr_image, ActionType.scroll, ActionType.double_click, ActionType.right_click, ActionType.middle_click, ActionType.mouse_move, ActionType.left_click_drag, ActionType.key_combo, ActionType.hold_key, ActionType.cursor_position, ActionType.type_with_delay, ActionType.find_on_screen, ActionType.computer],
     "web": [ActionType.web_fetch, ActionType.web_search],
-    "utilities": [ActionType.api_call, ActionType.get_clipboard, ActionType.set_clipboard, ActionType.notify],
+    "utilities": [ActionType.api_call, ActionType.get_clipboard, ActionType.set_clipboard, ActionType.notify, ActionType.mcp_tool],
 }
 
 def get_tool_guidance(packs: List[str]) -> str:
