@@ -606,7 +606,7 @@ class AgentService:
 
                 win_info = f"\nTarget window: {isolated_app}" if is_isolated else ""
                 messages = [{"role": "user", "content": f"{goal}{env_context}{auto_context}{win_info}"}]
-                use_native_tools = len(tool_schemas) > 0
+                use_native_tools = len(tool_schemas) > 0 and hasattr(provider, "stream_chat_with_tools")
                 
                 # ── Anti-waste tracking: detect duplicate calls and cache writes ──
                 _recent_calls: list[tuple[str, str]] = []  # (action_type, args_key) last 3 calls

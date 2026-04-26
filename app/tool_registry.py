@@ -35,6 +35,10 @@ TOOL_DESCRIPTIONS = {
     ActionType.web_search: "web_search: {\"query\": str} — search the web for information.",
     ActionType.web_fetch: "web_fetch: {\"url\": str} — fetch a webpage's content directly.",
     ActionType.api_call: "api_call: {\"method\": str, \"url\": str, \"headers\": dict, \"data\": str} — make an HTTP API call.",
+    ActionType.git: "git: {\"command\": str, \"args\": str} — run an allowed git command in the workspace.",
+    ActionType.run_tests: "run_tests: {\"command\": str, \"path\": str} — run project tests.",
+    ActionType.lint_code: "lint_code: {\"path\": str} — run available linters for a path.",
+    ActionType.find_symbol: "find_symbol: {\"symbol\": str, \"path\": str} — find code symbol definitions.",
     ActionType.request_permission: "request_permission: {\"scope\": str, \"reason\": str} — ask user for permission.",
     ActionType.computer: "computer: {\"action\": str, \"x\": int, \"y\": int, \"text\": str, \"keys\": str} — high-level computer action (screenshot, mouse_move, left_click, right_click, double_click, key, type, scroll, cursor_position).",
     ActionType.virtual_input: "virtual_input: {\"action\": str, \"text\": str, \"keys\": str} — alias for high-level isolated input.",
@@ -51,7 +55,7 @@ TOOL_PACKS = {
     "browser": [ActionType.browser_open, ActionType.browser_accessibility_tree, ActionType.browser_click, ActionType.browser_type, ActionType.browser_scroll, ActionType.browser_get_text, ActionType.browser_navigate_back, ActionType.browser_close, ActionType.wait_action],
     "computer": [ActionType.mouse_click, ActionType.keyboard_type, ActionType.screenshot, ActionType.ocr_image, ActionType.scroll, ActionType.double_click, ActionType.right_click, ActionType.middle_click, ActionType.mouse_move, ActionType.left_click_drag, ActionType.key_combo, ActionType.hold_key, ActionType.cursor_position, ActionType.type_with_delay, ActionType.find_on_screen, ActionType.focus_window, ActionType.computer],
     "web": [ActionType.web_fetch, ActionType.web_search],
-    "utilities": [ActionType.api_call, ActionType.get_clipboard, ActionType.set_clipboard, ActionType.notify, ActionType.mcp_tool],
+    "utilities": [ActionType.api_call, ActionType.get_clipboard, ActionType.set_clipboard, ActionType.notify, ActionType.git, ActionType.run_tests, ActionType.lint_code, ActionType.find_symbol, ActionType.mcp_tool],
 }
 
 def get_tool_guidance(packs: List[str]) -> str:

@@ -77,6 +77,10 @@ class ActionType(str, Enum):
     list_processes = "list_processes"
     kill_process = "kill_process"
     mcp_tool = "mcp_tool"
+    git = "git"
+    run_tests = "run_tests"
+    lint_code = "lint_code"
+    find_symbol = "find_symbol"
 
 
 class Action(BaseModel):
