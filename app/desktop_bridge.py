@@ -192,7 +192,8 @@ class DesktopBridge:
         return str(state).lower()
 
     def _capture_snapshot(self) -> WindowSnapshot:
-        assert self._main_window is not None
+        if self._main_window is None:
+            raise RuntimeError("Cannot capture snapshot: main window is not bound")
         return WindowSnapshot(
             x=int(self._main_window.x),
             y=int(self._main_window.y),

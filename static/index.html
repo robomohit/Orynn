@@ -3482,7 +3482,12 @@
     sse.onmessage = (message) => {
       if (task !== listenTask) return;
       reconnectAttempts = 0;
-      const data = JSON.parse(message.data);
+      let data;
+      try {
+        data = JSON.parse(message.data);
+      } catch (_) {
+        return;
+      }
       if (Number.isFinite(data.seq)) streamCursor = Math.max(streamCursor, data.seq + 1);
       else streamCursor += 1;
       processTaskEvent(data, { taskId: listenTask });
@@ -4075,7 +4080,7 @@
   // Production Safety Layer (Wired to Codex UI)
   let focusSafetyTimer = null;
   window.addEventListener('blur', () => {
-    if (activeTaskId && !isPaused) {
+    if (task && !isTerminalStatus(currentStatus) && !isPaused) {
       focusSafetyTimer = setTimeout(() => {
         if (!isPaused) {
           console.warn("Safety: Focus lost for 5s. Auto-pausing.");
@@ -4091,7 +4096,7 @@
     }
   });
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && activeTaskId) {
+    if (e.key === 'Escape' && task && !isTerminalStatus(currentStatus)) {
       console.warn("Emergency Kill-Switch (ESC) triggered.");
       stopEverything();
       cancelTask();

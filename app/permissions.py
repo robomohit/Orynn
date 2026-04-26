@@ -70,7 +70,8 @@ class PermissionStore:
 
     def grant(self, task_id: str, scope: str) -> None:
         self._granted.setdefault(task_id, set()).add(scope)
-        self._denied.get(task_id, set()).discard(scope)
+        if task_id in self._denied:
+            self._denied[task_id].discard(scope)
 
     def deny(self, task_id: str, scope: str) -> None:
         self._denied.setdefault(task_id, set()).add(scope)

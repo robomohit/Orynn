@@ -690,7 +690,7 @@ class PlannerProvider:
                     time.sleep(2 ** attempt)
                     continue
                 raise
-        raise last_err
+        raise last_err or RuntimeError("All API retries exhausted")
 
     def _chat_openai(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
         if not self._openai_key:
@@ -726,7 +726,7 @@ class PlannerProvider:
                     time.sleep(2 ** attempt)
                     continue
                 raise
-        raise last_err
+        raise last_err or RuntimeError("All API retries exhausted")
 
     def _chat_openrouter(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
         if not self._openrouter_key:
@@ -785,7 +785,7 @@ class PlannerProvider:
             
             # If we reach here, this model failed all retries or hit a hard error.
             # The loop will continue to the next model in models_to_try.
-        raise last_err
+        raise last_err or RuntimeError("All API retries exhausted")
 
     def _openrouter_models_to_try(self, requested_model: str, screenshot_b64: Optional[str] = None) -> List[str]:
         """Return an ordered OpenRouter model fallback chain for this request."""
@@ -859,7 +859,7 @@ class PlannerProvider:
                     time.sleep(2 ** attempt)
                     continue
                 raise
-        raise last_err
+        raise last_err or RuntimeError("All API retries exhausted")
 
     def _chat_groq(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
         if not self._groq_key:
@@ -894,7 +894,7 @@ class PlannerProvider:
                     time.sleep(2 ** attempt)
                     continue
                 raise
-        raise last_err
+        raise last_err or RuntimeError("All API retries exhausted")
 
     # Fallback model chain: when a provider 429s, try the next one
     _FALLBACK_MODELS = [

@@ -159,10 +159,17 @@ async def browser_navigate_back() -> str:
 
 async def browser_close() -> str:
     global _pw, _browser, _page
-    if _browser:
-        await _browser.close()
-        await _pw.stop()
-        _pw = _browser = _page = None
+    if _browser is not None:
+        try:
+            await _browser.close()
+        except Exception:
+            pass
+    if _pw is not None:
+        try:
+            await _pw.stop()
+        except Exception:
+            pass
+    _pw = _browser = _page = None
     return "Browser closed"
 
 

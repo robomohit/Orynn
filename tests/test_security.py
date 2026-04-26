@@ -34,4 +34,5 @@ def test_cors_reject(monkeypatch):
         "/api/health",
         headers={"Origin": "http://bad.local", "Access-Control-Request-Method": "GET"},
     )
-    assert r.headers.get("access-control-allow-origin") == "http://bad.local"
+    # Bad origin should NOT be reflected in the allow header
+    assert r.headers.get("access-control-allow-origin") != "http://bad.local"

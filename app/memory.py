@@ -153,7 +153,7 @@ class MemoryStore:
                 ids.append(all_results["ids"][i])
         
         char_count = sum(len(d) for d in docs)
-        if char_count / 4.0 > 4000:
+        if char_count > 4000:
             half = len(docs) // 2
             oldest_docs = docs[:half]
             oldest_ids = ids[:half]

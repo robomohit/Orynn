@@ -476,14 +476,20 @@ class ToolExecutor:
             return ToolResult(ok=False, output=str(e))
 
     def get_clipboard(self):
-        import pyperclip
-        text = pyperclip.paste()
-        return ToolResult(ok=True, output=text)
+        try:
+            import pyperclip
+            text = pyperclip.paste()
+            return ToolResult(ok=True, output=text)
+        except ImportError:
+            return ToolResult(ok=False, output="pyperclip not installed")
 
     def set_clipboard(self, text: str):
-        import pyperclip
-        pyperclip.copy(text)
-        return ToolResult(ok=True, output="Clipboard updated")
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+            return ToolResult(ok=True, output="Clipboard updated")
+        except ImportError:
+            return ToolResult(ok=False, output="pyperclip not installed")
 
     def notify(self, message: str):
         try:
