@@ -134,6 +134,12 @@ class SubTaskWorker:
                 action = Action(**action_data.model_dump())
                 decision = self.agent_service.safety.evaluate(action, safe_mode=not is_coding)
 
+                await self._emit("intent", {
+                    "action_id": action.id,
+                    "action_type": action.type.value,
+                    "explanation": action.explanation,
+                    "args_preview": _summarize_args(action.type.value, action.args),
+                })
                 await self._emit("action_start", {
                     "action_id": action.id,
                     "action_type": action.type.value,
@@ -1124,6 +1130,15 @@ class AgentService:
                             self._finalize(task_id, "cancelled", "Action rejected by user.")
                             return
 
+                    # Operator-style "intent" event — surface the agent's
+                    # reasoning before the action so the UI can render
+                    # "about to: X — because Y" in real time.
+                    await self._emit(task_id, "intent", {
+                        "action_id": act.id,
+                        "action_type": act.type.value,
+                        "explanation": act.explanation,
+                        "args_preview": str(args)[:200],
+                    })
                     await self._emit(task_id, "status", {"message": f"Executing: {act.type.value} — {str(args)[:60]}"})
                     await self._emit(task_id, "action_start", {
                         "action_id": act.id,
@@ -1131,7 +1146,7 @@ class AgentService:
                         "explanation": act.explanation,
                         "args_summary": str(args)[:80],
                     })
-                    
+
                     try:
                         async def _stream_chunk(c: Dict[str, Any]):
                             if isinstance(c, str):
@@ -1148,7 +1163,27 @@ class AgentService:
                             timeout=120.0
                         )
                     except Exception as e:
-                        res = ToolResult(ok=False, output=f"Error: {str(e)}")
+                        # Structured tool-error reflection: synthesize a
+                        # message back into the loop so the model can adapt
+                        # on the next iteration instead of just seeing a
+                        # terse "Error:" line.
+                        err_str = str(e)
+                        res = ToolResult(ok=False, output=f"Error: {err_str}")
+                        try:
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    f"<tool_error tool=\"{act.type.value}\">\n"
+                                    f"The previous action failed.\n"
+                                    f"Args: {str(args)[:300]}\n"
+                                    f"Error: {err_str}\n"
+                                    f"Reflect briefly: was the target wrong, the args malformed, or the environment in an unexpected state? Try a different strategy or a smaller step."
+                                    f"\n</tool_error>"
+                                ),
+                            })
+                        except NameError:
+                            # `messages` not in scope here for some code paths; ignore.
+                            pass
                         
                     await self._emit(task_id, "action_result", {
                         "action_id": act.id,

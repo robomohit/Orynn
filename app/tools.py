@@ -1002,6 +1002,92 @@ class ToolExecutor:
                     pass
         return ToolResult(ok=True, output="\n".join(matches) if matches else "No matches found.")
 
+    def pixel_color_at(self, x: int, y: int):
+        """Read the RGB hex of a single desktop pixel."""
+        try:
+            x = int(x); y = int(y)
+            with mss.mss() as sct:
+                bbox = {"left": x, "top": y, "width": 1, "height": 1}
+                shot = sct.grab(bbox)
+                # mss returns BGRA; index 2,1,0 = R,G,B
+                px = shot.pixel(0, 0)
+                r, g, b = px[0], px[1], px[2]
+            hex_color = f"#{r:02x}{g:02x}{b:02x}"
+            return ToolResult(ok=True, output=hex_color, data={"r": r, "g": g, "b": b, "hex": hex_color, "x": x, "y": y})
+        except Exception as e:
+            return ToolResult(ok=False, output=f"pixel_color_at error: {e}")
+
+    def diff_files(self, path_a: str, path_b: str):
+        """Return a unified diff between two files (capped at ~20k chars)."""
+        try:
+            import difflib
+            a_path = Path(path_a)
+            b_path = Path(path_b)
+            if not a_path.exists():
+                return ToolResult(ok=False, output=f"path_a not found: {path_a}")
+            if not b_path.exists():
+                return ToolResult(ok=False, output=f"path_b not found: {path_b}")
+            try:
+                a = a_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+                b = b_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+            except Exception as e:
+                return ToolResult(ok=False, output=f"read error: {e}")
+            diff = "".join(difflib.unified_diff(a, b, fromfile=str(a_path), tofile=str(b_path), n=3))
+            if not diff:
+                return ToolResult(ok=True, output="(files are identical)")
+            if len(diff) > 20000:
+                diff = diff[:20000] + "\n... (truncated)"
+            return ToolResult(ok=True, output=diff)
+        except Exception as e:
+            return ToolResult(ok=False, output=f"diff_files error: {e}")
+
+    def extract_links(self, url: str):
+        """Fetch a URL and return a list of (text, href) pairs as JSON."""
+        try:
+            safe_url = _validate_public_http_url(url)
+        except ToolError as exc:
+            return ToolResult(ok=False, output=str(exc))
+        try:
+            import urllib.request
+            import urllib.parse
+            req = urllib.request.Request(safe_url, headers={'User-Agent': 'Mozilla/5.0 (AI Computer Agent)'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                raw = response.read(2_000_000)
+            try:
+                html = raw.decode('utf-8')
+            except UnicodeDecodeError:
+                html = raw.decode('utf-8', errors='replace')
+            # Pull <a href="...">text</a> pairs (non-greedy, case-insensitive).
+            link_re = re.compile(
+                r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+                re.IGNORECASE | re.DOTALL,
+            )
+            tag_re = re.compile(r'<[^>]+>')
+            seen = set()
+            links = []
+            for m in link_re.finditer(html):
+                href = m.group(1).strip()
+                text = tag_re.sub('', m.group(2))
+                text = ' '.join(text.split())[:200]
+                if not href or href.startswith('#') or href.startswith('javascript:'):
+                    continue
+                # Resolve relative URLs against the source.
+                full = urllib.parse.urljoin(safe_url, href)
+                key = (text, full)
+                if key in seen:
+                    continue
+                seen.add(key)
+                links.append({"text": text, "href": full})
+                if len(links) >= 200:
+                    break
+            return ToolResult(
+                ok=True,
+                output=json.dumps(links, ensure_ascii=False, indent=2)[:20000],
+                data={"count": len(links), "links": links},
+            )
+        except Exception as e:
+            return ToolResult(ok=False, output=f"extract_links error: {e}")
+
     def web_fetch(self, url: str):
         try:
             safe_url = _validate_public_http_url(url)
@@ -1459,6 +1545,10 @@ class ToolExecutor:
             ActionType.run_tests: lambda a: self.run_tests(a.args.get("command", ""), a.args.get("path", ".")),
             ActionType.lint_code: lambda a: self.lint_code(a.args["path"]),
             ActionType.find_symbol: lambda a: self.find_symbol(a.args["symbol"], a.args.get("path", ".")),
+            # New built-ins
+            ActionType.pixel_color_at: lambda a: self.pixel_color_at(a.args["x"], a.args["y"]),
+            ActionType.diff_files: lambda a: self.diff_files(a.args["path_a"], a.args["path_b"]),
+            ActionType.extract_links: lambda a: self.extract_links(a.args["url"]),
         }
         if action.type in handlers:
             try:

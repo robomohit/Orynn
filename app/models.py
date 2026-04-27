@@ -83,6 +83,9 @@ class ActionType(str, Enum):
     run_tests = "run_tests"
     lint_code = "lint_code"
     find_symbol = "find_symbol"
+    pixel_color_at = "pixel_color_at"
+    diff_files = "diff_files"
+    extract_links = "extract_links"
 
 
 class Action(BaseModel):

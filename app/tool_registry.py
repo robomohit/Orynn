@@ -48,6 +48,9 @@ TOOL_DESCRIPTIONS = {
     ActionType.list_mcp_tools: "list_mcp_tools: {\"server_name\": str} — list the tools exposed by one MCP server.",
     ActionType.finish: "finish: {\"reason\": str} — complete the task.",
     ActionType.mcp_tool: "mcp_tool: {\"server_name\": str, \"tool_name\": str, \"tool_args\": dict} — call an MCP server tool dynamically.",
+    ActionType.pixel_color_at: "pixel_color_at: {\"x\": int, \"y\": int} — read the RGB hex color at a desktop pixel. Useful to verify a button state or confirm a UI element painted before clicking.",
+    ActionType.diff_files: "diff_files: {\"path_a\": str, \"path_b\": str} — return a unified diff between two files. Use after editing to verify a patch applied correctly without re-reading both files.",
+    ActionType.extract_links: "extract_links: {\"url\": str} — fetch a URL and return a structured list of (text, href) pairs. More reliable than scraping links from web_fetch text.",
 }
 
 TOOL_PACKS = {
@@ -56,9 +59,10 @@ TOOL_PACKS = {
     "terminal": [ActionType.run_command, ActionType.bash, ActionType.git, ActionType.run_tests, ActionType.lint_code, ActionType.find_symbol, ActionType.list_processes, ActionType.kill_process],
     "editing": [ActionType.text_view, ActionType.text_create, ActionType.text_str_replace, ActionType.text_insert, ActionType.text_undo_edit, ActionType.text_editor],
     "browser": [ActionType.browser_open, ActionType.browser_accessibility_tree, ActionType.browser_click, ActionType.browser_type, ActionType.browser_scroll, ActionType.browser_get_text, ActionType.browser_navigate_back, ActionType.browser_close, ActionType.wait_action],
-    "computer": [ActionType.mouse_click, ActionType.keyboard_type, ActionType.focus_window, ActionType.screenshot, ActionType.ocr_image, ActionType.scroll, ActionType.double_click, ActionType.right_click, ActionType.middle_click, ActionType.mouse_move, ActionType.left_click_drag, ActionType.key_combo, ActionType.hold_key, ActionType.cursor_position, ActionType.type_with_delay, ActionType.find_on_screen, ActionType.computer],
-    "web": [ActionType.web_fetch, ActionType.web_search],
+    "computer": [ActionType.mouse_click, ActionType.keyboard_type, ActionType.focus_window, ActionType.screenshot, ActionType.ocr_image, ActionType.scroll, ActionType.double_click, ActionType.right_click, ActionType.middle_click, ActionType.mouse_move, ActionType.left_click_drag, ActionType.key_combo, ActionType.hold_key, ActionType.cursor_position, ActionType.type_with_delay, ActionType.find_on_screen, ActionType.computer, ActionType.pixel_color_at],
+    "web": [ActionType.web_fetch, ActionType.web_search, ActionType.extract_links],
     "utilities": [ActionType.api_call, ActionType.get_clipboard, ActionType.set_clipboard, ActionType.notify, ActionType.list_mcp_servers, ActionType.list_mcp_tools, ActionType.mcp_tool],
+    "editing_extras": [ActionType.diff_files],
 }
 
 def get_tool_guidance(packs: List[str]) -> str:
@@ -127,7 +131,7 @@ def get_tool_schemas(packs: List[str]) -> List[Dict[str, Any]]:
 
 def get_mode_packs(mode: str) -> List[str]:
     if mode in ("coding", "chat", "auto"):
-        return ["core", "filesystem", "terminal", "editing", "web", "utilities"]
+        return ["core", "filesystem", "terminal", "editing", "editing_extras", "web", "utilities"]
     if mode == "computer_use":
         return ["core", "browser", "web"]
     if mode in ("computer", "computer_isolated"):
