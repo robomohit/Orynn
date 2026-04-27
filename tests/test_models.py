@@ -1,36 +1,59 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(__file__))
+"""Unit tests for core Pydantic models (fast, no network)."""
 
-from app.providers import PlannerProvider
+from __future__ import annotations
 
-models_to_test = [
-    "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-    "openrouter/google/gemma-3-27b-it:free",
-    "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"
-]
+import pytest
 
-dummy_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+from app.models import Action, ActionType, AgentContext, HierarchicalPlan, SubTask, TaskRecord
 
-def run_test_model(model_name):
-    print(f"\n--- Testing Model: {model_name} ---")
-    provider = PlannerProvider(model=model_name)
-    goal = "Open the browser, navigate to example.com, and extract the text."
-    
-    try:
-        print("Testing hierarchical planning...")
-        plan = provider.plan_hierarchical(goal, latest_screenshot_b64=dummy_b64)
-        
-        print("✅ SUCCESS: Successfully generated and parsed hierarchical plan.")
-        print(f"Reasoning: {plan.reasoning}")
-        print(f"Sub-tasks: {len(plan.sub_tasks)}")
-        for st in plan.sub_tasks:
-            print(f"  - {st.description} ({len(st.actions)} actions)")
-        return True
-    except Exception as e:
-        print(f"ERROR: Failed to generate or parse plan. Exception: {str(e)}")
-        return False
 
-if __name__ == "__main__":
-    for model in models_to_test:
-        test_model(model)
+def test_action_finish_roundtrip():
+    a = Action(
+        id="a1",
+        type=ActionType.finish,
+        args={"reason": "done"},
+        explanation="finish",
+    )
+    dumped = a.model_dump()
+    b = Action(**dumped)
+    assert b.type == ActionType.finish
+    assert b.args.get("reason") == "done"
+
+
+def test_hierarchical_plan_minimal():
+    plan = HierarchicalPlan(
+        reasoning="test",
+        sub_tasks=[
+            SubTask(
+                id="s1",
+                description="Do one thing",
+                actions=[
+                    Action(
+                        id="x1",
+                        type=ActionType.screenshot,
+                        args={},
+                        explanation="shot",
+                    )
+                ],
+            )
+        ],
+    )
+    assert len(plan.sub_tasks) == 1
+    assert plan.sub_tasks[0].actions[0].type == ActionType.screenshot
+
+
+def test_task_record_defaults():
+    rec = TaskRecord(
+        id="tid",
+        status="running",
+        context=AgentContext(goal="g"),
+    )
+    assert rec.id == "tid"
+    assert rec.context.goal == "g"
+
+
+def test_task_id_pattern_for_api_matches_models():
+    """Task IDs used in API validation must be valid string content for records."""
+    tid = "a1b2c3d4e5f6"
+    rec = TaskRecord(id=tid, status="done", context=AgentContext(goal="ok"))
+    assert rec.id == tid

@@ -1,25 +1,49 @@
 """
-Integration test: starts the server, hits every endpoint, and runs an
-end-to-end task with a free OpenRouter model.
+Optional live integration checks (pytest) plus a manual script for full runs.
+
+Pytest: hits /api/health when a server is reachable; skips otherwise.
+Manual: run with API key arg:  python tests/test_integration.py <AGENT_API_KEY>
 """
-import asyncio, json, time, uuid, httpx, sys
+from __future__ import annotations
 
-BASE = "http://127.0.0.1:8000"
-API_KEY = None  # filled at runtime
+import json
+import os
+import sys
+import time
+import uuid
+
+import httpx
+import pytest
+
+BASE = os.environ.get("AI_COMPUTER_INTEGRATION_BASE", "http://127.0.0.1:8080")
+API_KEY: str | None = None
 
 
-def header():
+def test_public_health_endpoint_when_server_running():
+    """Skip if no server — avoids false failures in CI or offline dev."""
+    try:
+        r = httpx.get(f"{BASE}/api/health", timeout=2.0)
+    except httpx.HTTPError:
+        pytest.skip(f"No HTTP server responding at {BASE}")
+    if r.status_code != 200:
+        pytest.skip(f"Server at {BASE} returned {r.status_code}")
+    data = r.json()
+    assert data.get("status") == "ok"
+
+
+def header() -> dict[str, str]:
+    assert API_KEY is not None
     return {"Authorization": f"Bearer {API_KEY}"}
 
 
 def run_test_health():
-    r = httpx.get(f"{BASE}/api/health")
+    r = httpx.get(f"{BASE}/api/health", timeout=10.0)
     assert r.status_code == 200 and r.json()["status"] == "ok"
     print("[PASS] GET /api/health")
 
 
 def run_test_models():
-    r = httpx.get(f"{BASE}/api/models")
+    r = httpx.get(f"{BASE}/api/models", timeout=10.0)
     assert r.status_code == 200
     models = r.json()["models"]
     assert len(models) > 0
@@ -29,7 +53,7 @@ def run_test_models():
 
 
 def run_test_auth_required():
-    r = httpx.post(f"{BASE}/api/tasks", json={"task_id": "x", "goal": "x"})
+    r = httpx.post(f"{BASE}/api/tasks", json={"task_id": "x", "goal": "x"}, timeout=10.0)
     assert r.status_code == 401
     print("[PASS] POST /api/tasks without auth -> 401")
 
@@ -53,7 +77,7 @@ def run_test_create_task():
 
 def run_test_stream(task_id: str):
     """Listen to the SSE stream for up to 120s, collect events."""
-    events = []
+    events: list[dict] = []
     print(f"[INFO] Streaming /api/tasks/{task_id}/stream ...")
     try:
         with httpx.stream(
@@ -76,13 +100,12 @@ def run_test_stream(task_id: str):
                     print(f"  [EVENT] status - {payload.get('message', '')[:80]}")
                 elif event_type == "action_result":
                     ok = payload.get("ok")
-                    out = payload.get("output", "")[:60]
+                    out = (payload.get("output") or "")[:60]
                     print(f"  [EVENT] action_result ok={ok} output={out}")
                 elif event_type == "approval_required":
                     aid = payload.get("action_id")
                     act = payload.get("action", {})
                     print(f"  [EVENT] approval_required action_id={aid} type={act.get('type')}")
-                    # Auto-approve for testing
                     approve_r = httpx.post(
                         f"{BASE}/api/approvals",
                         json={"task_id": task_id, "action_id": aid, "approve": True},
@@ -94,7 +117,7 @@ def run_test_stream(task_id: str):
                     success = payload.get("success")
                     print(f"  [EVENT] reflection success={success}")
                 elif event_type == "screenshot":
-                    print(f"  [EVENT] screenshot ({len(payload.get('data',''))} chars)")
+                    print(f"  [EVENT] screenshot ({len(payload.get('data', ''))} chars)")
                 elif event_type == "done":
                     print(f"  [EVENT] done - {payload.get('reason', payload.get('complete', ''))}")
                     break
@@ -117,15 +140,15 @@ def run_test_cancel():
         "goal": "Wait 60 seconds",
         "model": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
     }
-    r = httpx.post(f"{BASE}/api/tasks", json=body, headers=header(), timeout=30)
+    r = httpx.post(f"{BASE}/api/tasks", json=body, headers=header(), timeout=30.0)
     assert r.status_code == 200
     time.sleep(1)
-    r2 = httpx.delete(f"{BASE}/api/tasks/{task_id}", headers=header(), timeout=10)
+    r2 = httpx.delete(f"{BASE}/api/tasks/{task_id}", headers=header(), timeout=10.0)
     print(f"[INFO] DELETE /api/tasks/{task_id} status={r2.status_code} body={r2.text[:200]}")
-    print(f"[PASS] Task cancellation")
+    print("[PASS] Task cancellation")
 
 
-def main():
+def main() -> None:
     global API_KEY
     API_KEY = sys.argv[1] if len(sys.argv) > 1 else input("Paste your AGENT_API_KEY: ").strip()
 
@@ -133,12 +156,12 @@ def main():
     print("AI Computer - Integration Test Suite")
     print("=" * 60)
 
-    test_health()
-    test_models()
-    test_auth_required()
+    run_test_health()
+    run_test_models()
+    run_test_auth_required()
 
-    task_id = test_create_task()
-    events = test_stream(task_id)
+    task_id = run_test_create_task()
+    events = run_test_stream(task_id)
 
     final_types = [e.get("type") for e in events]
     if "error" in final_types:
@@ -149,7 +172,7 @@ def main():
     else:
         print(f"\n[WARN] Task stream ended without done/error. Events: {final_types}")
 
-    test_cancel()
+    run_test_cancel()
 
     print("\n" + "=" * 60)
     print("Integration tests complete.")

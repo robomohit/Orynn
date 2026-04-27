@@ -6,16 +6,25 @@ from .models import ToolError, ToolResult
 
 
 class TextEditorTool:
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, *, home_dir: Path | None = None):
         self.workspace = workspace.resolve()
+        self.home_dir = (home_dir or Path.home()).expanduser().resolve()
         self._history: dict[str, list[str]] = {}
 
+    @property
+    def allowed_roots(self) -> tuple[Path, ...]:
+        roots = [self.workspace]
+        if self.home_dir not in roots:
+            roots.append(self.home_dir)
+        return tuple(roots)
+
     def _safe_path(self, value: str) -> Path:
-        """Resolve a path and require it to stay inside the workspace."""
+        """Resolve a path and require it to stay inside an allowed root."""
         candidate = (self.workspace / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
-        if candidate == self.workspace or self.workspace in candidate.parents:
+        if any(candidate == root or root in candidate.parents for root in self.allowed_roots):
             return candidate
-        raise ToolError(f"Path escapes workspace: {value}")
+        allowed = ", ".join(str(root) for root in self.allowed_roots)
+        raise ToolError(f"Path escapes allowed roots: {value}. Allowed roots: {allowed}")
 
     def view(self, path: str, view_range: list[int] | None = None) -> ToolResult:
         p = self._safe_path(path)

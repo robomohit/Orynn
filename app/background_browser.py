@@ -44,15 +44,15 @@ class BackgroundBrowser:
                 "Install it with: pip install playwright && playwright install chromium"
             )
 
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
+        self._playwright = await asyncio.wait_for(async_playwright().start(), timeout=30)
+        self._browser = await asyncio.wait_for(self._playwright.chromium.launch(
             headless=self.headless,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 f"--window-size={self.width},{self.height}",
                 "--no-sandbox",
             ],
-        )
+        ), timeout=30)
         self._context = await self._browser.new_context(
             viewport={"width": self.width, "height": self.height},
             user_agent=(
@@ -207,8 +207,18 @@ class BackgroundBrowser:
         await self.page.go_back()
 
     async def close_page(self):
-        """Close current page and open a fresh blank one."""
-        await self._page.close()
+        """Close the current page only if it has crashed or been closed, then open a fresh blank one.
+
+        If the existing page is still alive this is a no-op, which avoids the overhead
+        of tearing down and recreating a healthy page on every call.
+        """
+        if self._page and not self._page.is_closed():
+            return
+        if self._page:
+            try:
+                await self._page.close()
+            except Exception:
+                pass
         self._page = await self._context.new_page()
         await self._page.goto("about:blank")
 

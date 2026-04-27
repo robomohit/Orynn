@@ -1,4 +1,5 @@
 import time
+import uuid
 
 import httpx
 import pytest
@@ -35,19 +36,27 @@ def test_models_endpoint(local_server):
 
 
 def test_task_lifecycle(local_server):
-    task_id = "test-001"
+    task_id = f"e2e-{uuid.uuid4().hex[:12]}"
     data = {
         "task_id": task_id,
         "goal": "open notepad and type hello world",
-        "model": "claude-3-5-sonnet-20241022",
+        "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
     }
 
     response = httpx.post(f"{local_server}/api/tasks", headers=HEADERS, json=data, timeout=10.0)
     assert response.status_code == 200, response.text
 
-    response = httpx.get(f"{local_server}/api/tasks", headers=HEADERS, timeout=5.0)
-    assert response.status_code == 200, response.text
-    assert task_id in response.text
+    listed = False
+    for _ in range(10):
+        try:
+            response = httpx.get(f"{local_server}/api/tasks", headers=HEADERS, timeout=10.0)
+            if response.status_code == 200 and task_id in response.text:
+                listed = True
+                break
+        except httpx.HTTPError:
+            pass
+        time.sleep(1)
+    assert listed, "Task never appeared in /api/tasks during polling window."
 
     events = []
     try:

@@ -31,3 +31,13 @@ def test_command_palette_rows_do_not_interpolate_model_labels_as_html():
     assert 'row.innerHTML = `<span class="cmdk-icon">' not in html
     assert "label.textContent = c.label" in html
     assert "hint.textContent = c.hint" in html
+
+
+def test_project_folder_picker_is_present_and_persisted_client_side():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    assert 'id="project-folder-trigger"' in html
+    assert 'id="project-folder-modal"' in html
+    assert "PROJECT_FOLDER_STORAGE_KEY" in html
+    assert "localStorage.setItem(PROJECT_FOLDER_STORAGE_KEY" in html
+    assert "project-folder-clear" in html

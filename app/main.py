@@ -8,7 +8,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -26,10 +26,27 @@ _sessions: Dict[str, datetime] = {}
 
 from contextlib import asynccontextmanager
 
+import logging as _logging
+_lifespan_log = _logging.getLogger(__name__)
+
 @asynccontextmanager
 async def _lifespan(application):
     from .mcp_manager import mcp_manager
-    asyncio.create_task(mcp_manager.initialize_default_servers(str(Path(".").absolute())))
+
+    async def _init_mcp():
+        try:
+            await asyncio.wait_for(
+                mcp_manager.initialize_default_servers(str(HOME_DIR)),
+                timeout=15.0,
+            )
+        except asyncio.TimeoutError:
+            _lifespan_log.warning(
+                "MCP server initialization timed out after 15 s — continuing without MCP servers."
+            )
+        except Exception as exc:
+            _lifespan_log.warning("MCP server initialization failed: %s", exc)
+
+    asyncio.create_task(_init_mcp())
     yield
     # Shutdown: clean up background browsers
     await service.shutdown()
@@ -72,6 +89,65 @@ workspace_dir.mkdir(parents=True, exist_ok=True)
 (workspace_dir / "logs").mkdir(parents=True, exist_ok=True)
 task_store_dir = workspace_dir / "tasks"
 task_store_dir.mkdir(parents=True, exist_ok=True)
+HOME_DIR = Path.home().resolve()
+SHORTCUT_DIRS = {
+    "home": HOME_DIR,
+    "desktop": HOME_DIR / "Desktop",
+    "downloads": HOME_DIR / "Downloads",
+    "repo": workspace_dir.resolve(),
+}
+
+
+def _resolve_project_folder(raw_path: Optional[str]) -> Optional[Path]:
+    if raw_path is None or not str(raw_path).strip():
+        return None
+    raw = str(raw_path).strip()
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = (workspace_dir / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+    if not candidate.exists():
+        raise HTTPException(status_code=422, detail=f"Project folder does not exist: {candidate}")
+    if not candidate.is_dir():
+        raise HTTPException(status_code=422, detail=f"Project folder is not a directory: {candidate}")
+    return candidate
+
+
+def _build_task_environment(workspace: Path, *, project_folder_selected: bool) -> Dict[str, Any]:
+    import platform
+
+    workspace = workspace.resolve()
+    return {
+        "os": platform.system(),
+        "platform": platform.platform(),
+        "home": str(HOME_DIR),
+        "workspace": str(workspace),
+        "desktop": str(HOME_DIR / "Desktop"),
+        "downloads": str(HOME_DIR / "Downloads"),
+        "documents": str(HOME_DIR / "Documents"),
+        "user": os.environ.get("USERNAME", os.environ.get("USER", "unknown")),
+        "python": "python" if platform.system() == "Windows" else "python3",
+        "project_folder_selected": project_folder_selected,
+    }
+
+
+def _display_name(path: Path) -> str:
+    name = path.name.rstrip("\\/")
+    if name:
+        return name
+    anchor = path.anchor.rstrip("\\/")
+    return anchor or str(path)
+
+
+def _breadcrumbs(path: Path) -> List[Dict[str, str]]:
+    resolved = path.resolve()
+    breadcrumbs: List[Dict[str, str]] = []
+    current: Optional[Path] = None
+    for part in resolved.parts:
+        current = Path(part) if current is None else current / part
+        breadcrumbs.append({"name": _display_name(current), "path": str(current)})
+    return breadcrumbs
 
 
 def _cleanup_orphan_tmp_files() -> int:
@@ -176,7 +252,8 @@ def _load_persisted_tasks() -> Dict[str, TaskRecord]:
     for meta_file in task_store_dir.glob("*.json"):
         try:
             record = TaskRecord.model_validate(json.loads(meta_file.read_text(encoding="utf-8")))
-        except Exception:
+        except Exception as exc:
+            print(f"[AI_Computer] Skipped malformed task record {meta_file.name}: {exc}", flush=True)
             continue
 
         if record.status in {"running", "paused", "pending"}:
@@ -285,6 +362,7 @@ class TaskIn(BaseModel):
     screen_height: int = 800
     isolated_app: Optional[str] = None  # partial window title to target in isolated mode
     active_skills: List[str] = []
+    project_folder: Optional[str] = None
 
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
@@ -347,6 +425,7 @@ async def get_skills():
 @app.get("/api/mcp")
 async def get_mcp():
     from .mcp_manager import mcp_manager
+    await mcp_manager.initialize_default_servers(mcp_manager._workspace_path or str(HOME_DIR))
     servers = []
     for name, srv in mcp_manager.servers.items():
         servers.append({
@@ -377,6 +456,56 @@ async def config():
         "authenticated": False,
         "session_endpoint": "/api/session",
         "session_ttl_seconds": SESSION_TTL_SECONDS,
+        "home_directory": str(HOME_DIR),
+        "workspace_directory": str(workspace_dir.resolve()),
+        "project_folder_shortcuts": {name: str(path) for name, path in SHORTCUT_DIRS.items() if path.exists()},
+    }
+
+
+@app.get("/api/browse-directory", dependencies=[Depends(verify_token)])
+async def browse_directory(path: Optional[str] = None, max_entries: int = 240):
+    current = _resolve_project_folder(path) if path else HOME_DIR
+    if current is None:
+        current = HOME_DIR
+    if not current.exists() or not current.is_dir():
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    entries = []
+    truncated = False
+    try:
+        children = sorted(current.iterdir(), key=lambda child: (not child.is_dir(), child.name.lower()))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=f"Cannot open directory: {exc}") from exc
+
+    for child in children:
+        if len(entries) >= max(25, min(max_entries, 500)):
+            truncated = True
+            break
+        try:
+            stat = child.stat()
+        except OSError:
+            continue
+        entries.append({
+            "name": child.name or str(child),
+            "path": str(child.resolve()),
+            "is_dir": child.is_dir(),
+            "size": None if child.is_dir() else stat.st_size,
+            "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+        })
+
+    parent = current.parent if current.parent != current else None
+    return {
+        "path": str(current),
+        "name": _display_name(current),
+        "parent": str(parent) if parent else None,
+        "breadcrumbs": _breadcrumbs(current),
+        "entries": entries,
+        "truncated": truncated,
+        "shortcuts": [
+            {"id": name, "label": _display_name(shortcut), "path": str(shortcut)}
+            for name, shortcut in SHORTCUT_DIRS.items()
+            if shortcut.exists()
+        ],
     }
 
 _ALL_MODELS = [
@@ -512,6 +641,13 @@ async def create_task(body: TaskIn):
                 detail=f"Model '{selected_model}' requires {required_key} to be set in your .env file."
             )
 
+    selected_project_folder = _resolve_project_folder(body.project_folder)
+    effective_workspace = selected_project_folder or HOME_DIR
+    environment = _build_task_environment(
+        effective_workspace,
+        project_folder_selected=selected_project_folder is not None,
+    )
+
     try:
         print(f"[API] Initializing task {body.task_id}...", flush=True)
         record = service.init_task(
@@ -523,6 +659,8 @@ async def create_task(body: TaskIn):
             mode=body.mode or "auto",
             isolated_app=body.isolated_app,
             active_skills=body.active_skills,
+            project_folder=str(selected_project_folder) if selected_project_folder else None,
+            environment=environment,
         )
         _tasks[body.task_id] = record
         _save_task_record(record)
@@ -532,6 +670,7 @@ async def create_task(body: TaskIn):
             "model": selected_model,
             "mode": record.mode,
             "created_at": record.created_at,
+            "project_folder": record.context.project_folder,
         })
         print(f"[API] Task {body.task_id} initialized successfully", flush=True)
         return {"task_id": body.task_id, "status": "running"}
@@ -632,7 +771,8 @@ async def retry_task(task_id: str):
     record = _get_task_record(task_id)
     if not record:
         raise HTTPException(status_code=404, detail="Task not found")
-    new_task_id = f"{task_id}-retry-{int(time.time())}"
+    _retry_suffix = f"-retry-{int(time.time())}"
+    new_task_id = f"{task_id[:128 - len(_retry_suffix)]}{_retry_suffix}"
     model = record.model
     mode = record.mode or "auto"
     goal = record.goal or record.context.goal
@@ -645,6 +785,10 @@ async def retry_task(task_id: str):
         screen_height=record.context.screen_height,
         model=model or "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
         mode=mode,
+        isolated_app=record.context.isolated_app,
+        active_skills=record.context.active_skills,
+        project_folder=record.context.project_folder,
+        environment=record.context.environment,
     )
     _tasks[new_task_id] = new_record
     _save_task_record(new_record)
@@ -655,6 +799,7 @@ async def retry_task(task_id: str):
         "mode": new_record.mode,
         "created_at": new_record.created_at,
         "retried_from": task_id,
+        "project_folder": new_record.context.project_folder,
     })
     return {"task_id": new_task_id, "status": "running", "retried_from": task_id}
 

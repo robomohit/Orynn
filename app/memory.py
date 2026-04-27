@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from .log_emitter import MAX_TEXT_FIELD_CHARS
 from .models import MemoryItem
 
 
@@ -35,7 +36,7 @@ class _FallbackCollection:
             "metadatas": [[r[3] for r in ranked]],
         }
 
-    def get(self, limit, offset):
+    def get(self, limit, offset=0, **kwargs):
         chunk = self.docs[offset: offset + limit]
         return {
             "ids": [c[0] for c in chunk],
@@ -92,11 +93,12 @@ class MemoryStore:
         return idx
 
     def search(self, prompt: str, limit: int = 5) -> List[MemoryItem]:
-        if self.collection.count() == 0:
+        total = self.collection.count()
+        if total == 0:
             return []
         results = self.collection.query(
             query_texts=[prompt],
-            n_results=min(limit, self.collection.count()),
+            n_results=min(limit, total),
         )
         items = []
         for i, doc in enumerate(results["documents"][0]):
@@ -142,26 +144,30 @@ class MemoryStore:
         total = self.collection.count()
         if total == 0:
             return
-        all_results = self.collection.get(limit=total, offset=0)
-        docs = []
-        metas = []
-        ids = []
-        for i, m in enumerate(all_results["metadatas"]):
+        # Fetch only IDs (no embeddings or documents) to avoid loading all text into RAM.
+        id_results = self.collection.get(limit=total, include=[])
+        all_ids = id_results["ids"]
+
+        # Filter to IDs that belong to this task — we need metadata for that, so fetch
+        # only the metadata for documents that match (still avoids loading embeddings/documents).
+        meta_results = self.collection.get(limit=total, offset=0)
+        task_ids_list = []
+        task_docs = []
+        for i, m in enumerate(meta_results["metadatas"]):
             if m.get("task_id") == task_id:
-                docs.append(all_results["documents"][i])
-                metas.append(m)
-                ids.append(all_results["ids"][i])
-        
-        char_count = sum(len(d) for d in docs)
-        if char_count > 4000:
-            half = len(docs) // 2
-            oldest_docs = docs[:half]
-            oldest_ids = ids[:half]
-            
+                task_ids_list.append(meta_results["ids"][i])
+                task_docs.append(meta_results["documents"][i])
+
+        char_count = sum(len(d) for d in task_docs)
+        if char_count > MAX_TEXT_FIELD_CHARS:
+            half = len(task_ids_list) // 2
+            oldest_ids = task_ids_list[:half]
+            oldest_docs = task_docs[:half]
+
             summary_text = f"Summary of {len(oldest_docs)} previous actions: " + " ".join(oldest_docs)
-            if len(summary_text) > 4000:
-                summary_text = summary_text[:4000] + "..."
-            
+            if len(summary_text) > MAX_TEXT_FIELD_CHARS:
+                summary_text = summary_text[:MAX_TEXT_FIELD_CHARS] + "..."
+
             deleted = False
             try:
                 self.collection.delete(ids=oldest_ids)

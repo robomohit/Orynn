@@ -128,9 +128,10 @@ def _validate_public_http_url(url: str) -> str:
 
 
 class ToolExecutor:
-    def __init__(self, workspace: Path, text_editor=None, plugin_registry=None):
+    def __init__(self, workspace: Path, text_editor=None, plugin_registry=None, *, home_dir: Optional[Path] = None):
         self.workspace = workspace.resolve()
-        self.text_editor = TextEditorTool(workspace)
+        self.home_dir = (home_dir or Path.home()).expanduser().resolve()
+        self.text_editor = text_editor or TextEditorTool(self.workspace, home_dir=self.home_dir)
         self.plugin_registry = plugin_registry
         self._bash_cwd = self.workspace
         # Background browser for sandboxed GUI — set by AgentService
@@ -139,6 +140,13 @@ class ToolExecutor:
         self._background_mode = True
         self._isolated_hwnd = None
         self._isolated_app = None
+
+    @property
+    def allowed_roots(self) -> tuple[Path, ...]:
+        roots = [self.workspace]
+        if self.home_dir not in roots:
+            roots.append(self.home_dir)
+        return tuple(roots)
 
     def _read_text_file(self, path: Path) -> str:
         """Read text robustly on Windows, preferring UTF-8 but tolerating legacy files."""
@@ -196,11 +204,16 @@ class ToolExecutor:
         return None
 
     def _safe_path(self, value: str) -> Path:
-        """Resolve a path and require it to stay inside the workspace."""
-        candidate = (self.workspace / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
-        if candidate == self.workspace or self.workspace in candidate.parents:
-            return candidate
-        raise ToolError(f"Path escapes workspace: {value}")
+        """Resolve a path within the preferred project folder or the user's home directory."""
+        raw = Path((value or ".")).expanduser()
+        candidate = (self.workspace / raw).resolve() if not raw.is_absolute() else raw.resolve()
+        for root in self.allowed_roots:
+            if candidate == root or root in candidate.parents:
+                return candidate
+        raise ToolError(
+            f"Path escapes allowed roots: {value}. Allowed roots: "
+            + ", ".join(str(root) for root in self.allowed_roots)
+        )
 
     def _scale(self, x: int, y: int, sw: int, sh: int):
         """Scale coordinates — in background mode, use browser viewport directly."""
@@ -291,10 +304,16 @@ class ToolExecutor:
             if path_paste:
                 return path_paste
 
+            # Prefer clipboard paste — much faster than char-by-char PostMessage
+            clipboard_result = self._paste_via_clipboard(text, isolated=True)
+            if clipboard_result and clipboard_result.ok:
+                return clipboard_result
+
+            # Fallback: char-by-char PostMessage (slow but always works)
             import win32gui
             for char in text:
                 win32gui.PostMessage(hwnd, win32con.WM_CHAR, ord(char), 0)
-                time.sleep(0.05) # Rate limited for stability
+                time.sleep(0.05)  # Rate limited for stability
             return ToolResult(ok=True, output='Sent keys to window (Isolated)')
         except Exception as e:
             return ToolResult(ok=False, output=f'Isolated typing failed: {str(e)}')
@@ -579,8 +598,12 @@ class ToolExecutor:
             return ToolResult(ok=False, output="plyer not installed")
 
     def wait_action(self, seconds: float):
+        requested = float(seconds)
+        seconds = min(requested, 60.0)
         time.sleep(seconds)
-        return ToolResult(ok=True, output=f"Waited {seconds} seconds")
+        if seconds < requested:
+            return ToolResult(ok=True, output=f"Waited {seconds:.1f}s (capped from {requested:.1f}s; max is 60s)")
+        return ToolResult(ok=True, output=f"Waited {seconds:.1f} seconds")
 
     def ocr_image(self):
         if not pytesseract:
@@ -751,6 +774,7 @@ class ToolExecutor:
         on_chunk: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
         include_cwd: bool = False,
     ) -> ToolResult:
+        proc = None
         try:
             proc = await asyncio.create_subprocess_shell(
                 command,
@@ -759,7 +783,9 @@ class ToolExecutor:
                 stderr=asyncio.subprocess.PIPE,
             )
 
+            _MAX_CHUNK_BYTES = 10 * 1024 * 1024  # 10 MB cap; prevents OOM on long-running commands
             chunks: list[str] = []
+            _accumulated = [0]  # mutable cell shared across both pump coroutines
 
             async def _pump(stream, channel: str):
                 while True:
@@ -767,7 +793,11 @@ class ToolExecutor:
                     if not chunk:
                         break
                     text = chunk.decode("utf-8", errors="replace")
-                    chunks.append(text)
+                    if _accumulated[0] < _MAX_CHUNK_BYTES:
+                        chunks.append(text)
+                        _accumulated[0] += len(text)
+                        if _accumulated[0] >= _MAX_CHUNK_BYTES:
+                            chunks.append(f"\n[... output truncated at {_MAX_CHUNK_BYTES // 1_048_576} MB ...]\n")
                     if on_chunk:
                         await on_chunk({"channel": channel, "output": text})
 
@@ -777,18 +807,42 @@ class ToolExecutor:
             if include_cwd:
                 output = f"{output}\nCWD:\n{cwd}"
             return ToolResult(ok=returncode == 0, output=output or "(no output)")
+        except asyncio.CancelledError:
+            # Outer wait_for timed out — kill the child so it doesn't become an orphan
+            if proc is not None:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            raise
         except asyncio.TimeoutError:
+            # Defensive: raised if a caller uses asyncio.wait_for on Python <3.11
+            if proc is not None:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
             return ToolResult(ok=False, output="Command timed out.")
         except Exception as e:
             return ToolResult(ok=False, output=str(e))
 
+    _MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB hard cap for read/write
+
     def read_file(self, path: str):
         p = self._safe_path(path)
+        try:
+            size = p.stat().st_size
+            if size > self._MAX_FILE_BYTES:
+                return ToolResult(ok=False, output=f"File too large to read ({size / 1_048_576:.1f} MB); max 50 MB.")
+        except OSError:
+            pass  # non-existent file — let read_bytes raise naturally
         return ToolResult(ok=True, output=self._read_text_file(p))
 
     def write_file(self, path: str, content: str):
         # LLMs often over-escape newlines in JSON strings as literal \n
         content = content.replace("\\n", "\n").replace("\\t", "\t")
+        if len(content.encode('utf-8')) > self._MAX_FILE_BYTES:
+            return ToolResult(ok=False, output="Content too large to write (max 50 MB).")
         p = self._safe_path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
@@ -803,7 +857,7 @@ class ToolExecutor:
     def system_info(self):
         """Return OS info, home dir, workspace, and common folder paths."""
         import platform
-        home = Path.home()
+        home = self.home_dir
         info = {
             "os": platform.system(),
             "platform": platform.platform(),
@@ -816,8 +870,57 @@ class ToolExecutor:
             "user": os.environ.get("USERNAME", os.environ.get("USER", "unknown")),
             "python": "python" if platform.system() == "Windows" else "python3",
             "background_mode": self._background_mode,
+            "allowed_roots": [str(root) for root in self.allowed_roots],
         }
         return ToolResult(ok=True, output=json.dumps(info, indent=2))
+
+    async def list_mcp_servers(self) -> ToolResult:
+        from .mcp_manager import mcp_manager
+
+        await mcp_manager.initialize_default_servers(str(self.workspace))
+        if not mcp_manager.servers:
+            return ToolResult(ok=True, output="No MCP servers are currently registered.")
+
+        lines = []
+        for name, server in sorted(mcp_manager.servers.items()):
+            tool_count = len(getattr(server, "tools", []) or [])
+            cmd_preview = " ".join(server.cmd[:4])
+            if len(server.cmd) > 4:
+                cmd_preview += " ..."
+            lines.append(f"{name}: {tool_count} tools | {cmd_preview}")
+        return ToolResult(ok=True, output="\n".join(lines))
+
+    async def list_mcp_tools(self, server_name: str) -> ToolResult:
+        from .mcp_manager import mcp_manager
+
+        await mcp_manager.initialize_default_servers(str(self.workspace))
+        server = mcp_manager.servers.get(server_name)
+        if server is None:
+            raise ToolError(f"MCP server not registered: {server_name}")
+
+        tools = getattr(server, "tools", []) or []
+        if not tools:
+            return ToolResult(ok=True, output=f"{server_name} exposes no MCP tools.")
+
+        lines = []
+        for tool in tools:
+            name = str(tool.get("name", "")).strip()
+            if not name:
+                continue
+            description = str(tool.get("description", "")).strip()
+            input_schema = tool.get("inputSchema")
+            schema_hint = ""
+            if isinstance(input_schema, dict):
+                props = input_schema.get("properties")
+                if isinstance(props, dict) and props:
+                    schema_hint = " args: " + ", ".join(sorted(str(key) for key in props.keys()))
+            line = name
+            if description:
+                line += f" — {description}"
+            if schema_hint:
+                line += schema_hint
+            lines.append(line)
+        return ToolResult(ok=True, output="\n".join(lines) if lines else f"{server_name} exposes no named MCP tools.")
 
     def list_directory(self, path: str, max_depth: int = 2):
         """List directory contents. Accepts absolute or workspace-relative paths."""
@@ -828,19 +931,26 @@ class ToolExecutor:
             return ToolResult(ok=False, output=f"Not a directory: {path}")
         entries = []
         root_depth = len(p.parts)
-        for item in sorted(p.iterdir()):
-            depth = len(item.parts) - root_depth
+        for dirpath, dirnames, filenames in os.walk(p):
+            current = Path(dirpath)
+            depth = len(current.parts) - root_depth
             if depth > max_depth:
+                dirnames[:] = []  # prune — don't recurse past max_depth
                 continue
-            prefix = "📁 " if item.is_dir() else "📄 "
-            size = ""
-            if item.is_file():
+            dirnames.sort()
+            if depth > 0:
+                indent = "  " * (depth - 1)
+                entries.append(f"{indent}📁 {current.name}/")
+            file_indent = "  " * depth
+            for fname in sorted(filenames):
+                fpath = current / fname
+                size = ""
                 try:
-                    sz = item.stat().st_size
+                    sz = fpath.stat().st_size
                     size = f" ({sz:,} bytes)" if sz < 1_000_000 else f" ({sz/1_000_000:.1f} MB)"
                 except OSError:
                     pass
-            entries.append(f"{prefix}{item.name}{size}")
+                entries.append(f"{file_indent}📄 {fname}{size}")
         if not entries:
             entries = ["(empty directory)"]
         header = f"Directory: {p}\n{'─' * 40}"
@@ -861,12 +971,25 @@ class ToolExecutor:
                 raise ToolError("Glob pattern escaped workspace.")
         return ToolResult(ok=True, output="\n".join(rel_matches) if rel_matches else "No matches found.")
 
+    GREP_SKIP_DIRS = {
+        '.git', 'node_modules', '__pycache__', '.venv', 'venv',
+        'dist', 'build', '.next', '.cache', 'coverage', 'htmlcov',
+    }
+
     def file_grep(self, pattern: str, directory: str = "."):
         import re
         p = self._safe_path(directory)
         matches = []
-        regex = re.compile(pattern)
-        for root, _, files in os.walk(p):
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return ToolResult(ok=False, output=f"Invalid regex pattern: {exc}")
+        for root, dirnames, files in os.walk(p):
+            # Prune directories we never want to search
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in self.GREP_SKIP_DIRS and not d.endswith('.egg-info')
+            ]
             for file in files:
                 filepath = Path(root) / file
                 try:
@@ -1179,6 +1302,7 @@ class ToolExecutor:
         "web_fetch":      ["url"],
         "web_search":     ["query"],
         "kill_process":   ["pid"],
+        "list_mcp_tools": ["server_name"],
         "mcp_tool":       ["server_name", "tool_name"],
         "git":            ["command"],
         "lint_code":      ["path"],
@@ -1254,6 +1378,18 @@ class ToolExecutor:
                 return ToolResult(ok=True, output=res)
             except Exception as e:
                 return ToolResult(ok=False, output=f"Error executing MCP tool: {str(e)}")
+
+        if action.type == ActionType.list_mcp_servers:
+            try:
+                return await self.list_mcp_servers()
+            except Exception as e:
+                return ToolResult(ok=False, output=f"Error listing MCP servers: {str(e)}")
+
+        if action.type == ActionType.list_mcp_tools:
+            try:
+                return await self.list_mcp_tools(action.args["server_name"])
+            except Exception as e:
+                return ToolResult(ok=False, output=f"Error listing MCP tools: {str(e)}")
 
         handlers = {
             ActionType.mouse_move: lambda a: self.mouse_move(a.args["x"], a.args["y"], sw, sh),

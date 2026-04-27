@@ -4,6 +4,7 @@ import json
 import subprocess
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
 
@@ -157,45 +158,144 @@ class MCPManager:
     def __init__(self):
         self.servers: Dict[str, MCPServer] = {}
         self._is_ready = False
+        self._workspace_path: Optional[str] = None
+
+    def _builtin_specs(self, workspace_path: str) -> List[Dict[str, Any]]:
+        specs: List[Dict[str, Any]] = [
+            {
+                "name": "filesystem",
+                "cmd": ["npx", "-y", "@modelcontextprotocol/server-filesystem", workspace_path],
+            }
+        ]
+        if os.environ.get("EXA_API_KEY"):
+            specs.append({"name": "exa", "cmd": ["npx", "-y", "@modelcontextprotocol/server-exa"]})
+        if os.environ.get("FIGMA_ACCESS_TOKEN"):
+            specs.append({"name": "figma", "cmd": ["npx", "-y", "@modelcontextprotocol/server-figma"]})
+        if os.environ.get("TAVILY_API_KEY"):
+            specs.append({"name": "tavily", "cmd": ["npx", "-y", "@tavily/mcp-server"]})
+        if os.environ.get("SLACK_BOT_TOKEN"):
+            specs.append({"name": "slack", "cmd": ["npx", "-y", "@modelcontextprotocol/server-slack"]})
+        return specs
+
+    def _definition_paths(self, workspace_path: str) -> List[Path]:
+        candidates: List[Path] = []
+        env_path = os.environ.get("AI_COMPUTER_MCP_CONFIG")
+        if env_path:
+            candidates.append(Path(env_path).expanduser())
+
+        workspace = Path(workspace_path)
+        candidates.extend([
+            workspace / "mcp_servers.json",
+            workspace / "mcp_servers.local.json",
+            Path.cwd() / "mcp_servers.json",
+            Path.cwd() / "mcp_servers.local.json",
+        ])
+
+        unique: List[Path] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            try:
+                resolved = str(candidate.resolve())
+            except OSError:
+                resolved = str(candidate)
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if candidate.exists():
+                unique.append(candidate)
+        return unique
+
+    def _expand_value(self, value: Any, workspace_path: str) -> Any:
+        if isinstance(value, str):
+            home = str(Path.home().resolve())
+            return (
+                value.replace("${workspace}", workspace_path)
+                .replace("${home}", home)
+            )
+        if isinstance(value, list):
+            return [self._expand_value(item, workspace_path) for item in value]
+        if isinstance(value, dict):
+            return {str(key): str(self._expand_value(val, workspace_path)) for key, val in value.items()}
+        return value
+
+    def _load_dynamic_specs(self, workspace_path: str) -> List[Dict[str, Any]]:
+        specs: List[Dict[str, Any]] = []
+        for config_path in self._definition_paths(workspace_path):
+            try:
+                payload = json.loads(config_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                _log.warning("Failed to parse MCP config %s: %s", config_path, exc)
+                continue
+
+            raw_specs = payload.get("servers", []) if isinstance(payload, dict) else payload
+            if not isinstance(raw_specs, list):
+                _log.warning("Ignoring MCP config %s because 'servers' is not a list.", config_path)
+                continue
+
+            for raw_spec in raw_specs:
+                if not isinstance(raw_spec, dict):
+                    continue
+                if raw_spec.get("enabled", True) is False:
+                    continue
+                name = str(raw_spec.get("name", "")).strip()
+                cmd = self._expand_value(raw_spec.get("cmd", []), workspace_path)
+                env = self._expand_value(raw_spec.get("env", {}), workspace_path)
+                if not name or not isinstance(cmd, list) or not all(isinstance(part, str) and part for part in cmd):
+                    _log.warning("Skipping invalid MCP server definition in %s: %s", config_path, raw_spec)
+                    continue
+                specs.append({"name": name, "cmd": cmd, "env": env if isinstance(env, dict) else {}})
+        return specs
 
     async def initialize_default_servers(self, workspace_path: str):
-        if self._is_ready: return
-        
-        tasks = []
-        
-        # 1. Filesystem (Local)
-        tasks.append(self.register_server(
-            "filesystem", 
-            ["npx", "-y", "@modelcontextprotocol/server-filesystem", workspace_path]
-        ))
-        
-        # 2. Windows-MCP (Local OS control)
-        # Assuming the npx package is @smithery/cli run windows-mcp or similar, but let's use a safe fallback.
-        # Actually, let's use the standard ones available.
-        # Let's skip Windows-MCP if it's not a standard npx package, or we can assume it's `npx -y windows-mcp`
-        
-        # 2. Exa Search
-        if os.environ.get("EXA_API_KEY"):
-            tasks.append(self.register_server("exa", ["npx", "-y", "@modelcontextprotocol/server-exa"]))
+        workspace_path = str(Path(workspace_path).expanduser().resolve())
+        desired_specs = self._builtin_specs(workspace_path) + self._load_dynamic_specs(workspace_path)
+        desired: Dict[str, Dict[str, Any]] = {
+            spec["name"]: {"cmd": spec["cmd"], "env": spec.get("env", {})}
+            for spec in desired_specs
+        }
 
-        # 3. Figma
-        if os.environ.get("FIGMA_ACCESS_TOKEN"):
-            tasks.append(self.register_server("figma", ["npx", "-y", "@modelcontextprotocol/server-figma"]))
+        stale_names = [name for name in self.servers if name not in desired]
+        for name in stale_names:
+            server = self.servers.pop(name, None)
+            if server:
+                try:
+                    await server.stop()
+                except Exception as exc:
+                    _log.warning("Failed to stop stale MCP server %s: %s", name, exc)
 
-        # 4. Tavily
-        if os.environ.get("TAVILY_API_KEY"):
-            tasks.append(self.register_server("tavily", ["npx", "-y", "@tavily/mcp-server"]))
-            
-        # 5. Slack
-        if os.environ.get("SLACK_BOT_TOKEN"):
-            tasks.append(self.register_server("slack", ["npx", "-y", "@modelcontextprotocol/server-slack"]))
+        start_specs: List[Dict[str, Any]] = []
+        start_tasks = []
+        for name, spec in desired.items():
+            existing = self.servers.get(name)
+            should_restart = bool(
+                existing
+                and (
+                    existing.cmd != spec["cmd"]
+                    or existing.env != spec["env"]
+                    or existing.proc is None
+                    or existing.proc.poll() is not None
+                )
+            )
+            if should_restart:
+                try:
+                    await existing.stop()
+                except Exception as exc:
+                    _log.warning("Failed to restart MCP server %s cleanly: %s", name, exc)
+                self.servers.pop(name, None)
+                existing = None
 
-        for task in tasks:
-            try:
-                await task
-            except Exception as e:
-                _log.warning(f"Failed to start MCP server: {e}")
-                
+            if existing:
+                continue
+
+            start_specs.append({"name": name, **spec})
+            start_tasks.append(self.register_server(name, spec["cmd"], spec.get("env")))
+
+        results = await asyncio.gather(*start_tasks, return_exceptions=True)
+        for spec, result in zip(start_specs, results):
+            if isinstance(result, Exception):
+                _log.warning("Failed to start MCP server %s: %s", spec["name"], result)
+
+        self._workspace_path = workspace_path
         self._is_ready = True
 
     async def register_server(self, name: str, cmd: list[str], env: Optional[Dict[str, str]] = None):

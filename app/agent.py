@@ -108,7 +108,8 @@ class SubTaskWorker:
         actions_taken: List[Dict[str, Any]] = []
         is_coding = self.mode == "coding"
         is_computer_use = self.mode == "computer_use"
-        is_isolated = self.mode == "computer_isolated" or bool(self.agent_service.tools.resolve_isolated_hwnd())
+        tools = self.agent_service._get_task_tools(self.task_id)
+        is_isolated = self.mode == "computer_isolated" or bool(tools.resolve_isolated_hwnd())
 
         try:
             for action_data in self.sub_task.actions:
@@ -170,6 +171,8 @@ class SubTaskWorker:
                 # Tool Execution
                 timeout = 300.0 if is_coding else 120.0
                 async def _stream_chunk(chunk: Dict[str, Any]):
+                    if isinstance(chunk, str):
+                        chunk = {"output": chunk, "channel": "stdout"}
                     await self._emit("terminal_output", {
                         "command": action.args.get("command", ""),
                         "output": chunk.get("output", ""),
@@ -181,7 +184,7 @@ class SubTaskWorker:
 
                 try:
                     res = await asyncio.wait_for(
-                        self.agent_service.tools.run_action(action, sw=self.screen_width, sh=self.screen_height, on_stream=_stream_chunk),
+                        tools.run_action(action, sw=self.screen_width, sh=self.screen_height, on_stream=_stream_chunk),
                         timeout=timeout
                     )
                 except Exception as e:
@@ -224,7 +227,7 @@ class SubTaskWorker:
                     if action.type in _SCREENSHOT_ACTIONS or action.type == ActionType.screenshot:
                         if is_isolated:
                             from .providers import _capture_hwnd_screenshot_b64
-                            hwnd = self.agent_service.tools._isolated_hwnd
+                            hwnd = tools.resolve_isolated_hwnd()
                             screenshot = res.base64_image or _capture_hwnd_screenshot_b64(hwnd)
                             shot_payload: Dict[str, Any] = {"data": screenshot, "isolated": True}
                         else:
@@ -265,7 +268,7 @@ class SubTaskWorker:
                             explanation=retry_data.get("explanation", "Retry action"),
                         )
                         retry_res = await asyncio.wait_for(
-                            self.agent_service.tools.run_action(retry_action, sw=self.screen_width, sh=self.screen_height),
+                            tools.run_action(retry_action, sw=self.screen_width, sh=self.screen_height),
                             timeout=300.0 if is_coding else 120.0,
                         )
                         retry_results.append(retry_res.output)
@@ -315,14 +318,17 @@ class SubTaskWorker:
 
 class AgentService:
     def __init__(self, workspace: Path, log_emitter: LogEmitter):
-        self.workspace = workspace
+        self.workspace = workspace.resolve()
+        self.home_dir = Path.home().resolve()
         self.log_emitter = log_emitter
-        self.memory = MemoryStore(workspace)
+        self.memory = MemoryStore(self.workspace)
         self.safety = SafetyManager()
         self.permissions = PermissionStore()
         self.plugin_registry = PluginRegistry()
         self.plugin_registry.load_defaults()
-        self.tools = ToolExecutor(workspace, plugin_registry=self.plugin_registry)
+        self.tools = ToolExecutor(self.workspace, plugin_registry=self.plugin_registry, home_dir=self.home_dir)
+        self._task_tools: Dict[str, ToolExecutor] = {}
+        self._task_environments: Dict[str, Dict[str, Any]] = {}
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._paused_tasks: set[str] = set()
         self._approvals: Dict[str, asyncio.Future] = {}
@@ -337,6 +343,17 @@ class AgentService:
         # even if Python crashes or is terminated without running the finally block
         import atexit
         atexit.register(self._sync_emergency_cleanup)
+
+    def _create_task_tools(self, workspace: Path) -> ToolExecutor:
+        return ToolExecutor(workspace, plugin_registry=self.plugin_registry, home_dir=self.home_dir)
+
+    def _assign_task_tools(self, task_id: str, workspace: Path) -> ToolExecutor:
+        tools = self._create_task_tools(workspace.resolve())
+        self._task_tools[task_id] = tools
+        return tools
+
+    def _get_task_tools(self, task_id: str) -> ToolExecutor:
+        return self._task_tools.get(task_id, self.tools)
 
     def kill_task(self, task_id: str):
         """Mark a task for immediate termination."""
@@ -401,13 +418,53 @@ class AgentService:
                 raise TimeoutError(f"Timed out waiting for {stream_name} response from model.") from exc
             yield item
 
-    def init_task(self, task_id: str, goal: str, screen_width: int = 1280, screen_height: int = 800, model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free", mode: str = "auto", isolated_app: Optional[str] = None, token_budget: int = TOKEN_BUDGET_DEFAULT, active_skills: List[str] = []) -> TaskRecord:
+    def init_task(
+        self,
+        task_id: str,
+        goal: str,
+        screen_width: int = 1280,
+        screen_height: int = 800,
+        model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+        mode: str = "auto",
+        isolated_app: Optional[str] = None,
+        token_budget: int = TOKEN_BUDGET_DEFAULT,
+        active_skills: Optional[List[str]] = None,
+        project_folder: Optional[str] = None,
+        environment: Optional[Dict[str, Any]] = None,
+    ) -> TaskRecord:
+        active_skills = list(active_skills or [])
         detected_mode = detect_task_mode(goal, mode if mode != "auto" else None)
         if detected_mode == "computer_isolated" and not isolated_app:
             isolated_app = infer_isolated_app_name(goal)
-        context = AgentContext(goal=goal, screen_width=screen_width, screen_height=screen_height, isolated_app=isolated_app, active_skills=active_skills)
+        task_workspace = Path(project_folder).expanduser().resolve() if project_folder else self.home_dir
+        self._assign_task_tools(task_id, task_workspace)
+        environment_payload = dict(environment or {})
+        self._task_environments[task_id] = environment_payload
+        context = AgentContext(
+            goal=goal,
+            screen_width=screen_width,
+            screen_height=screen_height,
+            isolated_app=isolated_app,
+            active_skills=active_skills,
+            project_folder=str(task_workspace) if project_folder else None,
+            environment=environment_payload,
+        )
         record = TaskRecord(id=task_id, status="running", context=context, goal=goal, model=model, mode=detected_mode)
-        self._active_tasks[task_id] = asyncio.create_task(self.run_task(task_id, goal, screen_width, screen_height, model, detected_mode, isolated_app=isolated_app, token_budget=token_budget, active_skills=active_skills))
+        self._active_tasks[task_id] = asyncio.create_task(
+            self.run_task(
+                task_id,
+                goal,
+                screen_width,
+                screen_height,
+                model,
+                detected_mode,
+                isolated_app=isolated_app,
+                token_budget=token_budget,
+                active_skills=active_skills,
+                project_folder=str(task_workspace) if project_folder else None,
+                environment=environment_payload,
+            )
+        )
         return record
 
     async def _check_token_budget(self, task_id: str, provider: "PlannerProvider", budget: int) -> bool:
@@ -423,8 +480,29 @@ class AgentService:
             await self._emit(task_id, "token_budget", {"used": used, "budget": budget, "exhausted": False, "warning": True})
         return False
 
-    async def run_task(self, task_id: str, goal: str, screen_width: int = 1280, screen_height: int = 800, model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free", mode: str = "coding", isolated_app: Optional[str] = None, token_budget: int = TOKEN_BUDGET_DEFAULT, active_skills: List[str] = []):
+    async def run_task(
+        self,
+        task_id: str,
+        goal: str,
+        screen_width: int = 1280,
+        screen_height: int = 800,
+        model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+        mode: str = "coding",
+        isolated_app: Optional[str] = None,
+        token_budget: int = TOKEN_BUDGET_DEFAULT,
+        active_skills: Optional[List[str]] = None,
+        project_folder: Optional[str] = None,
+        environment: Optional[Dict[str, Any]] = None,
+    ):
+        active_skills = list(active_skills or [])
         provider = PlannerProvider(model=model)
+        tools = self._get_task_tools(task_id)
+        if project_folder and task_id not in self._task_tools:
+            tools = self._assign_task_tools(task_id, Path(project_folder).expanduser().resolve())
+        environment_payload = dict(self._task_environments.get(task_id) or environment or {})
+        if not environment_payload:
+            environment_payload = _build_environment_payload(tools.workspace, self.home_dir, project_folder_selected=bool(project_folder))
+        self._task_environments[task_id] = environment_payload
         if mode == "computer_isolated" and not isolated_app:
             isolated_app = infer_isolated_app_name(goal)
         # chat/coding both run unified agent — only computer modes need special setup
@@ -457,12 +535,12 @@ class AgentService:
                     bg_browser = BackgroundBrowser(width=screen_width, height=screen_height, headless=True)
                     await bg_browser.start()
                     self._bg_browsers[task_id] = bg_browser
-                    self.tools.set_background_browser(bg_browser)
-                    self.tools._background_mode = True
+                    tools.set_background_browser(bg_browser)
+                    tools._background_mode = True
                 except Exception as browser_err:
                     raise Exception(f"Failed to start background browser: {str(browser_err)}. Make sure playwright browsers are installed.")
             else:
-                self.tools._background_mode = runs_in_background
+                tools._background_mode = runs_in_background
 
             # Isolated App Control: find HWND and wire it up for computer mode
             isolated_hwnd: Optional[int] = None
@@ -485,11 +563,11 @@ class AgentService:
                         isolated_hwnd = None
 
                 if isolated_hwnd:
-                    self.tools.set_isolated_hwnd(isolated_hwnd, isolated_app)
+                    tools.set_isolated_hwnd(isolated_hwnd, isolated_app)
                     await self._emit(task_id, "mode", {"mode": mode, "isolated": True, "isolated_app": isolated_app or "Active Window"})
                     _log.info(f"Isolated mode: HWND {isolated_hwnd} for '{isolated_app}'")
                 elif isolated_app:
-                    self.tools.set_isolated_hwnd(None, isolated_app)
+                    tools.set_isolated_hwnd(None, isolated_app)
                     await self._emit(task_id, "mode", {"mode": mode, "isolated": True, "isolated_app": isolated_app, "isolated_pending": True})
                     await self._emit(task_id, "status", {"message": f"Waiting to attach isolated control to '{isolated_app}' once it opens."})
                 else:
@@ -497,11 +575,11 @@ class AgentService:
                     mode = "computer"  # Fallback to full desktop mode so tools still work
                     is_isolated = False
                     isolated_app = None
-                    self.tools.set_isolated_hwnd(None)
+                    tools.set_isolated_hwnd(None)
                     await self._emit(task_id, "mode", {"mode": mode, "isolated": False})
                     await self._emit(task_id, "status", {"message": "⚠️ No target window found for isolated mode — using full desktop instead."})
             else:
-                self.tools.set_isolated_hwnd(None)
+                tools.set_isolated_hwnd(None)
                 is_isolated = False
                 await self._emit(task_id, "mode", {"mode": mode, "isolated": False})
 
@@ -514,16 +592,16 @@ class AgentService:
             # Planning
             _goal_needs_tree = any(kw in goal.lower() for kw in ("file", "directory", "project", "folder"))
             env_context = ""
+            project_folder_selected = bool(environment_payload.get("project_folder_selected"))
             if is_coding_mode:
                 if complexity == "atomic":
-                    env_context = f"\n\nWorkspace directory: {self.workspace.absolute()}"
+                    env_context = f"\n\nWorkspace hint: {environment_payload.get('workspace') or str(tools.workspace)}"
                 else:
-                    await self._emit(task_id, "status", {"message": "Initializing: scanning workspace..."})
-                    env_res = self.tools.system_info()
-                    env_context = f"\n\nSystem environment:\n{env_res.output}"
-                    if _goal_needs_tree:
-                        await self._emit(task_id, "status", {"message": "Initializing: reading workspace tree..."})
-                        env_context += _workspace_tree(self.workspace, depth=1)
+                    await self._emit(task_id, "status", {"message": "Initializing: loading environment..."})
+                    env_context = _environment_context_text(environment_payload)
+                    if _goal_needs_tree and project_folder_selected:
+                        await self._emit(task_id, "status", {"message": "Initializing: reading project tree..."})
+                        env_context += _workspace_tree(tools.workspace, depth=1)
 
             
             # No screenshots for coding/chat — only for computer/desktop modes
@@ -704,7 +782,7 @@ class AgentService:
                         "- NEVER read_file on a file you just wrote — you already know its contents.\n"
                         "- NEVER use list_directory just to confirm a file you just wrote exists.\n"
                         "- NEVER use web_fetch on a URL you already fetched — use the content already returned.\n"
-                        "- NEVER use mcp_tool unless you know the exact server name from a prior list_mcp_servers call.\n"
+                        "- Use list_mcp_servers and list_mcp_tools to discover workspace MCP integrations before calling mcp_tool.\n"
                         "- After getting data you need, synthesize it and call finish — don't loop.\n\n"
                         "WHEN WRITING/EDITING CODE:\n"
                         "- Read files before editing. Use text_str_replace for targeted edits.\n"
@@ -733,9 +811,10 @@ class AgentService:
                 # ── Auto-inject workspace tree when workspace has files ────────
                 auto_context = ""
                 try:
-                    tree = _workspace_tree(self.tools.workspace, depth=1)
-                    if tree and tree.strip():
-                        auto_context = f"\n\nWorkspace:\n{tree}"
+                    if project_folder_selected:
+                        tree = _workspace_tree(tools.workspace, depth=1)
+                        if tree and tree.strip():
+                            auto_context = f"\n\nWorkspace:\n{tree}"
                 except Exception:
                     pass
 
@@ -775,7 +854,7 @@ class AgentService:
                     # ── Refresh screenshot each step for computer/desktop mode ──
                     # The model needs to see the CURRENT state, not a stale snapshot
                     if _is_computer_desktop and step > 0:
-                        isolated_hwnd = self.tools.resolve_isolated_hwnd() if is_isolated else None
+                        isolated_hwnd = tools.resolve_isolated_hwnd() if is_isolated else None
                         if isolated_hwnd:
                             # Isolated mode: crop to just the target window
                             from .providers import _capture_hwnd_screenshot_b64
@@ -1055,6 +1134,8 @@ class AgentService:
                     
                     try:
                         async def _stream_chunk(c: Dict[str, Any]):
+                            if isinstance(c, str):
+                                c = {"output": c, "channel": "stdout"}
                             await self._emit(task_id, "terminal_output", {
                                 "command": act.args.get("command", ""),
                                 "output": c.get("output", ""),
@@ -1063,7 +1144,7 @@ class AgentService:
                                 "action_id": act.id,
                             })
                         res = await asyncio.wait_for(
-                            self.tools.run_action(act, sw=screen_width, sh=screen_height, on_stream=_stream_chunk),
+                            tools.run_action(act, sw=screen_width, sh=screen_height, on_stream=_stream_chunk),
                             timeout=120.0
                         )
                     except Exception as e:
@@ -1090,7 +1171,7 @@ class AgentService:
                     )
                     if _is_computer_desktop and _needs_screenshot:
                         await asyncio.sleep(0.4)  # brief settle time for UI to render
-                        isolated_hwnd = self.tools.resolve_isolated_hwnd() if is_isolated else None
+                        isolated_hwnd = tools.resolve_isolated_hwnd() if is_isolated else None
                         if isolated_hwnd:
                             from .providers import _capture_hwnd_screenshot_b64
                             post_shot = _capture_hwnd_screenshot_b64(isolated_hwnd)
@@ -1151,6 +1232,7 @@ class AgentService:
             self._active_tasks.pop(task_id, None)
             # Remove task from killed-set so it doesn't grow unboundedly
             self._killed_tasks.discard(task_id)
+            self._task_environments.pop(task_id, None)
             # Clean up browser (Playwright Chromium) — critical: zombie Chromium
             # processes survive Python crashes and hold gigabytes of RAM
             browser = self._bg_browsers.pop(task_id, None)
@@ -1159,6 +1241,7 @@ class AgentService:
                     await browser.stop()
                 except Exception:
                     pass
+            self._task_tools.pop(task_id, None)
             # Force a GC cycle so freed screenshot buffers and message history
             # are collected immediately instead of accumulating across tasks
             import gc
@@ -1248,6 +1331,49 @@ class AgentService:
                         child.kill()
             except Exception:
                 pass
+
+def _build_environment_payload(workspace: Path, home_dir: Path, *, project_folder_selected: bool) -> Dict[str, Any]:
+    import platform
+
+    home_dir = home_dir.expanduser().resolve()
+    workspace = workspace.expanduser().resolve()
+    return {
+        "os": platform.system(),
+        "platform": platform.platform(),
+        "home": str(home_dir),
+        "workspace": str(workspace),
+        "desktop": str(home_dir / "Desktop"),
+        "downloads": str(home_dir / "Downloads"),
+        "documents": str(home_dir / "Documents"),
+        "user": os.environ.get("USERNAME", os.environ.get("USER", "unknown")),
+        "python": "python" if platform.system() == "Windows" else "python3",
+        "project_folder_selected": project_folder_selected,
+    }
+
+
+def _environment_context_text(environment: Dict[str, Any]) -> str:
+    if not environment:
+        return ""
+
+    lines = ["\n\nSystem environment:"]
+    ordered_keys = [
+        ("os", "OS"),
+        ("platform", "Platform"),
+        ("home", "Home"),
+        ("workspace", "Workspace hint"),
+        ("desktop", "Desktop"),
+        ("downloads", "Downloads"),
+        ("documents", "Documents"),
+        ("python", "Python command"),
+        ("user", "User"),
+    ]
+    for key, label in ordered_keys:
+        value = environment.get(key)
+        if value:
+            lines.append(f"- {label}: {value}")
+    selection_state = "selected" if environment.get("project_folder_selected") else "not selected"
+    lines.append(f"- Project folder: {selection_state}")
+    return "\n".join(lines)
 
 def _summarize_args(action_type: str, args: dict) -> str:
     if action_type in ("run_command", "bash"): return (args.get("command") or "")[:80]

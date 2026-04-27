@@ -76,6 +76,8 @@ class ActionType(str, Enum):
     web_search = "web_search"
     list_processes = "list_processes"
     kill_process = "kill_process"
+    list_mcp_servers = "list_mcp_servers"
+    list_mcp_tools = "list_mcp_tools"
     mcp_tool = "mcp_tool"
     git = "git"
     run_tests = "run_tests"
@@ -117,6 +119,8 @@ class AgentContext(BaseModel):
     screen_height: int = 800
     isolated_app: Optional[str] = None
     active_skills: List[str] = Field(default_factory=list)
+    project_folder: Optional[str] = None
+    environment: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskRecord(BaseModel):

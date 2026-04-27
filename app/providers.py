@@ -299,10 +299,9 @@ def _capture_screenshot_b64(width: int, height: int) -> str:
             if image.size[0] > w or image.size[1] > h:
                 image.thumbnail((w, h), Image.Resampling.LANCZOS)
             buf = io.BytesIO()
-            # JPEG at quality=65 is ~10-15x smaller than PNG with no visible quality loss
-            # for screenshots. Reduces per-screenshot memory from ~2MB to ~150KB.
-            image.save(buf, format="JPEG", quality=65, optimize=True)
-            return base64.b64encode(buf.getvalue()).decode("utf-8")
+            image.save(buf, format="JPEG", quality=75)
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            return f"data:image/jpeg;base64,{b64}"
         finally:
             image.close()  # Explicitly release the PIL buffer immediately
 
@@ -376,10 +375,33 @@ def _capture_hwnd_screenshot_b64(hwnd: int) -> str:
     image = _capture_hwnd_image(hwnd)
     try:
         buf = io.BytesIO()
-        image.save(buf, format="JPEG", quality=65, optimize=True)
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
+        image.save(buf, format="JPEG", quality=75)
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{b64}"
     finally:
         image.close()  # Explicitly release the PIL buffer immediately
+
+
+_DATA_URL_RE = re.compile(r"^data:(?P<mime>[^;]+);base64,(?P<data>.+)$", re.IGNORECASE | re.DOTALL)
+
+
+def _split_image_data(image_data: Optional[str], default_mime: str = "image/jpeg") -> tuple[Optional[str], Optional[str]]:
+    if not image_data:
+        return None, None
+    payload = image_data.strip()
+    match = _DATA_URL_RE.match(payload)
+    if match:
+        return match.group("mime"), match.group("data")
+    return default_mime, payload
+
+
+def _image_data_url(image_data: Optional[str], default_mime: str = "image/jpeg") -> Optional[str]:
+    mime, payload = _split_image_data(image_data, default_mime=default_mime)
+    if not payload:
+        return None
+    if image_data and image_data.strip().lower().startswith("data:"):
+        return image_data.strip()
+    return f"data:{mime or default_mime};base64,{payload}"
 
 
 def _capture_hwnd_image(hwnd: int) -> Image.Image:
@@ -462,8 +484,12 @@ def _extract_json(text: str) -> Any:
     """Extract and repair JSON from LLM response text."""
     if not text:
         return {}
-    
+
     text = text.strip()
+    # Cap input to avoid catastrophic backtracking on huge malformed responses
+    if len(text) > 256 * 1024:
+        text = text[:256 * 1024]
+
     # Try finding a markdown block first
     fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
     if fence:
@@ -640,18 +666,23 @@ def _extract_chat_message_text(payload: Dict[str, Any]) -> str:
 def classify_task_complexity(goal: str) -> str:
     """Returns 'atomic' or 'complex' based on keyword analysis."""
     g = goal.lower()
-    words = g.split()
-    atomic_signals = ["write", "create file", "create a file", "rename", "delete", "move file", "print", "run", "execute", "install", "append", "touch", "mkdir", "echo", "copy file", "read file", "hello world", "to a file", "save to", "open ", "search", "browse", "go to", "find", "navigate", "check ", "weather", "time"]
-    complex_signals = ["refactor", "redesign", "improve", "optimize", "analyze", "architect", "fix all", "migrate", "integrate", "full", "entire", "build an app", "create a server"]
-
-    if len(words) < 10:
-        if not any(k in g for k in complex_signals):
-            return "atomic"
-
-    if len(words) <= 25 and any(k in g for k in atomic_signals):
-        if not any(k in g for k in complex_signals):
-            return "atomic"
-    return "complex"
+    atomic_signals = [
+        "write", "create file", "create a file", "rename", "delete", "move file",
+        "print", "run", "execute", "install", "append", "touch", "mkdir", "echo",
+        "copy file", "read file", "hello world", "to a file", "save to", "open ",
+        "search", "browse", "go to", "find", "navigate", "weather", "time",
+        "edit", "modify", "update", "change", "fix", "add", "remove", "show", "list",
+    ]
+    complex_signals = [
+        "refactor", "redesign", "architect", "fix all", "migrate", "integrate",
+        "build an app", "create a server", "rewrite", "overhaul",
+    ]
+    if any(k in g for k in complex_signals):
+        return "complex"
+    if any(k in g for k in atomic_signals):
+        return "atomic"
+    # Default: short goals are atomic, long multi-step descriptions are complex
+    return "atomic" if len(g.split()) <= 20 else "complex"
 
 
 DEFAULT_OPENROUTER_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
@@ -667,6 +698,14 @@ class PlannerProvider:
         self._groq_key: Optional[str] = os.environ.get("GROQ_API_KEY")
         self._total_input_tokens: int = 0
         self._total_output_tokens: int = 0
+        # Persistent HTTP client — reuses TCP connections and avoids SSL handshake per call
+        self._http_client = httpx.Client(timeout=300)
+        # Cache provider type so _is_X() string checks don't repeat every call
+        m = model.lower()
+        self._is_anthropic_model = "anthropic" in m or "claude" in m
+        self._is_openai_model = ("openai" in m or "gpt" in m) and "openrouter" not in m
+        self._is_openrouter_model = "openrouter" in m or ("/" in m and not self._is_anthropic_model and not self._is_openai_model)
+        self._is_groq_model = "groq" in m
 
     @property
     def total_tokens(self) -> int:
@@ -693,7 +732,9 @@ class PlannerProvider:
             
         content: List[Any] = [{"type": "text", "text": prompt}]
         if screenshot_b64:
-            content.insert(0, {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": screenshot_b64}})
+            mime, data = _split_image_data(screenshot_b64)
+            if data:
+                content.insert(0, {"type": "image", "source": {"type": "base64", "media_type": mime or "image/jpeg", "data": data}})
             
         payload = {
             "model": self.model,
@@ -704,18 +745,17 @@ class PlannerProvider:
         last_err = None
         for attempt in range(3):
             try:
-                with httpx.Client(timeout=300) as client:
-                    resp = client.post(
-                        "https://api.anthropic.com/v1/messages",
-                        headers={"x-api-key": self._anthropic_key, "anthropic-version": "2023-06-01"},
-                        json=payload,
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                    usage = data.get("usage", {})
-                    self._total_input_tokens += usage.get("input_tokens", 0)
-                    self._total_output_tokens += usage.get("output_tokens", 0)
-                    return data["content"][0]["text"]
+                resp = self._http_client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": self._anthropic_key, "anthropic-version": "2023-06-01"},
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                usage = data.get("usage", {})
+                self._total_input_tokens += usage.get("input_tokens", 0)
+                self._total_output_tokens += usage.get("output_tokens", 0)
+                return data["content"][0]["text"]
             except httpx.HTTPStatusError as e:
                 last_err = e
                 if e.response.status_code in (402, 429) or e.response.status_code >= 500:
@@ -730,7 +770,9 @@ class PlannerProvider:
             
         content: List[Any] = [{"type": "text", "text": prompt}]
         if screenshot_b64:
-            content.insert(0, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}})
+            image_url = _image_data_url(screenshot_b64)
+            if image_url:
+                content.insert(0, {"type": "image_url", "image_url": {"url": image_url}})
             
         messages = [
             {"role": "system", "content": system},
@@ -740,18 +782,17 @@ class PlannerProvider:
         last_err = None
         for attempt in range(3):
             try:
-                with httpx.Client(timeout=300) as client:
-                    resp = client.post(
-                        "https://api.openai.com/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {self._openai_key}"},
-                        json=payload,
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                    usage = data.get("usage", {})
-                    self._total_input_tokens += usage.get("prompt_tokens", 0)
-                    self._total_output_tokens += usage.get("completion_tokens", 0)
-                    return _extract_chat_message_text(data)
+                resp = self._http_client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {self._openai_key}"},
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                usage = data.get("usage", {})
+                self._total_input_tokens += usage.get("prompt_tokens", 0)
+                self._total_output_tokens += usage.get("completion_tokens", 0)
+                return _extract_chat_message_text(data)
             except httpx.HTTPStatusError as e:
                 last_err = e
                 if e.response.status_code in (402, 429) or e.response.status_code >= 500:
@@ -760,12 +801,13 @@ class PlannerProvider:
                 raise
         raise last_err or RuntimeError("All API retries exhausted")
 
-    def _chat_openrouter(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
+    def _chat_openrouter(self, system: str, prompt: str, screenshot_b64: Optional[str] = None, _model_override: Optional[str] = None) -> str:
         if not self._openrouter_key:
             raise RuntimeError("OPENROUTER_API_KEY not set")
 
+        base_model = _model_override if _model_override is not None else self.model
         models_to_try = self._openrouter_models_to_try(
-            self.model.replace("openrouter/", ""), screenshot_b64
+            base_model.replace("openrouter/", ""), screenshot_b64
         )
 
         last_err = None
@@ -776,7 +818,9 @@ class PlannerProvider:
             )
             content: List[Any] = [{"type": "text", "text": prompt}]
             if screenshot_b64 and is_vision_model:
-                content.insert(0, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}})
+                image_url = _image_data_url(screenshot_b64)
+                if image_url:
+                    content.insert(0, {"type": "image_url", "image_url": {"url": image_url}})
                 
             messages = [
                 {"role": "system", "content": system},
@@ -784,36 +828,39 @@ class PlannerProvider:
             ]
             payload = {"model": current_model, "messages": messages}
             
-            success = False
-            for attempt in range(5):
+            is_last_model = (current_model == models_to_try[-1])
+            for attempt in range(3 if is_last_model else 1):
                 try:
-                    with httpx.Client(timeout=300) as client:
-                        resp = client.post(
-                            "https://openrouter.ai/api/v1/chat/completions",
-                            headers={"Authorization": f"Bearer {self._openrouter_key}"},
-                            json=payload,
-                        )
-                        if resp.status_code != 200:
-                            print(f"OPENROUTER ERROR ({current_model}):", resp.text)
-                        resp.raise_for_status()
-                        resp_json = resp.json()
-                        # OpenRouter can return 200 + {"error": {...}} when rate-limited or quota-exceeded.
-                        if "error" in resp_json:
-                            err_msg = resp_json["error"].get("message", str(resp_json["error"]))
-                            if attempt < 4:
-                                print(f"OPENROUTER SOFT ERROR ({current_model}, attempt {attempt + 1}): {err_msg}")
-                                time.sleep(2 ** (attempt + 1))
-                                continue
-                            raise RuntimeError(f"OpenRouter error: {err_msg}")
-                        if "choices" not in resp_json:
-                            raise RuntimeError(f"Unexpected OpenRouter response: {str(resp_json)[:200]}")
-                        return _extract_chat_message_text(resp_json)
+                    resp = self._http_client.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {self._openrouter_key}"},
+                        json=payload,
+                    )
+                    if resp.status_code != 200:
+                        print(f"OPENROUTER ERROR ({current_model}):", resp.text)
+                    resp.raise_for_status()
+                    resp_json = resp.json()
+                    if "error" in resp_json:
+                        err_msg = resp_json["error"].get("message", str(resp_json["error"]))
+                        print(f"OPENROUTER SOFT ERROR ({current_model}): {err_msg}")
+                        # Rate/quota error on non-final model → skip to next model immediately
+                        if not is_last_model:
+                            break
+                        if attempt < 2:
+                            time.sleep(2 ** (attempt + 1))
+                            continue
+                        raise RuntimeError(f"OpenRouter error: {err_msg}")
+                    if "choices" not in resp_json:
+                        raise RuntimeError(f"Unexpected OpenRouter response: {str(resp_json)[:200]}")
+                    return _extract_chat_message_text(resp_json)
                 except httpx.HTTPStatusError as e:
                     last_err = e
                     if e.response.status_code in (402, 429) or e.response.status_code >= 500:
+                        if not is_last_model:
+                            break  # fail fast to next model
                         time.sleep(2 ** (attempt + 1))
                         continue
-                    break # Hard error, stop retrying this model
+                    break
             
             # If we reach here, this model failed all retries or hit a hard error.
             # The loop will continue to the next model in models_to_try.
@@ -867,7 +914,9 @@ class PlannerProvider:
         
         parts: List[Any] = [{"text": prompt}]
         if screenshot_b64:
-            parts.insert(0, {"inline_data": {"mime_type": "image/png", "data": screenshot_b64}})
+            mime, data = _split_image_data(screenshot_b64)
+            if data:
+                parts.insert(0, {"inline_data": {"mime_type": mime or "image/jpeg", "data": data}})
             
         payload = {
             "system_instruction": {"parts": [{"text": system}]},
@@ -901,7 +950,9 @@ class PlannerProvider:
         
         content: List[Any] = [{"type": "text", "text": prompt}]
         if screenshot_b64 and ("llava" in model.lower() or "vision" in model.lower()):
-            content.insert(0, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}})
+            image_url = _image_data_url(screenshot_b64)
+            if image_url:
+                content.insert(0, {"type": "image_url", "image_url": {"url": image_url}})
             
         messages = [
             {"role": "system", "content": system},
@@ -967,22 +1018,21 @@ class PlannerProvider:
             print(f"[FALLBACK] Primary model '{self.model}' hit rate limit. Falling back to OpenRouter...", flush=True)
 
             # 2. Try OpenRouter fallback models with the SAME context
-            original_model = self.model
             for fallback_model in self._FALLBACK_MODELS:
                 try:
-                    self.model = fallback_model
                     print(f"[FALLBACK] Trying {fallback_model}...", flush=True)
-                    result = self._chat_openrouter(system, prompt, screenshot_b64)
+                    result = self._chat_openrouter(system, prompt, screenshot_b64, _model_override=fallback_model)
                     print(f"[FALLBACK] Success with {fallback_model}", flush=True)
                     return result
                 except Exception as fallback_err:
                     print(f"[FALLBACK] {fallback_model} also failed: {fallback_err}", flush=True)
                     continue
-                finally:
-                    self.model = original_model  # Always restore original model name
 
-            # All fallbacks exhausted — raise original error
-            raise primary_err
+            # All fallbacks exhausted — raise original error with note
+            num_fallbacks = len(self._FALLBACK_MODELS)
+            raise RuntimeError(
+                f"{primary_err} (also tried {num_fallbacks} fallback models)"
+            ) from primary_err
 
     async def stream_chat(self, system: str, messages: List[Dict[str, Any]], screenshot_b64: Optional[str] = None):
         """Async generator that streams tokens from OpenRouter/OpenAI."""
@@ -1027,13 +1077,17 @@ class PlannerProvider:
             for m in messages:
                 if m["role"] == "user" and screenshot_b64 and m == messages[-1] and is_vision_model:
                     # Attach screenshot to the latest user message if vision is supported
-                    formatted_messages.append({
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}},
-                            {"type": "text", "text": m["content"]}
-                        ]
-                    })
+                    image_url = _image_data_url(screenshot_b64)
+                    if image_url:
+                        formatted_messages.append({
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": image_url}},
+                                {"type": "text", "text": m["content"]}
+                            ]
+                        })
+                    else:
+                        formatted_messages.append({"role": "user", "content": [{"type": "text", "text": m["content"]}]})
                 elif m["role"] == "tool":
                     formatted_messages.append({
                         "role": "user",
@@ -1144,13 +1198,17 @@ class PlannerProvider:
             formatted_messages = [{"role": "system", "content": system}]
             for m in messages:
                 if m["role"] == "user" and screenshot_b64 and m == messages[-1] and is_vision_model:
-                    formatted_messages.append({
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}},
-                            {"type": "text", "text": m["content"]}
-                        ]
-                    })
+                    image_url = _image_data_url(screenshot_b64)
+                    if image_url:
+                        formatted_messages.append({
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": image_url}},
+                                {"type": "text", "text": m["content"]}
+                            ]
+                        })
+                    else:
+                        formatted_messages.append({"role": "user", "content": m.get("content", "")})
                 elif m["role"] == "tool":
                     # Tool result messages pass through directly
                     formatted_messages.append(m)
@@ -1270,7 +1328,7 @@ class PlannerProvider:
     ) -> HierarchicalPlan:
         prompt = f"Goal: {goal}\n\nFor simple one-action tasks, use exactly 1 sub-task. For complex tasks, decompose into 2-8 sequential sub-tasks with concrete actions."
         if memory_context:
-            prompt = f"Relevant past experience:\n{memory_context}\n\n{prompt}"
+            prompt = f"Relevant past experience:\n{memory_context[:1500]}\n\n{prompt}"
         
         packs = get_mode_packs(mode)
         tool_guidance = get_tool_guidance(packs)
@@ -1280,7 +1338,6 @@ class PlannerProvider:
         elif mode == "computer_use":
             system = COMPUTER_USE_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
         else:
-            from .providers import HIERARCHICAL_SYSTEM_PROMPT
             system = HIERARCHICAL_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
 
         if system_prompt_extension:
@@ -1291,7 +1348,6 @@ class PlannerProvider:
         elif mode == "computer_use":
             raw_text = self._call_llm(system, prompt)  # no screenshot — DOM-based
         else:
-            system = HIERARCHICAL_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
             raw_text = self._call_llm(system, prompt, latest_screenshot_b64)
             
         return HierarchicalPlan.model_validate(_normalize_hierarchical_plan(_extract_json(raw_text)))
@@ -1320,7 +1376,7 @@ class PlannerProvider:
             prompt = (
                 f"Sub-task: {description}\n\n"
                 f"Actions taken:\n{json.dumps(actions, indent=2)}\n\n"
-                f"Results (page text / accessibility trees / URLs):\n{json.dumps(results, indent=2)[:8000]}\n\n"
+                f"Results (page text / accessibility trees / URLs):\n{json.dumps([r[:2500] for r in results])}\n\n"
                 "Based on the action results, did this sub-task succeed?"
             )
             raw_text = self._call_llm(COMPUTER_USE_REFLECT_PROMPT.format(tool_guidance=tool_guidance), prompt)  # no screenshot

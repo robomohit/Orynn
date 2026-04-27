@@ -21,6 +21,9 @@ class LogEmitter:
         self._queues: Dict[str, List[asyncio.Queue]] = {}
         self._seqs: Dict[str, int] = {}
         self._disk_logging_disabled: set[str] = set()
+        # Maps task_id -> list of byte offsets, one per event written to disk.
+        # Used by read_log() to seek directly to a given event instead of scanning.
+        self._offsets: Dict[str, List[int]] = {}
         self.log_dir = Path("workspace/logs")
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -49,6 +52,27 @@ class LogEmitter:
             return []
 
         events: list[dict] = []
+        offsets = self._offsets.get(task_id)
+
+        # Fast path: byte-offset index exists and since is within it — seek directly.
+        if since > 0 and offsets and since < len(offsets):
+            with open(log_file, "rb") as f:
+                f.seek(offsets[since])
+                for index, raw_line in enumerate(f, start=since):
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                        if isinstance(msg, dict):
+                            msg.setdefault("task_id", task_id)
+                            msg.setdefault("seq", index)
+                        events.append(msg)
+                    except json.JSONDecodeError:
+                        continue
+            return events
+
+        # Fallback: linear scan (handles since==0 or missing/old index).
         with open(log_file, "r", encoding="utf-8") as f:
             for index, line in enumerate(f):
                 if index < since:
@@ -67,6 +91,10 @@ class LogEmitter:
         return events
 
     def count_events(self, task_id: str) -> int:
+        # Use the in-memory sequence counter when available — avoids a full file scan.
+        if task_id in self._seqs:
+            return self._seqs[task_id]
+        # Fallback for tasks whose state was never loaded into memory (e.g. old log files).
         log_file = self.log_path(task_id)
         if not log_file.exists():
             return 0
@@ -130,8 +158,10 @@ class LogEmitter:
                     f.write(json.dumps(truncation_notice) + "\n")
             else:
                 disk_msg = self._sanitize_for_disk(event_type, msg)
-                with open(log_file, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(disk_msg) + "\n")
+                with open(log_file, "ab") as f:
+                    byte_offset = f.tell()
+                    self._offsets.setdefault(task_id, []).append(byte_offset)
+                    f.write((json.dumps(disk_msg) + "\n").encode("utf-8"))
             
         for q in list(self._queues.get(task_id, [])):
             try:
@@ -147,8 +177,17 @@ class LogEmitter:
         """
         self._seqs.pop(task_id, None)
         self._disk_logging_disabled.discard(task_id)
-        if not self._queues.get(task_id):
-            self._queues.pop(task_id, None)
+        self._offsets.pop(task_id, None)
+        # Drain and discard all subscriber queues so they don't hold references
+        # to stale event data or prevent garbage collection.
+        queues = self._queues.pop(task_id, [])
+        for q in queues:
+            # Drain any buffered items so the queue is empty before discarding.
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
 
 
 log_emitter = LogEmitter()

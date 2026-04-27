@@ -6,7 +6,7 @@
 <title>AI Computer · Stream</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;450;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;450;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <style>
   /* ================================================================
@@ -48,6 +48,7 @@
     --track-cap: 0.1em;
 
     --font-ui: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-display: 'Outfit', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
@@ -287,8 +288,8 @@
     background: var(--bg-0);
   }
   .app-shell.no-titlebar { height: 100vh; }
-  .sidebar { grid-row: 1 / span 2; }
-  .main    { grid-row: 1 / span 2; }
+  .sidebar { grid-column: 1; grid-row: 1 / span 2; }
+  .main    { grid-column: 2; grid-row: 1 / span 2; }
 
   /* ---------------- sidebar ---------------- */
 
@@ -707,6 +708,297 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 560px;
+  }
+
+  .project-folder-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: calc(100% - 28px);
+    margin: 10px 14px 0;
+    padding: 10px 14px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-2);
+    background: var(--bg-2);
+    box-shadow: var(--shadow-inset);
+    transition: all var(--dur-fast) var(--ease-out);
+    overflow: hidden;
+  }
+  .project-folder-trigger::after {
+    content: '';
+    position: absolute;
+    inset: auto -20% -60% 10%;
+    height: 60px;
+    background: radial-gradient(circle, var(--accent-glow-2), transparent 70%);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .project-folder-trigger:hover {
+    transform: translateY(-1px);
+    background: var(--bg-3);
+    border-color: var(--line-3);
+    box-shadow: var(--shadow-card);
+  }
+  .project-folder-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+    background: var(--bg-3);
+    border: 1px solid var(--line-2);
+    flex-shrink: 0;
+  }
+  .project-folder-copy {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+    text-align: left;
+    position: relative;
+    z-index: 1;
+  }
+  .project-folder-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+  }
+  .project-folder-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .project-folder-path {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .project-folder-modal {
+    width: min(880px, 100%);
+    padding: 0;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03)),
+      color-mix(in oklab, var(--bg-2) 88%, transparent);
+    border-color: rgba(255,255,255,0.1);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+  }
+  .project-folder-shell {
+    position: relative;
+    padding: 22px;
+    display: grid;
+    gap: 16px;
+  }
+  .project-folder-shell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at top left, color-mix(in oklab, var(--accent) 20%, transparent), transparent 40%),
+      linear-gradient(140deg, rgba(255,255,255,0.06), transparent 45%);
+    pointer-events: none;
+  }
+  .project-folder-head,
+  .project-folder-shortcuts,
+  .project-folder-browser,
+  .project-folder-footer {
+    position: relative;
+    z-index: 1;
+  }
+  .project-folder-head .eyebrow {
+    color: var(--accent);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .project-folder-head h3 {
+    font-family: var(--font-display);
+    font-size: 24px;
+    margin: 6px 0 8px;
+  }
+  .project-folder-head p {
+    max-width: 640px;
+  }
+  .project-folder-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .folder-shortcut {
+    padding: 9px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  }
+  .folder-shortcut:hover {
+    transform: translateY(-1px);
+    color: var(--ink);
+    border-color: color-mix(in oklab, var(--accent) 34%, rgba(255,255,255,0.12));
+    background: rgba(255,255,255,0.07);
+  }
+  .project-folder-browser {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    background: rgba(8,10,14,0.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    overflow: hidden;
+  }
+  .folder-browser-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.03);
+  }
+  .folder-browser-meta {
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .folder-browser-status {
+    font-size: var(--fs-label);
+    color: var(--muted-2);
+  }
+  .folder-breadcrumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .folder-crumb {
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.04);
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+  .folder-crumb:hover {
+    color: var(--ink);
+    border-color: color-mix(in oklab, var(--accent) 34%, rgba(255,255,255,0.12));
+    background: rgba(255,255,255,0.08);
+  }
+  .folder-list {
+    max-height: min(54vh, 520px);
+    overflow: auto;
+    padding: 8px;
+    display: grid;
+    gap: 6px;
+  }
+  .folder-entry {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid transparent;
+    background: rgba(255,255,255,0.03);
+    color: var(--ink-2);
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+  .folder-entry:hover {
+    transform: translateY(-1px);
+    color: var(--ink);
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.08);
+  }
+  .folder-entry.active {
+    border-color: color-mix(in oklab, var(--accent) 44%, rgba(255,255,255,0.08));
+    background: color-mix(in oklab, var(--accent) 14%, rgba(255,255,255,0.04));
+  }
+  .folder-entry.disabled {
+    opacity: 0.55;
+  }
+  .folder-entry-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.05);
+    color: var(--accent);
+  }
+  .folder-entry-copy {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+    text-align: left;
+  }
+  .folder-entry-name {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .folder-entry-path {
+    font-size: var(--fs-label);
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .folder-entry-meta {
+    font-size: var(--fs-label);
+    color: var(--muted-2);
+  }
+  .folder-empty {
+    padding: 26px 16px;
+    text-align: center;
+    color: var(--muted);
+    font-size: var(--fs-sm);
+  }
+  .project-folder-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-top: 4px;
+  }
+  .project-folder-selection {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+  }
+  .project-folder-selection .label {
+    font-size: var(--fs-micro);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+  }
+  .project-folder-selection .value {
+    font-size: var(--fs-sm);
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .project-folder-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
   }
 
   .safety-strip {
@@ -2135,6 +2427,12 @@
     body.nav-open .sidebar { transform: translateX(0); }
     .nav-toggle { display: inline-flex; }
     .topbar, .feed-scroll, .composer-wrap { padding-left: 14px; padding-right: 14px; }
+    .topbar-main { flex-wrap: wrap; }
+    .project-folder-trigger { min-width: 100%; max-width: 100%; }
+    .project-folder-path { display: none; }
+    .project-folder-footer { align-items: flex-start; flex-direction: column; }
+    .project-folder-actions { width: 100%; justify-content: stretch; }
+    .project-folder-actions .modal-btn { flex: 1; }
     .example-grid { grid-template-columns: 1fr; }
     .statusbar .sb-model, .statusbar .sb-mode { display: none; }
     .card-head { flex-wrap: wrap; }
@@ -2146,6 +2444,72 @@
       transition-duration: 0.001ms !important;
     }
   }
+
+  /* ---------------- UI cleanup overrides ---------------- */
+  .welcome .hello-eye { display: none; }
+  .welcome { padding: 0; max-width: 720px; width: 100%; }
+  .welcome h3 { font-size: 28px; margin-bottom: 10px; }
+  .welcome p { margin-bottom: 22px; font-size: var(--fs-sm); }
+  .example-btn::before { display: none; }
+  .example-btn { padding: 14px 16px; }
+  .example-grid { gap: 10px; }
+  .budget-bar { display: none; }
+  .budget-bar[data-active='true'] { display: block; }
+  /* Vertically center welcome state when no events yet */
+  .feed:not(.has-events) {
+    min-height: 100%;
+    justify-content: center;
+    padding: 24px 0;
+  }
+  .welcome { text-align: center; margin: 0 auto; }
+  .welcome h3 { letter-spacing: -0.02em; }
+  .welcome p { margin-left: auto; margin-right: auto; }
+
+  /* Operator-style suggestion chips (replaces card grid look) */
+  .example-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .example-btn {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 10px 12px;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 10px;
+  }
+  .example-btn:hover {
+    background: var(--bg-2);
+    transform: none;
+    box-shadow: none;
+  }
+  .example-btn .ex-body strong { font-size: var(--fs-sm); margin-bottom: 2px; }
+  .example-btn span { font-size: var(--fs-micro); margin-top: 0; line-height: 1.35; }
+
+  /* Stack vertically on narrow viewports */
+  @media (max-width: 920px) {
+    .example-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* Living "Ready" status — soft pulse so the agent feels online */
+  @keyframes agentPulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); opacity: 1; }
+    50% { box-shadow: 0 0 0 6px transparent; opacity: 0.65; }
+  }
+  .pill.status-ready .pill-dot,
+  .pill.status-running .pill-dot {
+    background: var(--accent);
+    animation: agentPulse 2.2s ease-in-out infinite;
+  }
+  .pill.status-ready { border-color: color-mix(in oklab, var(--accent) 30%, var(--line-2)); }
+  .pill.status-ready .pill-label { color: var(--ink-2); }
+
+  /* Composer becomes the focal point */
+  .composer-wrap { padding: 18px 20px 22px; border-top-color: transparent; }
+  .composer { width: min(720px, 100%); border-radius: 14px; padding: 12px 14px 10px; }
+  .composer textarea { min-height: 56px; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -2178,18 +2542,24 @@
         <div class="brand-mark" aria-hidden="true"></div>
         <div class="brand-copy">
           <h1>AI Computer</h1>
-          <p>Stream monitor · v2</p>
         </div>
-      </div>
-      <div class="compare-row">
-        <a class="compare-link" href="/">Current</a>
-        <a class="compare-link active" href="/v2">Stream v2</a>
       </div>
     </div>
     <div class="sidebar-controls">
       <button class="sidebar-button" id="new-session-btn" type="button">
         <span>New session</span>
         <span>⌘N</span>
+      </button>
+
+      <button class="project-folder-trigger" id="project-folder-trigger" type="button" aria-label="Choose project folder">
+        <span class="project-folder-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2V16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/></svg>
+        </span>
+        <span class="project-folder-copy">
+          <span class="project-folder-label">Project Folder</span>
+          <span class="project-folder-name" id="project-folder-name">General mode</span>
+          <span class="project-folder-path" id="project-folder-path">Desktop + Home access</span>
+        </span>
       </button>
     </div>
     <div class="skills-section" id="skills-section">
@@ -2204,7 +2574,6 @@
         <!-- Rendered via JS -->
       </div>
     </div>
-
     <div class="history-search">
       <input id="history-search" type="search" placeholder="Search history">
     </div>
@@ -2246,7 +2615,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <div class="topbar-title">
-          <p class="crumbs"><span>Ai_computer</span><span class="sep">/</span><span>Stream</span></p>
+          <p class="crumbs"><span>Ai_computer</span></p>
           <h2 id="task-title">Stream</h2>
         </div>
       </div>
@@ -2280,13 +2649,13 @@
       <div class="feed" id="feed">
         <section class="welcome" id="welcome">
           <div class="hello-eye">AI Computer</div>
-          <h3>Plan, act, and verify. <em>Desktop control stays explicit.</em></h3>
-          <p>Choose coding, browser, desktop, or isolated-app control. The stream shows actions and results without hiding the controls you need to stop or pause.</p>
+          <h3>What should the agent do?</h3>
+          <p>Describe a goal. The agent plans, acts across your computer or browser, and pauses for approval before anything risky.</p>
           <div class="example-grid">
             <button class="example-btn" type="button" data-example="Create a FastAPI app with CRUD endpoints and tests.">
               <div class="ex-body"><strong>Build a coding task</strong><span>Plans, file writes, terminal, and reflections render inline.</span></div>
             </button>
-            <button class="example-btn" type="button" data-example="Open example.com in browser cowork mode, summarize the page, and save notes to the workspace.">
+            <button class="example-btn" type="button" data-example="Open example.com in browser cowork mode, summarize the page, and save notes to the current project folder.">
               <div class="ex-body"><strong>Use browser cowork</strong><span>Research pages with browser tools and a clean final answer.</span></div>
             </button>
             <button class="example-btn" type="button" data-example="Using full desktop control, take a screenshot of the current desktop, describe the active window, and finish.">
@@ -2396,6 +2765,41 @@
     <div class="modal-actions">
       <button class="modal-btn" id="desktop-access-deny" type="button">Deny</button>
       <button class="modal-btn primary" id="desktop-access-allow" type="button">Allow for this session</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="project-folder-modal">
+  <div class="modal project-folder-modal">
+    <div class="project-folder-shell">
+      <div class="project-folder-head">
+        <span class="eyebrow">Project Folder</span>
+        <h3>Choose a preferred workspace root</h3>
+        <p>Optional. When set, coding tasks start from this folder first. Clear it any time to return to general desktop and home mode.</p>
+      </div>
+      <div class="project-folder-shortcuts" id="project-folder-shortcuts"></div>
+      <div class="project-folder-browser">
+        <div class="folder-browser-top">
+          <div class="folder-browser-meta">
+            <div class="folder-browser-status" id="project-folder-browser-status">Browsing folders…</div>
+            <div class="folder-breadcrumbs" id="project-folder-breadcrumbs"></div>
+          </div>
+          <button class="modal-btn" id="project-folder-up" type="button">Up one level</button>
+        </div>
+        <div class="folder-list" id="project-folder-list"></div>
+        <div class="folder-empty" id="project-folder-empty" style="display:none">No folders found here.</div>
+      </div>
+      <div class="project-folder-footer">
+        <div class="project-folder-selection">
+          <span class="label">Selected</span>
+          <span class="value" id="project-folder-selection">General mode · Desktop + Home</span>
+        </div>
+        <div class="project-folder-actions">
+          <button class="modal-btn" id="project-folder-clear" type="button">Clear</button>
+          <button class="modal-btn" id="project-folder-close" type="button">Close</button>
+          <button class="modal-btn primary" id="project-folder-apply" type="button">Use this folder</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2586,13 +2990,15 @@
   }
 
   // Host protocol
-  window.addEventListener('message', (e) => {
+  function _hostMessageHandler(e) {
     const data = e?.data;
     if (!data || typeof data !== 'object') return;
     if (data.type === '__activate_edit_mode') document.getElementById('tweaks').classList.add('show');
     if (data.type === '__deactivate_edit_mode') document.getElementById('tweaks').classList.remove('show');
-  });
-  try { window.parent.postMessage({ type: '__edit_mode_available' }, '*'); } catch(_) {}
+  }
+  window.removeEventListener('message', _hostMessageHandler);
+  window.addEventListener('message', _hostMessageHandler);
+  try { window.parent.postMessage({ type: '__edit_mode_available' }, window.location.origin); } catch(_) {}
 
   /* ================================================================
      ORIGINAL DASHBOARD LOGIC — preserved, minimal edits
@@ -2634,6 +3040,146 @@
   let lastActiveCard = null;
 
   const WELCOME_HTML = document.getElementById('welcome').outerHTML;
+  const PROJECT_FOLDER_STORAGE_KEY = 'ai-computer.project-folder.v1';
+  const projectFolderState = {
+    selectedPath: '',
+    browsingPath: '',
+    shortcuts: []
+  };
+
+  const pathLeaf = (value = '') => {
+    const cleaned = String(value || '').replace(/[\\/]+$/, '');
+    if (!cleaned) return 'General mode';
+    const bits = cleaned.split(/[\\/]/).filter(Boolean);
+    return bits[bits.length - 1] || cleaned;
+  };
+
+  const shortcutLabel = (id = '', fallback = '') => {
+    const labels = { home: 'Home', desktop: 'Desktop', downloads: 'Downloads', repo: 'Current Repo' };
+    return labels[id] || fallback || humanize(id || 'folder');
+  };
+
+  const persistProjectFolder = (value) => {
+    try {
+      if (value) localStorage.setItem(PROJECT_FOLDER_STORAGE_KEY, value);
+      else localStorage.removeItem(PROJECT_FOLDER_STORAGE_KEY);
+    } catch (_) {}
+  };
+
+  const storedProjectFolder = () => {
+    try { return localStorage.getItem(PROJECT_FOLDER_STORAGE_KEY) || ''; }
+    catch (_) { return ''; }
+  };
+
+  const renderProjectFolderSummary = () => {
+    const selected = projectFolderState.selectedPath;
+    $('project-folder-name').textContent = selected ? pathLeaf(selected) : 'General mode';
+    $('project-folder-path').textContent = selected ? selected : 'Desktop + Home access';
+    $('project-folder-selection').textContent = projectFolderState.browsingPath || selected || 'General mode · Desktop + Home';
+  };
+
+  const setProjectFolder = (value, { persist = true } = {}) => {
+    projectFolderState.selectedPath = value || '';
+    if (persist) persistProjectFolder(projectFolderState.selectedPath);
+    renderProjectFolderSummary();
+  };
+
+  const closeProjectFolderModal = () => $('project-folder-modal').classList.remove('show');
+
+  const renderProjectFolderShortcuts = () => {
+    const wrap = $('project-folder-shortcuts');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    projectFolderState.shortcuts.forEach((shortcut) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'folder-shortcut';
+      btn.textContent = shortcutLabel(shortcut.id, shortcut.label);
+      btn.addEventListener('click', () => loadProjectFolderBrowser(shortcut.path));
+      wrap.appendChild(btn);
+    });
+  };
+
+  const renderProjectFolderBrowser = (payload) => {
+    projectFolderState.browsingPath = payload.path || '';
+    projectFolderState.shortcuts = payload.shortcuts || [];
+    renderProjectFolderShortcuts();
+    $('project-folder-browser-status').textContent = `${payload.path || 'Folder'} · ${(payload.entries || []).length} items${payload.truncated ? ' · capped for speed' : ''}`;
+    $('project-folder-selection').textContent = projectFolderState.browsingPath || 'General mode · Desktop + Home';
+    $('project-folder-up').disabled = !payload.parent;
+
+    const crumbs = $('project-folder-breadcrumbs');
+    crumbs.innerHTML = '';
+    (payload.breadcrumbs || []).forEach((crumb) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'folder-crumb';
+      btn.textContent = crumb.name;
+      btn.addEventListener('click', () => loadProjectFolderBrowser(crumb.path));
+      crumbs.appendChild(btn);
+    });
+
+    const list = $('project-folder-list');
+    const empty = $('project-folder-empty');
+    list.innerHTML = '';
+
+    const entries = payload.entries || [];
+    if (!entries.length) {
+      empty.style.display = '';
+      return;
+    }
+
+    empty.style.display = 'none';
+    entries.forEach((entry) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = `folder-entry${entry.is_dir && entry.path === projectFolderState.selectedPath ? ' active' : ''}${entry.is_dir ? '' : ' disabled'}`;
+      row.disabled = !entry.is_dir;
+      row.innerHTML = `
+        <span class="folder-entry-icon" aria-hidden="true">
+          ${entry.is_dir
+            ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2V16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/></svg>'
+            : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'}
+        </span>
+        <span class="folder-entry-copy">
+          <span class="folder-entry-name"></span>
+          <span class="folder-entry-path"></span>
+        </span>
+        <span class="folder-entry-meta">${entry.is_dir ? 'Open' : 'File'}</span>
+      `;
+      row.querySelector('.folder-entry-name').textContent = entry.name || pathLeaf(entry.path);
+      row.querySelector('.folder-entry-path').textContent = entry.path || '';
+      if (entry.is_dir) {
+        row.addEventListener('click', () => loadProjectFolderBrowser(entry.path));
+      }
+      list.appendChild(row);
+    });
+  };
+
+  const loadProjectFolderBrowser = async (path = '') => {
+    await keyReady;
+    const query = path ? `?path=${encodeURIComponent(path)}` : '';
+    $('project-folder-browser-status').textContent = 'Loading folders…';
+    try {
+      const payload = await api(`/api/browse-directory${query}`);
+      renderProjectFolderBrowser(payload);
+      return payload;
+    } catch (err) {
+      $('project-folder-browser-status').textContent = 'Could not load this directory.';
+      toast(typeof err.detail === 'string' ? err.detail : 'Failed to browse folder.', 'warn', 2200);
+      throw err;
+    }
+  };
+
+  const openProjectFolderModal = async () => {
+    $('project-folder-modal').classList.add('show');
+    const targetPath = projectFolderState.browsingPath || projectFolderState.selectedPath || storedProjectFolder() || '';
+    try {
+      await loadProjectFolderBrowser(targetPath);
+    } catch (_) {
+      if (targetPath) await loadProjectFolderBrowser('');
+    }
+  };
 
   const api = (path, method = 'GET', body = null) => fetch(path, {
     method,
@@ -2683,9 +3229,11 @@
     });
   };
 
+  let _scrollPending = false;
   const scrollFeed = () => {
-    const fs = $('feed-scroll');
-    fs.scrollTop = fs.scrollHeight;
+    if (_scrollPending) return;
+    _scrollPending = true;
+    requestAnimationFrame(() => { _scrollPending = false; const fs = $('feed-scroll'); if (fs) fs.scrollTop = fs.scrollHeight; });
   };
 
   const appendMessage = (text, kind = 'system-note') => {
@@ -3239,9 +3787,8 @@
       openEntryBody(entry);
     }
     const pre = entry.terminalRows[key];
-    pre.textContent += output || '';
+    pre.textContent = (pre.textContent + (output || '')).slice(-4000);
     if (!ok) pre.style.color = 'var(--err)';
-    if (pre.textContent.length > 12000) pre.textContent = pre.textContent.slice(-12000);
     pre.scrollTop = pre.scrollHeight;
     scrollFeed();
   };
@@ -3273,11 +3820,27 @@
   const screenshotStore = new Map();
   let screenshotIdCounter = 0;
 
+  const _base64ToBlob = (data) => {
+    const b64 = data.startsWith('data:') ? data.split(',')[1] : data;
+    const mime = data.startsWith('data:') ? data.split(';')[0].slice(5) : 'image/png';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  };
+
   const renderScreenshot = (payload) => {
     finalizeLiveStatus();
     const sid = ++screenshotIdCounter;
-    screenshotStore.set(sid, { data: payload.data, window_rect: payload.window_rect || null, createdAt: Date.now() });
-    if (screenshotStore.size > 30) screenshotStore.delete(screenshotStore.keys().next().value);
+    const blob = _base64ToBlob(payload.data);
+    const blobUrl = URL.createObjectURL(blob);
+    screenshotStore.set(sid, { blobUrl, window_rect: payload.window_rect || null, createdAt: Date.now() });
+    if (screenshotStore.size > 5) {
+      const oldKey = screenshotStore.keys().next().value;
+      const oldEntry = screenshotStore.get(oldKey);
+      if (oldEntry && oldEntry.blobUrl) URL.revokeObjectURL(oldEntry.blobUrl);
+      screenshotStore.delete(oldKey);
+    }
 
     const card = createFeedCard('screenshot-card');
     const isIsolated = payload.isolated || false;
@@ -3292,17 +3855,17 @@
 
     const img = document.createElement('img');
     img.className = 'screenshot-preview';
-    img.src = payload.data.startsWith('data:') ? payload.data : `data:image/png;base64,${payload.data}`;
+    img.src = blobUrl;
     img.loading = 'lazy';
     img.onclick = () => {
-      const data = screenshotStore.get(sid);
-      if (data) openLightbox(data.data, data.window_rect);
+      const entry = screenshotStore.get(sid);
+      if (entry) openLightbox(entry.blobUrl, entry.window_rect);
     };
     card.appendChild(img);
   };
 
   const openLightbox = (data, window_rect) => {
-    $('lightbox-img').src = data.startsWith('data:') ? data : `data:image/png;base64,${data}`;
+    $('lightbox-img').src = data;
     const oldCanvases = $('lightbox').querySelectorAll('canvas');
     oldCanvases.forEach(c => c.remove());
     if (window_rect) {
@@ -3397,7 +3960,7 @@
     return 'Working';
   };
 
-  const shouldReuseLiveStatus = (m = '') => /thinking|planning|reflecting|evaluating|executing sub-task|initializing|re-planning|still/i.test(m);
+  const shouldReuseLiveStatus = (m = '') => /thinking|planning|reflecting|evaluating|executing sub-task|initializing|re-planning|still|scanning|sending request|model responded/i.test(m);
 
   const processTaskEvent = (event, { replay = false, taskId = task, suppressToasts = false } = {}) => {
     if (event.type === 'task_created') return;
@@ -3711,7 +4274,8 @@
       openStream(task);
       await api('/api/tasks', 'POST', { 
         task_id: task, goal, model, mode, isolated_app,
-        active_skills: Array.from(activeSkillIds)
+        active_skills: Array.from(activeSkillIds),
+        project_folder: projectFolderState.selectedPath || null
       });
       if (window.innerWidth <= 1080) document.body.classList.remove('nav-open');
     } catch (err) {
@@ -3995,6 +4559,19 @@
 
     try {
       await keyReady;
+      const storedFolder = storedProjectFolder();
+      if (storedFolder) {
+        try {
+          const payload = await loadProjectFolderBrowser(storedFolder);
+          setProjectFolder(payload.path || storedFolder, { persist: true });
+        } catch (_) {
+          setProjectFolder('', { persist: true });
+          await loadProjectFolderBrowser('');
+        }
+      } else {
+        setProjectFolder('', { persist: false });
+        await loadProjectFolderBrowser('');
+      }
       api(`/api/models?cb=${Date.now()}`).then((r) => hydrateModelSelect(r.models)).catch(() => {});
       api(`/api/tasks?cb=${Date.now()}`).then((r) => {
         const tasks = [...(r.tasks || [])].reverse();
@@ -4124,6 +4701,26 @@
   };
 
   $('mcp-modal-close').onclick = () => $('mcp-overlay').classList.remove('show');
+  $('project-folder-trigger').onclick = openProjectFolderModal;
+  $('project-folder-close').onclick = closeProjectFolderModal;
+  $('project-folder-up').onclick = () => {
+    const crumbs = Array.from($('project-folder-breadcrumbs').querySelectorAll('.folder-crumb'));
+    const parentCrumb = crumbs.length >= 2 ? crumbs[crumbs.length - 2] : null;
+    if (parentCrumb) parentCrumb.click();
+  };
+  $('project-folder-apply').onclick = () => {
+    setProjectFolder(projectFolderState.browsingPath || '', { persist: true });
+    closeProjectFolderModal();
+    toast(projectFolderState.selectedPath ? `Project folder set to ${projectFolderState.selectedPath}` : 'Project folder updated.', 'ok', 2200);
+  };
+  $('project-folder-clear').onclick = () => {
+    setProjectFolder('', { persist: true });
+    closeProjectFolderModal();
+    toast('Project folder cleared. Agent will use desktop and home mode.', 'info', 2200);
+  };
+  $('project-folder-modal').addEventListener('click', (event) => {
+    if (event.target === $('project-folder-modal')) closeProjectFolderModal();
+  });
 
   /* ---------------- event wiring ---------------- */
   $('send').onclick = start;
@@ -4175,6 +4772,11 @@
     if ($('desktop-access').classList.contains('show')) {
       if (event.key === 'Enter') { event.preventDefault(); resolveDesktopAccess(true); }
       if (event.key === 'Escape') { event.preventDefault(); resolveDesktopAccess(false); }
+      return;
+    }
+    if ($('project-folder-modal').classList.contains('show') && event.key === 'Escape') {
+      event.preventDefault();
+      closeProjectFolderModal();
       return;
     }
     if ($('lightbox').classList.contains('show') && event.key === 'Escape') { event.preventDefault(); closeLightbox(); return; }
@@ -4244,7 +4846,9 @@
       { group: 'Task', label: 'Start task', hint: 'Ctrl ↵', action: () => { const b = $('send'); if (b) b.click(); } },
       { group: 'Task', label: 'Pause / resume', hint: '', action: () => { const b = $('btn-pause'); if (b) b.click(); } },
       { group: 'Task', label: 'Cancel task', hint: 'esc', action: () => { const b = $('btn-cancel'); if (b) b.click(); } },
-      { group: 'View', label: 'Focus prompt', hint: 'Ctrl L', action: () => { const el = $('prompt'); if (el) el.focus(); } },
+      { group: 'Project Folder', label: 'Choose project folder', hint: projectFolderState.selectedPath || 'General mode', action: () => openProjectFolderModal() },
+      { group: 'Project Folder', label: 'Clear project folder', hint: 'Desktop + Home', action: () => { setProjectFolder('', { persist: true }); toast('Project folder cleared.', 'info', 1800); } },
+      { group: 'View', label: 'Focus prompt', hint: 'Ctrl L', action: () => { const el = $('input'); if (el) el.focus(); } },
       { group: 'View', label: 'Toggle history', hint: '', action: () => { const el = $('btn-history'); if (el) el.click(); } },
     );
     return cmds;
