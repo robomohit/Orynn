@@ -14,6 +14,8 @@ Get a token: https://discord.com/developers/applications
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -82,9 +84,33 @@ async def start_discord(agent_service: "AgentService") -> None:
             await message.channel.send(f"Failed to start task: {exc}")
             return
 
+        # Screenshot delivery: cap to MAX_SCREENSHOTS per task so a chatty
+        # computer-mode task doesn't flood the channel.
+        MAX_SCREENSHOTS = 5
+        screenshots_sent = 0
+        last_intent: str = ""
         try:
             async for event_type, data in _stream_task(agent_service, task_id):
-                if event_type == "done":
+                if event_type == "screenshot" and screenshots_sent < MAX_SCREENSHOTS:
+                    b64 = data.get("data") or ""
+                    if b64:
+                        try:
+                            img_bytes = base64.b64decode(b64)
+                            file = discord.File(io.BytesIO(img_bytes), filename=f"screenshot_{screenshots_sent + 1}.jpg")
+                            caption = (last_intent[:1900] if last_intent else None)
+                            await message.channel.send(content=caption, file=file)
+                            screenshots_sent += 1
+                            last_intent = ""
+                        except Exception as exc:
+                            _log.debug("Discord screenshot send failed: %s", exc)
+                elif event_type == "intent":
+                    # Buffer the agent's most recent stated intent so the next
+                    # screenshot we send arrives with that as its caption.
+                    explanation = data.get("explanation") or ""
+                    action_type = data.get("action_type") or ""
+                    if explanation or action_type:
+                        last_intent = f"**{action_type}** — {explanation}".strip()
+                elif event_type == "done":
                     reason = data.get("reason", "")
                     # Discord max message length is 2000 chars
                     reply = (reason or "Task complete.")[:1990]

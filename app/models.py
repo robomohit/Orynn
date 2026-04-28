@@ -88,6 +88,8 @@ class ActionType(str, Enum):
     extract_links = "extract_links"
     todo_write = "todo_write"
     memory_recall = "memory_recall"
+    run_and_watch = "run_and_watch"
+    ui_critique = "ui_critique"
 
 
 class Action(BaseModel):

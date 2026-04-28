@@ -12,6 +12,8 @@ Get a token: https://t.me/BotFather  (/newbot command)
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -60,9 +62,28 @@ async def start_telegram(agent_service: "AgentService") -> None:
             return
 
         collected: list[str] = []
+        MAX_SCREENSHOTS = 5
+        screenshots_sent = 0
+        last_intent: str = ""
         try:
             async for event_type, data in _stream_task(agent_service, task_id):
-                if event_type == "done":
+                if event_type == "screenshot" and screenshots_sent < MAX_SCREENSHOTS:
+                    b64 = data.get("data") or ""
+                    if b64:
+                        try:
+                            img_bytes = base64.b64decode(b64)
+                            caption = (last_intent[:1000] if last_intent else None)
+                            await update.message.reply_photo(photo=io.BytesIO(img_bytes), caption=caption)
+                            screenshots_sent += 1
+                            last_intent = ""
+                        except Exception as exc:
+                            _log.debug("Telegram screenshot send failed: %s", exc)
+                elif event_type == "intent":
+                    explanation = data.get("explanation") or ""
+                    action_type = data.get("action_type") or ""
+                    if explanation or action_type:
+                        last_intent = f"{action_type} — {explanation}".strip()
+                elif event_type == "done":
                     reason = data.get("reason", "")
                     await update.message.reply_text(reason or "Task complete.")
                     return

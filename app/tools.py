@@ -1006,6 +1006,90 @@ class ToolExecutor:
                     pass
         return ToolResult(ok=True, output="\n".join(matches) if matches else "No matches found.")
 
+    def run_and_watch(self, command: str, watch_seconds: float = 10.0):
+        """Start a process, watch its stdout+stderr for `watch_seconds`,
+        kill it cleanly, return everything captured plus exit metadata.
+
+        Use case: launch an app/server and observe its first few seconds of
+        output for crashes/errors before deciding what to fix. Different from
+        `bash` because we KILL the process at the end rather than waiting for
+        natural exit, so this works for long-running servers."""
+        try:
+            watch_seconds = max(0.5, min(float(watch_seconds), 120.0))
+        except (TypeError, ValueError):
+            watch_seconds = 10.0
+        try:
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(self.workspace),
+                errors="replace",
+            )
+        except Exception as e:
+            return ToolResult(ok=False, output=f"run_and_watch failed to spawn: {e}")
+
+        still_running = False
+        exit_code = None
+        try:
+            stdout, stderr = proc.communicate(timeout=watch_seconds)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                stdout, stderr = proc.communicate(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", ""
+            still_running = True
+            exit_code = -1
+        except Exception as e:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return ToolResult(ok=False, output=f"run_and_watch error: {e}")
+
+        stdout = (stdout or "")[-8000:]
+        stderr = (stderr or "")[-8000:]
+        if still_running:
+            label = f"[killed after {watch_seconds:.1f}s — process was still running]"
+        else:
+            label = f"[exited with code {exit_code}]"
+        body = f"{label}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+        return ToolResult(
+            ok=True,
+            output=body,
+            data={
+                "exit_code": exit_code,
+                "killed": still_running,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
+        )
+
+    def ui_critique(self, focus: str = ""):
+        """Take a desktop screenshot and return a structured prompt asking
+        the model to enumerate visible UI issues. The screenshot rides along
+        as base64_image so the next LLM turn can see and analyze it."""
+        shot = self.screenshot()
+        if not shot.ok or not shot.base64_image:
+            return ToolResult(ok=False, output="ui_critique: failed to capture screenshot")
+        focus_hint = f" Focus area: {focus}." if focus else ""
+        prompt = (
+            "UI critique. Look at the screenshot above carefully and list the "
+            "top 3-5 specific UI issues you can see. For each issue, give:\n"
+            "  - a one-line description of what's wrong (clutter, alignment, "
+            "redundancy, info density, contrast, etc.)\n"
+            "  - a hypothesis about which CSS/HTML element to change "
+            "(selector, id, class, or pixel coordinates)\n"
+            f"{focus_hint} Respond as numbered bullets. Then in your NEXT "
+            "action either edit the relevant file to fix the top issue or "
+            "take another screenshot to verify a previous fix landed."
+        )
+        return ToolResult(ok=True, output=prompt, base64_image=shot.base64_image)
+
     def todo_write(self, items):
         """Persist an explicit task plan for this task.
 
@@ -1625,6 +1709,8 @@ class ToolExecutor:
             ActionType.extract_links: lambda a: self.extract_links(a.args["url"]),
             ActionType.todo_write: lambda a: self.todo_write(a.args.get("items", [])),
             ActionType.memory_recall: lambda a: self.memory_recall(a.args.get("query", "")),
+            ActionType.run_and_watch: lambda a: self.run_and_watch(a.args["command"], a.args.get("watch_seconds", 10.0)),
+            ActionType.ui_critique: lambda a: self.ui_critique(a.args.get("focus", "")),
         }
         if action.type in handlers:
             try:
