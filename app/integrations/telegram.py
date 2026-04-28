@@ -16,7 +16,8 @@ import base64
 import io
 import logging
 import os
-from typing import TYPE_CHECKING
+from collections import deque
+from typing import TYPE_CHECKING, Any, AsyncIterable
 
 if TYPE_CHECKING:
     from ..agent import AgentService
@@ -24,6 +25,142 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 _INTEGRATION_NAME = "Telegram"
+
+
+async def consume_telegram_sse(
+    message: Any,
+    working_msg: Any,
+    events: AsyncIterable[tuple[str, dict]],
+    *,
+    edit_throttle_s: float = 1.2,
+    reaction_bot: Any | None = None,
+) -> None:
+    """One status message edited as intents stream in; screenshots as separate photos.
+
+    If ``reaction_bot`` is set (``context.bot``), sets a 🤔 reaction on the user's message
+    while working and replaces it with a terminal emoji when the task ends (Bot API 7+).
+    """
+    MAX_SCREENSHOTS = 5
+    MAX_LINES = 8
+
+    screenshots_sent = 0
+    activity: deque[str] = deque(maxlen=MAX_LINES)
+    activity.append("🤔 Thinking…")
+    last_intent_caption = ""
+    last_edit_at = 0.0
+
+    def _render() -> str:
+        return "\n".join(activity)[:3900]
+
+    async def _maybe_edit(force: bool = False) -> None:
+        nonlocal last_edit_at
+        now = asyncio.get_event_loop().time()
+        if force or (now - last_edit_at >= edit_throttle_s):
+            try:
+                await working_msg.edit_text(_render())
+                last_edit_at = now
+            except Exception as exc:
+                _log.debug("Telegram edit failed: %s", exc)
+
+    async def _set_user_message_reaction(emoji: str | None) -> None:
+        """emoji=None clears the bot's reaction (best-effort)."""
+        if reaction_bot is None:
+            return
+        chat_id = getattr(message, "chat_id", None)
+        message_id = getattr(message, "message_id", None)
+        if chat_id is None or message_id is None:
+            return
+        try:
+            from telegram import ReactionTypeEmoji
+        except ImportError:
+            return
+        try:
+            if emoji is None:
+                await reaction_bot.set_message_reaction(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reaction=[],
+                )
+            else:
+                await reaction_bot.set_message_reaction(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reaction=[ReactionTypeEmoji(emoji)],
+                )
+        except Exception as exc:
+            _log.debug("Telegram message reaction failed: %s", exc)
+
+    outcome = "timeout"
+    await _set_user_message_reaction("\N{THINKING FACE}")
+    try:
+        async for event_type, data in events:
+            if event_type == "intent":
+                explanation = (data.get("explanation") or "").strip()
+                action_type = (data.get("action_type") or "").strip()
+                if action_type or explanation:
+                    line = f"🔧 {action_type}"
+                    if explanation:
+                        line += f" — {explanation[:120]}"
+                    activity.append(line)
+                    last_intent_caption = f"{action_type} — {explanation}".strip()
+                    await _maybe_edit()
+            elif event_type == "terminal_output":
+                out = (data.get("output") or "").strip()
+                if out:
+                    snippet = out.splitlines()[-1][:90] if out else ""
+                    if snippet:
+                        activity.append(f"  └ {snippet}")
+                        await _maybe_edit()
+            elif event_type == "action_result":
+                out = (data.get("output") or "").strip()
+                ok = data.get("ok", True)
+                if out:
+                    first_line = out.splitlines()[0][:120] if out else ""
+                    prefix = "✓" if ok else "✗"
+                    activity.append(f"  {prefix} {first_line}")
+                    await _maybe_edit()
+            elif event_type == "screenshot" and screenshots_sent < MAX_SCREENSHOTS:
+                b64 = data.get("data") or ""
+                if b64:
+                    try:
+                        img_bytes = base64.b64decode(b64)
+                        caption = (last_intent_caption[:1000] if last_intent_caption else None)
+                        await message.reply_photo(photo=io.BytesIO(img_bytes), caption=caption)
+                        screenshots_sent += 1
+                        last_intent_caption = ""
+                    except Exception as exc:
+                        _log.debug("Telegram screenshot send failed: %s", exc)
+            elif event_type == "done":
+                reason = (data.get("reason") or "Task complete.").strip()
+                activity.append(f"✅ {reason[:300]}")
+                await _maybe_edit(force=True)
+                outcome = "done"
+                return
+            elif event_type == "error":
+                err = (data.get("message") or "unknown error").strip()
+                activity.append(f"❌ Error: {err[:300]}")
+                await _maybe_edit(force=True)
+                outcome = "error"
+                return
+            elif event_type == "cancelled":
+                msg = (data.get("message") or "Task cancelled.").strip()
+                activity.append(f"⚠️ {msg[:300]}")
+                await _maybe_edit(force=True)
+                outcome = "cancelled"
+                return
+    except Exception as exc:
+        activity.append(f"❌ Task crashed: {exc}")
+        await _maybe_edit(force=True)
+        outcome = "crash"
+    finally:
+        final = {
+            "done": "\N{WHITE HEAVY CHECK MARK}",
+            "error": "\N{CROSS MARK}",
+            "cancelled": "\N{WARNING SIGN}",
+            "crash": "\N{CROSS MARK}",
+            "timeout": None,
+        }.get(outcome)
+        await _set_user_message_reaction(final)
 
 
 async def start_telegram(agent_service: "AgentService") -> None:
@@ -53,45 +190,25 @@ async def start_telegram(agent_service: "AgentService") -> None:
         chat_id = update.message.chat_id
         _log.debug("Telegram message from %s: %s", chat_id, goal[:80])
 
-        await update.message.reply_text("Working on it…")
+        # Openclaw-style streaming: one message edited as the agent works,
+        # throttled so we don't hammer Telegram's edit rate limit.
+        working_msg = await update.message.reply_text("🤔 Thinking…")
         task_id = f"tg_{chat_id}_{int(asyncio.get_event_loop().time() * 1000)}"
         try:
             agent_service.init_task(task_id, goal)
         except Exception as exc:
-            await update.message.reply_text(f"Failed to start task: {exc}")
+            try:
+                await working_msg.edit_text(f"Failed to start task: {exc}")
+            except Exception:
+                pass
             return
 
-        collected: list[str] = []
-        MAX_SCREENSHOTS = 5
-        screenshots_sent = 0
-        last_intent: str = ""
-        try:
-            async for event_type, data in _stream_task(agent_service, task_id):
-                if event_type == "screenshot" and screenshots_sent < MAX_SCREENSHOTS:
-                    b64 = data.get("data") or ""
-                    if b64:
-                        try:
-                            img_bytes = base64.b64decode(b64)
-                            caption = (last_intent[:1000] if last_intent else None)
-                            await update.message.reply_photo(photo=io.BytesIO(img_bytes), caption=caption)
-                            screenshots_sent += 1
-                            last_intent = ""
-                        except Exception as exc:
-                            _log.debug("Telegram screenshot send failed: %s", exc)
-                elif event_type == "intent":
-                    explanation = data.get("explanation") or ""
-                    action_type = data.get("action_type") or ""
-                    if explanation or action_type:
-                        last_intent = f"{action_type} — {explanation}".strip()
-                elif event_type == "done":
-                    reason = data.get("reason", "")
-                    await update.message.reply_text(reason or "Task complete.")
-                    return
-                elif event_type == "error":
-                    await update.message.reply_text(f"Error: {data.get('message', 'unknown error')}")
-                    return
-        except Exception as exc:
-            await update.message.reply_text(f"Task error: {exc}")
+        await consume_telegram_sse(
+            update.message,
+            working_msg,
+            _stream_task(agent_service, task_id),
+            reaction_bot=context.bot,
+        )
 
     async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if update.message:

@@ -18,4 +18,4 @@ psutil>=5.9.0
 pywin32>=306; platform_system == "Windows"
 # Optional messaging integrations — only needed if you set the tokens in .env
 # python-telegram-bot>=21.0  # Uncomment to enable Telegram (TELEGRAM_BOT_TOKEN)
-# discord.py>=2.3.0           # Uncomment to enable Discord  (DISCORD_BOT_TOKEN)
+discord.py>=2.3.0             # Discord bot (DISCORD_BOT_TOKEN in .env)
