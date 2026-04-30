@@ -176,6 +176,7 @@ def test_persistent_logs_omit_raw_screenshot_payload(tmp_path, monkeypatch):
     screenshot_b64 = "a" * 10_000
 
     emitter.emit("task-log", "screenshot", {"data": screenshot_b64, "isolated": False})
+    emitter.flush()  # wait for background write before reading
 
     events = emitter.read_log("task-log")
     assert len(events) == 1

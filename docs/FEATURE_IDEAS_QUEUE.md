@@ -80,5 +80,5 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add a `flush()` method to `LogEmitter` that drains all pending writes by submitting a sentinel task to the executor and calling `.result()` on it. Update `test_persistent_logs_omit_raw_screenshot_payload` to call `emitter.flush()` between `emit()` and `read_log()`. No other tests or callers change.
 - **Acceptance criteria:** `pytest tests/test_computer_control_regressions.py::test_persistent_logs_omit_raw_screenshot_payload` passes. Full suite green.
 - **Out of scope:** Changing the async write design for production paths; adding flush calls outside the test.
-- **Status:** in_progress
+- **Status:** done
 

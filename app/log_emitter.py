@@ -197,6 +197,18 @@ class LogEmitter:
         except Exception as exc:
             _log.warning("Disk log write failed for task %s: %s", task_id, exc)
 
+    def flush(self) -> None:
+        """Block until all pending background disk writes have completed.
+
+        Submits a no-op sentinel to the single-worker executor and waits for
+        its result, which guarantees every previously submitted write has
+        finished (FIFO ordering with max_workers=1).
+        """
+        try:
+            self._writer.submit(lambda: None).result()
+        except RuntimeError:
+            pass  # Executor already shut down; nothing to flush.
+
     def cleanup_task(self, task_id: str) -> None:
         """Release in-memory state for a completed/failed task.
 
