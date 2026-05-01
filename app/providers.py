@@ -1285,7 +1285,7 @@ class PlannerProvider:
                                             except json.JSONDecodeError:
                                                 try:
                                                     args = json.loads(_sanitize_json_text(tool_args_buffer))
-                                                except:
+                                                except (json.JSONDecodeError, ValueError, TypeError):
                                                     args = {}
                                             yield {
                                                 "type": "tool_call",

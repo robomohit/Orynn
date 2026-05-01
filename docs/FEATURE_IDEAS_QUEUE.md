@@ -141,3 +141,39 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Out of scope:** Anything outside `app/project_folder*` or related test fixtures.
 - **Status:** queued
 
+### [IDEA-2026-04-30-09] Self-host mermaid.js (remove jsdelivr CDN)
+
+- **Source:** `static/index.html:10` — `<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js">`
+- **Why it fits Ai_computer:** Hard CDN dependency means the UI breaks on any offline / firewalled / air-gapped run. The whole product premise (run anywhere) is undermined by one external script tag.
+- **Scope (this PR only):** Vendor `mermaid@10.9.1/dist/mermaid.min.js` into `static/vendor/mermaid.min.js`, update the script tag, add the file to git. ~2 LOC change in HTML + one vendored JS file (~3 MB but it's static).
+- **Acceptance criteria:** `static/index.html` has no `cdn.jsdelivr.net` references. UI loads with internet disconnected. UI smoke test still passes.
+- **Out of scope:** Vendoring other CDN assets (Google Fonts) — separate IDEA if needed.
+- **Status:** queued
+
+### [IDEA-2026-04-30-10] Persist AGENT_API_KEY across server restarts
+
+- **Source:** `app/main.py:21` — `API_KEY = os.environ.get("AGENT_API_KEY") or secrets.token_hex(32)`
+- **Why it fits Ai_computer:** When `AGENT_API_KEY` is unset, every restart generates a new key, silently invalidating any existing CLI/integration that stored the previous one. Users get unexplained 401s after a routine reboot.
+- **Scope (this PR only):** On startup, if `AGENT_API_KEY` env var is unset, check for `workspace/.api_key` file. Use it if present; otherwise generate, write to that file (mode 600), use it. Log the file path on first generation. ~15 LOC.
+- **Acceptance criteria:** Restart server with no env var → same API key as previous run. Setting the env var still wins. New unit test covers both paths.
+- **Out of scope:** Key rotation, multi-key support.
+- **Status:** queued
+
+### [IDEA-2026-04-30-11] Streaming token + cost counter in UI
+
+- **Source:** `static/index.html` (run cards), `app/agent.py` SSE event emission
+- **Why it fits Ai_computer:** Today users can't see how many tokens a run consumed or what it cost until after — Cursor/Aider/OpenHands all show this live. Encourages tighter prompts and helps users stay within free-tier limits.
+- **Scope (this PR only):** Emit a new SSE event `usage_update` with `{prompt_tokens, completion_tokens, cost_usd}` after each LLM call. Render a small live-updating badge in the run card ("12.4k tok · $0.03"). Cost = sum across calls; use a hardcoded provider price table in `app/providers.py`.
+- **Acceptance criteria:** Free-tier OpenRouter run shows `$0.00`; paid model shows nonzero. Unit test on the cost calculator. UI smoke verifies badge updates mid-run.
+- **Out of scope:** Aggregate dashboard, daily/weekly cost rollups, exporting usage data.
+- **Status:** queued
+
+### [IDEA-2026-04-30-12] Cache /api/mcp instead of re-initializing on every GET
+
+- **Source:** `app/main.py:432` — `await mcp_manager.initialize_default_servers(...)` runs on every GET
+- **Why it fits Ai_computer:** Re-initializing MCP servers on every UI poll is wasteful (the UI may poll `/api/mcp` periodically). `initialize_default_servers` is presumably idempotent but still does work each time.
+- **Scope (this PR only):** Remove the re-init call from the GET handler — rely on the lifespan-startup init. If the manager isn't ready yet, return `{"servers": [], "initializing": true}` so the UI can retry. ~5 LOC.
+- **Acceptance criteria:** `GET /api/mcp` returns in <50ms after startup. Existing test for `/api/mcp` still passes; new test asserts no re-init happens on repeated GETs.
+- **Out of scope:** Changing how `mcp_manager` itself initializes.
+- **Status:** queued
+

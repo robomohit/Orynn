@@ -412,14 +412,30 @@ async def root_v2():
     )
 
 import time
+import subprocess
 START_TIME = time.time()
+
+def _git_commit_short() -> Optional[str]:
+    """Return current short commit hash, or None if git is unavailable."""
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        return out.decode("utf-8", errors="ignore").strip() or None
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return None
 
 @app.get("/api/health")
 async def health():
     return {
         "status": "ok",
         "version": "1.0.0",
-        "uptime_seconds": time.time() - START_TIME
+        "commit": _git_commit_short(),
+        "uptime_seconds": time.time() - START_TIME,
+        "active_tasks": sum(1 for t in _tasks.values() if t.status in ("pending", "running")),
     }
 
 @app.get("/api/skills")
