@@ -2575,7 +2575,7 @@
       </div>
     </div>
     <div class="history-search">
-      <input id="history-search" type="search" placeholder="Search history">
+      <input id="history-search" type="search" placeholder="Search history" aria-label="Search history">
     </div>
     <div class="history-header">
       <span>Sessions</span>
@@ -2586,11 +2586,11 @@
     </div>
     <div class="sidebar-footer">
       <div class="selector-wrap">
-        <div class="selector-label">Model</div>
+        <label for="model-id" class="selector-label">Model</label>
         <select id="model-id"></select>
       </div>
       <div class="selector-wrap">
-        <div class="selector-label">Mode</div>
+        <label for="mode-id" class="selector-label">Mode</label>
         <select id="mode-id">
           <option value="auto">Auto detect</option>
           <option value="coding">Coding</option>
@@ -2600,7 +2600,7 @@
         </select>
       </div>
       <div class="selector-wrap" id="isolated-app-wrap" style="display:none">
-        <div class="selector-label">Target App (Locked)</div>
+        <label for="isolated-app-id" class="selector-label">Target App (Locked)</label>
         <input id="isolated-app-id" type="text" placeholder="e.g. Chrome, Notepad…">
         <p style="font-size:var(--fs-label);color:var(--muted-2);margin-top:6px;line-height:1.4">The agent will only see and control this app.</p>
       </div>
@@ -2671,7 +2671,7 @@
 
     <div class="composer-wrap">
       <div class="composer">
-        <textarea id="input" placeholder="Describe a task. The agent will plan, act, reflect, and ask before risky actions."></textarea>
+        <textarea id="input" placeholder="Describe a task. The agent will plan, act, reflect, and ask before risky actions." aria-label="Describe a task"></textarea>
         <div class="composer-bottom">
           <div class="composer-meta">
             <div class="mini-chip"><kbd>↵</kbd> send</div>
@@ -2722,7 +2722,7 @@
   <div class="cmdk-panel">
     <div class="cmdk-input-wrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="cmdk-input" placeholder="Type a command or search…" autocomplete="off">
+      <input id="cmdk-input" placeholder="Type a command or search…" autocomplete="off" aria-label="Command palette input">
       <kbd>esc</kbd>
     </div>
     <div class="cmdk-list" id="cmdk-list"></div>
@@ -2848,7 +2848,7 @@
       <div class="t-swatches" id="t-swatches"></div>
     </div>
     <div class="t-section">
-      <div class="t-row"><span class="t-label">Glow intensity</span><span class="t-value" id="t-glow-val">1.0×</span></div>
+      <div class="t-row"><label for="t-glow" class="t-label">Glow intensity</label><span class="t-value" id="t-glow-val">1.0×</span></div>
       <input type="range" id="t-glow" min="0" max="1.6" step="0.1" value="1">
     </div>
     <div class="t-section">
@@ -2867,7 +2867,7 @@
       </div>
     </div>
     <div class="t-section">
-      <div class="t-row"><span class="t-label">Token budget (demo)</span><span class="t-value" id="t-budget-val">42%</span></div>
+      <div class="t-row"><label for="t-budget" class="t-label">Token budget (demo)</label><span class="t-value" id="t-budget-val">42%</span></div>
       <input type="range" id="t-budget" min="0" max="100" step="1" value="42">
     </div>
     <div class="t-section">
