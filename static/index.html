@@ -689,61 +689,44 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 12px;
-    width: calc(100% - 28px);
-    margin: 10px 14px 0;
-    padding: 10px 14px;
-    border-radius: var(--r);
-    border: 1px solid var(--line-2);
-    background: var(--bg-2);
-    box-shadow: var(--shadow-inset);
-    transition: all var(--dur-fast) var(--ease-out);
+    gap: 8px;
+    width: calc(100% - 24px);
+    margin: 6px 12px 0;
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+    border: 1px solid transparent;
+    background: transparent;
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
     overflow: hidden;
   }
-  .project-folder-trigger::after {
-    content: '';
-    position: absolute;
-    inset: auto -20% -60% 10%;
-    height: 60px;
-    background: radial-gradient(circle, var(--accent-glow-2), transparent 70%);
-    opacity: 0.5;
-    pointer-events: none;
-  }
+  .project-folder-trigger::after { display: none; }
   .project-folder-trigger:hover {
-    transform: translateY(-1px);
-    background: var(--bg-3);
-    border-color: var(--line-3);
-    box-shadow: var(--shadow-card);
+    background: var(--bg-2);
+    border-color: var(--line-2);
   }
   .project-folder-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
     display: grid;
     place-items: center;
-    color: var(--accent);
-    background: var(--bg-3);
-    border: 1px solid var(--line-2);
+    color: var(--muted);
+    background: transparent;
+    border: 0;
     flex-shrink: 0;
   }
   .project-folder-copy {
     min-width: 0;
     display: grid;
-    gap: 1px;
+    gap: 0;
     text-align: left;
     position: relative;
     z-index: 1;
   }
-  .project-folder-label {
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted-2);
-  }
+  .project-folder-label { display: none; }
   .project-folder-name {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--ink);
     white-space: nowrap;
     overflow: hidden;
@@ -751,7 +734,7 @@
   }
   .project-folder-path {
     font-size: 11px;
-    color: var(--muted);
+    color: var(--muted-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1128,61 +1111,44 @@
   /* ---------------- welcome ---------------- */
 
   .welcome {
-    padding: 48px 0 20px;
+    padding: 32px 0 16px;
     text-align: left;
     max-width: 680px;
   }
-  .welcome .hello-eye {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-size: var(--fs-label);
-    font-weight: 600;
-    letter-spacing: var(--track-cap);
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 14px;
-  }
-  .welcome .hello-eye::before {
-    content: '';
-    width: 6px; height: 6px; border-radius: 999px;
-    background: var(--accent);
-    box-shadow: 0 0 12px var(--accent-glow-1);
-  }
+  .welcome .hello-eye { display: none; }
   .welcome h3 {
-    margin: 0 0 12px;
-    font-size: 32px;
+    margin: 0 0 6px;
+    font-size: 17px;
     font-weight: 600;
-    letter-spacing: -0.035em;
-    line-height: 1.1;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
     color: var(--ink);
   }
-  .welcome h3 em {
-    font-style: normal;
-    color: var(--muted);
-    font-weight: 450;
-  }
+  .welcome h3 em { font-style: normal; color: var(--muted); font-weight: 450; }
   .welcome p {
-    margin: 0 0 28px;
+    margin: 0 0 14px;
     color: var(--muted);
-    line-height: 1.6;
-    font-size: var(--fs-md);
+    line-height: 1.5;
+    font-size: var(--fs-label);
     max-width: 580px;
   }
 
   .example-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .example-btn {
     text-align: left;
-    padding: 14px 14px 14px 14px;
-    border-radius: var(--r);
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
     border: 1px solid var(--line-2);
-    background: var(--bg-2);
-    color: var(--ink-2);
-    line-height: 1.5;
-    transition: background var(--dur) var(--ease-spring), border-color var(--dur) var(--ease-spring), transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease-spring);
+    background: transparent;
+    color: var(--muted);
+    font-size: var(--fs-label);
+    line-height: 1.4;
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
     font-size: var(--fs-sm);
     font-weight: 500;
     position: relative;
@@ -1191,34 +1157,15 @@
     gap: 10px;
     align-items: flex-start;
   }
-  .example-btn::before {
-    content: '';
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
-    background: var(--bg-3);
-    border: 1px solid var(--line-2);
-    flex-shrink: 0;
-    margin-top: 1px;
-    background-image: linear-gradient(135deg, var(--accent-glow-2), transparent);
-  }
+  .example-btn::before { display: none; }
   .example-btn:hover {
     background: var(--bg-3);
     border-color: var(--line-3);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-card);
+    color: var(--ink);
   }
-  .example-btn span {
-    display: block;
-    margin-top: 4px;
-    color: var(--muted);
-    font-size: var(--fs-label);
-    font-weight: 400;
-    line-height: 1.5;
-    letter-spacing: 0;
-  }
+  .example-btn span { display: none; }
   .example-btn .ex-body { flex: 1; min-width: 0; }
-  .example-btn .ex-body strong { color: var(--ink); font-weight: 600; display:block; }
+  .example-btn .ex-body strong { color: var(--ink-2); font-weight: 500; display:block; font-size: var(--fs-label); }
 
   /* ---------------- messages ---------------- */
 
@@ -2419,14 +2366,11 @@
     }
   }
 
-  /* ---------------- UI cleanup overrides ---------------- */
+  /* ---------------- UI cleanup overrides (tool-aesthetic empty state) ---------------- */
   .welcome .hello-eye { display: none; }
-  .welcome { padding: 0; max-width: 720px; width: 100%; }
-  .welcome h3 { font-size: 28px; margin-bottom: 10px; }
-  .welcome p { margin-bottom: 22px; font-size: var(--fs-sm); }
-  .example-btn::before { display: none; }
-  .example-btn { padding: 14px 16px; }
-  .example-grid { gap: 10px; }
+  .welcome { padding: 0; max-width: 640px; width: 100%; text-align: left; margin: 0 auto; }
+  .welcome h3 { font-size: 17px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; line-height: 1.3; }
+  .welcome p { margin: 0 0 14px; font-size: var(--fs-label); line-height: 1.5; color: var(--muted); }
   .budget-bar { display: none; }
   .budget-bar[data-active='true'] { display: block; }
   /* Vertically center welcome state when no events yet */
@@ -2435,37 +2379,38 @@
     justify-content: center;
     padding: 24px 0;
   }
-  .welcome { text-align: center; margin: 0 auto; }
-  .welcome h3 { letter-spacing: -0.02em; }
-  .welcome p { margin-left: auto; margin-right: auto; }
 
-  /* Operator-style suggestion chips (replaces card grid look) */
+  /* Suggestion chips — single row of compact pills */
   .example-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    max-width: 720px;
-    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 640px;
+    margin: 0;
   }
   .example-btn {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 10px 12px;
+    display: inline-flex;
+    align-items: center;
+    flex-direction: row;
+    padding: 6px 10px;
     background: transparent;
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-sm);
     box-shadow: none;
-    border-radius: 10px;
+    color: var(--muted);
+    font-size: var(--fs-label);
+    line-height: 1.4;
   }
+  .example-btn::before { display: none; }
   .example-btn:hover {
     background: var(--bg-2);
+    border-color: var(--line-3);
+    color: var(--ink);
     transform: none;
     box-shadow: none;
   }
-  .example-btn .ex-body strong { font-size: var(--fs-sm); margin-bottom: 2px; }
-  .example-btn span { font-size: var(--fs-micro); margin-top: 0; line-height: 1.35; }
-
-  /* Stack vertically on narrow viewports */
-  @media (max-width: 920px) {
-    .example-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
+  .example-btn span { display: none; }
+  .example-btn .ex-body strong { font-size: var(--fs-label); font-weight: 500; color: inherit; margin: 0; display: inline; }
 
   /* Living "Ready" status — soft pulse so the agent feels online */
   @keyframes agentPulse {
