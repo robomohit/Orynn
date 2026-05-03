@@ -5,6 +5,9 @@ from pathlib import Path
 from .models import ToolError, ToolResult
 
 
+_HISTORY_CAP = 10  # max undo levels per file
+
+
 class TextEditorTool:
     def __init__(self, workspace: Path, *, home_dir: Path | None = None):
         self.workspace = workspace.resolve()
@@ -63,7 +66,10 @@ class TextEditorTool:
             raise ToolError("old_str not found. Provide more precise context.")
         if count > 1:
             raise ToolError("old_str appears multiple times; please disambiguate.")
-        self._history.setdefault(str(p), []).append(text)
+        hist = self._history.setdefault(str(p), [])
+        hist.append(text)
+        if len(hist) > _HISTORY_CAP:
+            del hist[0]
         p.write_text(text.replace(old_str, new_str), encoding="utf-8")
         return ToolResult(ok=True, output="Replaced 1 occurrence")
 
@@ -71,7 +77,10 @@ class TextEditorTool:
         new_str = new_str.replace("\\n", "\n").replace("\\t", "\t")
         p = self._safe_path(path)
         text = p.read_text(encoding="utf-8") if p.exists() else ""
-        self._history.setdefault(str(p), []).append(text)
+        hist = self._history.setdefault(str(p), [])
+        hist.append(text)
+        if len(hist) > _HISTORY_CAP:
+            del hist[0]
         lines = text.splitlines()
         idx = max(0, min(insert_line, len(lines)))
         lines[idx:idx] = new_str.splitlines()

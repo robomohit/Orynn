@@ -1,7 +1,7 @@
 import pytest
 
 from app.models import ToolError
-from app.text_editor import TextEditorTool
+from app.text_editor import TextEditorTool, _HISTORY_CAP
 
 
 def test_text_editor(workspace):
@@ -33,3 +33,16 @@ def test_text_editor(workspace):
         t.view("../escape.txt")
     with pytest.raises(ToolError):
         t.view(str((workspace.parent / "escape.txt").resolve()))
+
+
+def test_history_cap_enforced(workspace):
+    t = TextEditorTool(workspace)
+    f = workspace / "cap.txt"
+    f.write_text("v0")
+    for i in range(_HISTORY_CAP + 5):
+        t.str_replace("cap.txt", f"v{i}", f"v{i+1}")
+    key = str(f.resolve())
+    assert len(t._history[key]) == _HISTORY_CAP
+    # undo still works for recent edits
+    t.undo_edit("cap.txt")
+    assert len(t._history[key]) == _HISTORY_CAP - 1
