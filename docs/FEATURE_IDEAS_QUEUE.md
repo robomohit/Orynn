@@ -141,7 +141,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** On startup, if `AGENT_API_KEY` env var is unset, check for `workspace/.api_key` file. Use it if present; otherwise generate, write to that file (mode 600), use it. Log the file path on first generation. ~15 LOC.
 - **Acceptance criteria:** Restart server with no env var → same API key as previous run. Setting the env var still wins. New unit test covers both paths.
 - **Out of scope:** Key rotation, multi-key support.
-- **Status:** queued
+- **Status:** needs_human — scope requires reading/writing `workspace/.api_key`; `workspace/` is in the NEVER-TOUCH list. Human must decide alternate key-persistence path (e.g. a dedicated `.agent_key` file in HOME_DIR, or accepting the rotating-key behavior as intentional).
 
 ### [IDEA-2026-04-30-11] Streaming token + cost counter in UI
 
@@ -297,3 +297,12 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** A task that does 5 sequential write_file actions produces ONE card titled "Edited 5 files" with 5 expandable detail rows. A task that interleaves write_file + shell + write_file produces 3 cards (no over-grouping). Pytest green. UI smoke covers both interleaved and consecutive cases.
 - **Out of scope:** Grouping non-consecutive (interleaved) same-verb actions; configurable grouping rules.
 - **Status:** queued (depends on Phase C1 — IDEA-10 — having shipped first; defer until other phases stable)
+
+### [IDEA-2026-05-03-01] Fix undo_edit missing encoding — silent UTF-8 corruption on Windows
+
+- **Source app / link:** `app/text_editor.py:88` — `p.write_text(old)` has no `encoding` argument
+- **Why it fits Ai_computer:** `str_replace` and `insert` both read files with `encoding="utf-8"` and store the text in history. `undo_edit` writes back with no encoding, using the platform default (cp1252 on Windows). Any file with non-ASCII content will be silently corrupted after undo on Windows.
+- **Scope (this PR only):** Add `encoding="utf-8"` to `p.write_text(old)` at `text_editor.py:88`. 1 LOC.
+- **Acceptance criteria:** `test_undo_preserves_utf8` creates a file with non-ASCII content, calls `str_replace`, then `undo_edit`, and asserts the restored content matches the original byte-for-byte. Test passes on all platforms.
+- **Out of scope:** Encoding detection for non-UTF-8 source files.
+- **Status:** queued
