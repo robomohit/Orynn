@@ -1003,17 +1003,6 @@
     flex-shrink: 0;
   }
 
-  .pill.status-running { border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2)); }
-  .pill.status-running .pill-dot { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-  .pill.status-running .pill-label { color: var(--accent); }
-  .pill.status-paused, .pill.status-cancelled { border-color: color-mix(in oklab, var(--warn) 45%, var(--line-2)); }
-  .pill.status-paused .pill-dot, .pill.status-cancelled .pill-dot { background: var(--warn); }
-  .pill.status-paused .pill-label, .pill.status-cancelled .pill-label { color: var(--warn); }
-  .pill.status-complete .pill-dot { background: var(--ok); }
-  .pill.status-error, .pill.status-failed { border-color: color-mix(in oklab, var(--err) 45%, var(--line-2)); }
-  .pill.status-error .pill-dot, .pill.status-failed .pill-dot { background: var(--err); }
-  .pill.status-error .pill-label, .pill.status-failed .pill-label { color: var(--err); }
-
   /* budget pill — shows the percentage as a mini bar inside */
   .pill.budget-pill {
     gap: 8px;
@@ -2412,19 +2401,6 @@
   .example-btn span { display: none; }
   .example-btn .ex-body strong { font-size: var(--fs-label); font-weight: 500; color: inherit; margin: 0; display: inline; }
 
-  /* Living "Ready" status — soft pulse so the agent feels online */
-  @keyframes agentPulse {
-    0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); opacity: 1; }
-    50% { box-shadow: 0 0 0 6px transparent; opacity: 0.65; }
-  }
-  .pill.status-ready .pill-dot,
-  .pill.status-running .pill-dot {
-    background: var(--accent);
-    animation: agentPulse 2.2s ease-in-out infinite;
-  }
-  .pill.status-ready { border-color: color-mix(in oklab, var(--accent) 30%, var(--line-2)); }
-  .pill.status-ready .pill-label { color: var(--ink-2); }
-
   /* Composer becomes the focal point */
   .composer-wrap { padding: 18px 20px 22px; border-top-color: transparent; }
   .composer { width: min(720px, 100%); border-radius: 14px; padding: 12px 14px 10px; }
@@ -2538,10 +2514,6 @@
         </div>
       </div>
       <div class="safety-strip">
-        <div class="pill status-ready" id="status-pill">
-          <span class="pill-dot"></span>
-          <span class="pill-label">Ready</span>
-        </div>
         <div class="controls" id="controls">
           <button class="control-btn hidden" id="btn-pause" type="button">Pause</button>
           <button class="control-btn hidden" id="btn-cancel" type="button">Cancel</button>
@@ -3184,8 +3156,6 @@
     const map = { ready: 'Ready', running: 'Running', paused: 'Paused', complete: 'Complete', failed: 'Failed', error: 'Error', cancelled: 'Cancelled' };
     const key = (status || 'ready').toLowerCase();
     currentStatus = key;
-    const p = $('status-pill');
-    if (p) { p.className = `pill status-${key}`; p.innerHTML = `<span class="pill-dot"></span><span class="pill-label">${map[key] || humanize(key)}</span>`; }
     const sb = $('sb-status');
     if (sb) { sb.className = `sb-item sb-status sb-status-${key}`; sb.innerHTML = `<span class="sb-dot"></span><span class="sb-val">${map[key] || humanize(key)}</span>`; }
   };

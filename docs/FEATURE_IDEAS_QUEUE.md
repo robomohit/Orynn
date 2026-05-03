@@ -159,7 +159,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Remove the re-init call from the GET handler — rely on the lifespan-startup init. If the manager isn't ready yet, return `{"servers": [], "initializing": true}` so the UI can retry. ~5 LOC.
 - **Acceptance criteria:** `GET /api/mcp` returns in <50ms after startup. Existing test for `/api/mcp` still passes; new test asserts no re-init happens on repeated GETs.
 - **Out of scope:** Changing how `mcp_manager` itself initializes.
-- **Status:** queued
+- **Status:** done (2026-05-03: removed re-init call from GET handler; returns {servers:[], initializing:true} when not ready; 2 tests added to test_healthz.py)
 
 ### [IDEA-2026-05-01-01] Limit TextEditorTool undo history to prevent unbounded memory growth
 
@@ -168,7 +168,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add a max history limit (e.g., 50 or 100 entries total across all files, or per-file cap of ~10 undo levels). Trim oldest history when limit exceeded. ~10–15 LOC in `text_editor.py`.
 - **Acceptance criteria:** After exceeding the limit, oldest history entries are dropped; `undo_edit` still works for recent edits. Unit test verifies cap is enforced. No change to external API or behavior for within-limit cases.
 - **Out of scope:** Changing undo semantics, adding redo support, or persisting history across restarts.
-- **Status:** queued
+- **Status:** done (2026-05-03: added _HISTORY_CAP=10; str_replace and insert trim oldest entry when len > cap; test_history_cap_enforced added to test_text_editor.py)
 
 ### [IDEA-2026-05-02-01] Surface /healthz provider status in the UI header
 
@@ -186,7 +186,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add an `input` event listener on `#input` that sets `style.height = 'auto'` then `style.height = el.scrollHeight + 'px'`, capped at 8 line-heights. Reset on send. ~15 LOC inline JS + 3 LOC CSS for `min-height` and `max-height`. No HTML structure change.
 - **Acceptance criteria:** Typing 5 lines shows all 5 lines without inner scrollbar. Typing 20 lines hits the 8-line cap and starts inner-scrolling. Sending the task resets to single-line height. No regression in existing keyboard shortcuts.
 - **Out of scope:** Markdown preview, syntax highlighting, file attachment.
-- **Status:** queued
+- **Status:** done (2026-05-03: already implemented — autoGrow() at index.html:3824 uses scrollHeight capped at 180px; min-height:48px max-height:180px in CSS; wired to input event at line 4643)
 
 ### [IDEA-2026-05-02-03] Toast confirmation when copying log to clipboard
 
@@ -204,7 +204,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** When the history list is empty, render a small placeholder block: muted text "No tasks yet — describe one above to get started" + a subtle icon (use existing brand-mark or an inline SVG). Hides the moment a task is added. ~20 LOC HTML + CSS. No JS state changes; just toggle visibility based on existing list-empty check.
 - **Acceptance criteria:** Fresh page load with no tasks shows the empty state. Submitting a task hides it. Light + dark theme both render readably.
 - **Out of scope:** Onboarding tour, persistent dismissal, illustrated graphics.
-- **Status:** queued
+- **Status:** done (2026-05-03: already implemented — .history-empty div at index.html:2480 shows placeholder text; addActiveHistoryItem() removes it when first task runs; CSS at line 549)
 
 ### [IDEA-2026-05-02-05] Keyboard shortcut help overlay (`?` to open)
 
@@ -245,7 +245,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Remove `#status-pill` HTML (lines 2541–2544 in `static/index.html`). In `setStatus()` (line 3183–3191), remove the `#status-pill` write but keep the `#sb-status` write. Confirmed no JS reads from the pill DOM. ~25 LOC net change.
 - **Acceptance criteria:** No pill visible top-right. Bottom statusbar still updates as task transitions through ready → running → complete. UI smoke playwright snapshot of running task verifies no regression.
 - **Out of scope:** Adding a topbar status indicator (Phase B handles that as a small dot beside the breadcrumb).
-- **Status:** in_progress
+- **Status:** done (2026-05-03: removed #status-pill HTML, agentPulse keyframe, .pill.status-* CSS rules, and JS pill write from setStatus(); sb-status statusbar write unchanged)
 
 ### [IDEA-2026-05-02-09] UI Phase B — Topbar breadcrumb with task goal · mode · model
 
