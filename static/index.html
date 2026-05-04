@@ -2982,6 +2982,7 @@
     $('project-folder-name').textContent = selected ? pathLeaf(selected) : 'General mode';
     $('project-folder-path').textContent = selected ? selected : 'Desktop + Home access';
     $('project-folder-selection').textContent = projectFolderState.browsingPath || selected || 'General mode · Desktop + Home';
+    if (!task) setTaskTitle();
   };
 
   const setProjectFolder = (value, { persist = true } = {}) => {

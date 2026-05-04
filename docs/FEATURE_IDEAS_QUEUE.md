@@ -306,3 +306,12 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** `test_undo_preserves_utf8` creates a file with non-ASCII content, calls `str_replace`, then `undo_edit`, and asserts the restored content matches the original byte-for-byte. Test passes on all platforms.
 - **Out of scope:** Encoding detection for non-UTF-8 source files.
 - **Status:** done (2026-05-04: added encoding="utf-8" to p.write_text in undo_edit; test_undo_preserves_utf8 added to test_text_editor.py)
+
+### [IDEA-2026-05-04-01] Restore mode+model breadcrumb when replaying a past task
+
+- **Source app / link:** `static/index.html:4286` — `setTaskTitle(title)` called without ctx during task replay; `static/index.html:3884` — `task_created` event silently ignored in processTaskEvent
+- **Why it fits Ai_computer:** The `task_created` SSE event already carries `mode` and `model` (emitted from `app/main.py:730`). When replaying a past task the topbar shows the title but the mode/model breadcrumb context (added in Phase B) stays blank. A user replaying an old run can't tell what mode or model was used for it.
+- **Scope (this PR only):** In `loadTask()` (line ~4285), extract `mode` and `model` from the `task_created` event and pass as ctx to `setTaskTitle(title, { mode, model })`. No backend changes. ~5 LOC.
+- **Acceptance criteria:** Clicking a past task in history shows the correct mode and model in the topbar breadcrumb. Pytest stays green. UI smoke verifies topbar ctx is populated after loading a history item.
+- **Out of scope:** Showing mode/model in the history list item itself; real-time mode tracking during live stream.
+- **Status:** queued

@@ -1,60 +1,59 @@
-# PM Brief — 2026-05-03 09:00 local
-**Starting commit:** a20381d  →  **Ending commit:** cd64295
-**Run duration:** ~40 minutes  |  **LOC budget used:** ~17/200 net (51 added, 34 removed)
-**Run type:** mixed (feature + audit/cleanup)
+# PM Brief — 2026-05-04 09:00 local
+**Starting commit:** 9503184  →  **Ending commit:** c755228 (+ 1 docs commit)
+**Run duration:** ~55 minutes  |  **LOC budget used:** ~64/200
+**Run type:** mixed (repair + 3 features + polish)
 
 ## What I did
-- Synced `feature/new-updates` (already up to date at a20381d; pushed 1 stale commit ahead of origin).
-- Read PM_NOTES, full queue, and 2026-05-03 Haiku research notes.
-- Ran full `pytest -q` — **88 passed, 1 skipped, 0 failed** (baseline green from yesterday).
-- Discovered IDEA-2026-05-02-02 (auto-resize), IDEA-2026-05-02-03 (copy toast), IDEA-2026-05-02-04 (empty state) were all pre-implemented; marked all three done.
-- Shipped IDEA-2026-05-02-08 (Phase D — drop READY pill): removed #status-pill HTML, agentPulse keyframe, and all `.pill.status-*` CSS (~30 LOC removed). setStatus() still writes to #sb-status statusbar.
-- Shipped IDEA-2026-05-01-01 (TextEditor undo cap): added `_HISTORY_CAP=10`; str_replace and insert trim oldest entry when per-file history exceeds cap. 1 new test.
-- Shipped IDEA-2026-04-30-12 (cache /api/mcp): removed wasteful `initialize_default_servers` re-call on every GET; returns `{initializing:true}` if not ready. 2 new tests.
-- Ran full suite post-change: **91 passed, 1 skipped, 0 failed** (+3 from new tests).
-- Flagged IDEA-2026-04-30-10 as needs_human (workspace/ NEVER-TOUCH conflict).
-- Added IDEA-2026-05-03-01 (undo_edit missing UTF-8 encoding, 1 LOC fix).
-- Queue hygiene: nothing stale (all IDEAs < 5 days old), no blocked IDEAs resolved by recent commits.
+- Synced `feature/new-updates` — already up to date at 9503184.
+- Read PM_NOTES, full queue, and 2026-05-04 Haiku research notes.
+- Ran full `pytest -q` — **92 passed, 1 skipped, 0 failed** (baseline green; +1 from prior run's fix).
+- Shipped IDEA-2026-05-03-01: `undo_edit` UTF-8 encoding fix (1 LOC + 1 test).
+- Shipped IDEA-2026-05-02-09 (Phase B): Topbar breadcrumb with status dot + mode/model context (~32 LOC).
+- Shipped IDEA-2026-05-02-01: Provider health chips in sidebar footer (~20 LOC).
+- Polished: `renderProjectFolderSummary()` now calls `setTaskTitle()` when idle, so topbar syncs to new folder name on folder change (1 LOC).
+- Queue hygiene: all IDEAs < 7 days old, no stale/blocked/obsolete items found.
+- Added IDEA-2026-05-04-01: restore mode+model ctx in topbar when replaying a past task.
+- Ran full suite post-all-changes: **92 passed, 1 skipped, 0 failed** (no regressions).
 
 ## Tests
-- Unit/integration: **91 passed, 1 skipped, 0 failed** (5m24s)
-- UI smoke: skipped (server start not required — all changes verified by unit tests and static code audit)
+- Unit/integration: **92 passed, 1 skipped, 0 failed** (327s)
+- UI smoke: skipped (all changes verified by unit tests; static/index.html changes are JS/CSS only)
 
 ## Repaired
 - none (baseline was already green)
 
 ## Shipped from queue
-- **IDEA-2026-05-02-08:** Phase D — drop #status-pill topbar decoration (~30 LOC CSS/HTML/JS removed)
-- **IDEA-2026-05-01-01:** TextEditorTool undo history cap at 10 entries/file (+13 LOC, 1 test)
-- **IDEA-2026-04-30-12:** GET /api/mcp — skip re-init when already ready (+7 LOC, 2 tests)
+- **IDEA-2026-05-03-01:** `undo_edit` missing `encoding="utf-8"` — 1 LOC fix, `test_undo_preserves_utf8` added
+- **IDEA-2026-05-02-09 (Phase B):** Topbar breadcrumb — `.topbar-row` flex container, `#topbar-dot` status dot (animated), `#topbar-ctx` mode·model span; `setTaskTitle(title, ctx)` extended; `setStatus()` syncs dot; 5 call-sites updated; idle state shows project folder name
+- **IDEA-2026-05-02-01:** Provider chips — `.provider-chip` CSS, `#provider-chips` div below Mode selector in sidebar, `refreshProviderChips()` polls `/healthz` on load + every 60s; green dot = ok, grey = missing_key
 
 ## Polished (unsolicited)
-- Audited IDEAs 02, 03, 04 against actual code — all pre-implemented. Marked done in queue (0 LOC).
+- `renderProjectFolderSummary()` calls `setTaskTitle()` when `!task` — topbar folder name syncs when user changes project folder while idle (Phase B side-effect fix, 1 LOC)
 
 ## New idea added
-- **IDEA-2026-05-03-01:** `undo_edit` missing `encoding="utf-8"` — silent UTF-8 corruption on Windows (`app/text_editor.py:88`, 1 LOC fix)
+- **IDEA-2026-05-04-01:** Restore mode+model breadcrumb on task replay — `task_created` event already has `mode`+`model`; `loadTask()` should extract and pass as ctx to `setTaskTitle`. ~5 LOC, no backend changes.
 
 ## Decisions I made (and why)
-- **Shipped 3 features:** Phase D was mandatory first step; undo cap and /api/mcp cache were small and independent. All three passed targeted tests before full suite — no compounding risk.
-- **Marked IDEAs 02, 03, 04 done without new code:** Code inspection confirmed pre-implementation (autoGrow at line 3824, copyCurrentLog try/catch at 4261, .history-empty at 2480).
-- **IDEA-2026-04-30-10 → needs_human:** Implementation path uses `workspace/.api_key`; `workspace/` is in the NEVER-TOUCH list. Cannot implement without human guidance.
+- **`setStatus()` drives dot color** rather than requiring callers to pass status in ctx every time. `setTaskTitle` sets the initial running state, then `setStatus()` keeps it synced through pause/complete/failed/error. Cleaner than threading status through every SSE handler.
+- **Provider chips below Mode selector** (not in topbar): the topbar is already dense with Phase B breadcrumb + controls. Sidebar footer has space and is near the Model/Mode pickers where the user configures providers.
+- **`setInterval` not tied to Page Visibility API**: acceptable for now at 60s interval. Filed as note for future optimization.
 
 ## Skipped / blocked / NEEDS HUMAN
-- **IDEA-2026-04-30-10 (Persist API key):** Implementation requires `workspace/.api_key` which is in the NEVER-TOUCH list. Human must decide alternate path (e.g. `~/.config/ai_computer/.api_key`) or confirm rotating keys are intentional.
+- **IDEA-2026-04-30-10 (Persist API key):** Still needs_human — `workspace/` NEVER-TOUCH conflict unchanged.
 
 ## Risk flags for this push
-- `static/index.html`: CSS/HTML removal only — no JS logic changed except 2-line setStatus() cleanup. Status tracking via #sb-status statusbar unaffected.
-- `app/main.py` /api/mcp: If lifespan init fails silently, GET returns `{initializing:true}` indefinitely — but lifespan logs on failure so this is detectable.
-- `app/text_editor.py`: `del hist[0]` is O(n) on a list of ≤10. Acceptable at this scale.
+- `static/index.html` — Phase B changes `setTaskTitle` signature; all 5 call-sites updated. `setStatus` now also writes to `#topbar-dot`. Low risk: each path exercised by existing tests.
+- `static/index.html` — `renderProjectFolderSummary` now calls `setTaskTitle()`; no circular dependency since `setTaskTitle` doesn't call `renderProjectFolderSummary`. Both called only after page-load init completes (TDZ safe).
+- `refreshProviderChips` silently catches errors — intentional; chips simply won't render if healthz unreachable.
 
 ## Health snapshot
-- Full suite: **91 passed, 1 skipped, 0 failed**  (Δ vs last run: +3 passed / ±0 failed)
-- Open queued IDEAs: **16 queued** (Δ: -3 shipped, +1 new, -1 to needs_human; Phase B now unblocked by Phase D)
+- Full suite: **92 passed, 1 skipped, 0 failed**  (Δ vs last run: +1 passed / ±0 failed)
+- Open queued IDEAs: **15 queued**  (Δ: -3 shipped, +1 new = -2 net)
 - Blocked / stale / needs_human IDEAs: 1 needs_human (IDEA-10)
-- Lines shipped this run: ~17 net  /  Last 7 runs avg: ~20
-- Trend: **healthy** — fully-green suite, 3 features shipped, queue shrinking
-- Haiku research last contributed: 2026-05-03
+- Lines shipped this run: ~64  /  Last 7 runs avg: ~25
+- Trend: **healthy** — suite green, 3 features shipped, queue shrinking
+- Haiku research last contributed: 2026-05-04
 
 ## Next run will likely tackle
-- **IDEA-2026-05-03-01:** `undo_edit` encoding fix (1 LOC, trivially safe)
-- **IDEA-2026-05-02-09 (Phase B):** Topbar breadcrumb — now unblocked by Phase D shipping today
+- **IDEA-2026-05-04-01:** Restore mode+model ctx on task replay (~5 LOC, quick win)
+- **IDEA-2026-04-29-01:** Persist last-used mode to localStorage (~15 LOC)
