@@ -45,3 +45,41 @@ Sources should be cited inline (URLs). Each daily section has its own heading.
 2. Batch quick-wins (IDEA-02, 04, 05) in one PR to reduce queue size.
 3. Start Phase A (IDEA-07) after quick-wins; mark as in-progress to signal focus.
 4. Add Playwright smoke tests to localStorage IDEA-01 acceptance criteria before work starts.
+
+---
+
+## 2026-05-04 (scan: triage)
+
+**Queue shape snapshot:**
+- 32 total IDEAs: ~18 queued, 11 done, 1 needs_human (IDEA-10), 2 split/blocked
+- Velocity: 3 shipped past 24h (Phase D, TextEditor cap, /api/mcp cache)
+- Test suite: 91 passed, 1 skipped, 0 failed (3-test net gain from recent work)
+
+**Dependency resolution — UI Phases unblocked:**
+- Phase D (IDEA-08: drop READY pill) ✅ shipped 2026-05-03
+- Phase B (IDEA-09: topbar breadcrumb) now unblocked — was waiting for Phase D topbar slot to free
+- Phases A→F form a sequential chain; no new blockers detected. A (sidebar restructure) is queued and can start immediately
+- Source: `docs/FEATURE_IDEAS_QUEUE.md:257` (Phase B dependency note), confirmed resolved by PM notes from 2026-05-03
+
+**Quick-win batch candidate:**
+- IDEA-02 (Copy-task button, ~25 LOC) + IDEA-04 (Duration badge, ~30 LOC) + IDEA-05 (Auto-pause loops, ~20 LOC) = ~75 LOC, zero interdependencies
+- All three are feature-complete, have clear acceptance criteria, low test complexity
+- Recommendation: batch into single PR to unblock queue attention for Phase A (sidebar) which is higher-risk (~200 LOC)
+
+**Blocking issue — no progress possible:**
+- IDEA-2026-04-30-10 (Persist API key) marked needs_human: implementation wants `workspace/.api_key` but `workspace/` is never-touch. Hard blocker until human selects alternate path (e.g., `~/.agent_key` or `$HOME/.config/ai_computer/.api_key`) or confirms rotating keys are acceptable behavior
+- No other queued IDEAs depend on this, so queue progression unaffected
+
+**New encoding risk detected:**
+- IDEA-2026-05-03-01: `app/text_editor.py:88` — `undo_edit()` calls `p.write_text(old)` with no encoding, uses platform default (cp1252 on Windows). Silent UTF-8 corruption on undo for any non-ASCII file
+- 1-LOC fix: add `encoding="utf-8"` to write_text call. Marked queued but suggest picking after quick-wins to avoid context thrash
+
+**No stale findings.**
+- All queued IDEAs < 5 days old, queue has no drift (timestamps align with recent PM work)
+- Test failures from 2026-05-01 are fully resolved (IDEA-08a through 08f done)
+
+### Implications for Ai_computer
+
+- **Critical path:** UI overhaul (Phases A–F) is now fully unblocked at Phase A; no surprises in the dependency chain. Recommend committing PM to Phase A next cycle to signal that the UI overhaul is underway and sustained focus. Current queue positioning (queued but not in_progress) makes it easy to starve for other work.
+- **Short-term momentum:** Quick-wins batch (02, 04, 05) would reduce queue backlog and signal progress. Pairs well with Phase A starting — quick wins complete in ~30 min, clearing mental space for the 200+ LOC sidebar refactor.
+- **Encoding regression:** The UTF-8 undo bug is platform-specific (Windows only); suggest testing on Windows after merging to prevent undetected corruption in customer workflows. Mark IDEA-2026-05-03-01 as "test on Windows" in acceptance criteria.
