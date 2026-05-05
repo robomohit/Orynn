@@ -33,6 +33,13 @@ def test_command_palette_rows_do_not_interpolate_model_labels_as_html():
     assert "hint.textContent = c.hint" in html
 
 
+def test_mode_selection_is_persisted_client_side():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    assert "localStorage.setItem('ai_computer_mode'" in html
+    assert "localStorage.getItem('ai_computer_mode')" in html
+
+
 def test_project_folder_picker_is_present_and_persisted_client_side():
     html = STATIC_HTML.read_text(encoding="utf-8")
 

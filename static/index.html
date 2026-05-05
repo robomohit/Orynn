@@ -4468,6 +4468,11 @@
     syncTweaks();
     bindExamples();
     hydrateModelSelect();
+    const _savedMode = localStorage.getItem('ai_computer_mode');
+    const _modeSelect = $('mode-id');
+    if (_savedMode && _modeSelect && Array.from(_modeSelect.options).some((o) => o.value === _savedMode)) {
+      _modeSelect.value = _savedMode;
+    }
     setMode($('mode-id').value || 'auto');
     setBudget(tweakState.budgetPct);
 
@@ -4678,6 +4683,7 @@
   $('mode-id').onchange = (e) => {
     const val = e.target.value;
     const isolatedApp = ($('isolated-app-id').value || '').trim();
+    localStorage.setItem('ai_computer_mode', val);
     setMode(val, val === 'computer_isolated', isolatedApp);
     $('isolated-app-wrap').style.display = (val === 'computer_isolated') ? '' : 'none';
   };
