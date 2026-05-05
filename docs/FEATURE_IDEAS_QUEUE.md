@@ -315,3 +315,13 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** Clicking a past task in history shows the correct mode and model in the topbar breadcrumb. Pytest stays green. UI smoke verifies topbar ctx is populated after loading a history item.
 - **Out of scope:** Showing mode/model in the history list item itself; real-time mode tracking during live stream.
 - **Status:** queued
+
+### [IDEA-2026-05-05-01] Handle multiple parallel tool calls in streaming response
+
+- **Source:** `app/providers.py:1297` — `stream_chat_with_tools()` returns immediately after first tool_call
+- **Why it fits Ai_computer:** OpenRouter's SSE streaming can emit multiple tool_calls within a single response chunk. Currently the method collects the first tool_call and returns (line 1297), silently dropping any additional tool_calls in that response. This limits agent autonomy when a task legitimately requires 2+ parallel actions (e.g., "fetch API AND read local file in parallel").
+- **Scope (this PR only):** Modify `stream_chat_with_tools()` to collect ALL tool_calls from the response into a list instead of returning after the first one. Emit each as a separate `{"type": "tool_call", "name": ..., "args": ...}` dict. Caller loops to handle multiple tool calls. ~25 LOC change in the accumulation and emission logic (lines 1232–1320).
+- **Acceptance criteria:** A mock OpenRouter response containing 2 sequential tool_calls in one SSE chunk yields both tool_calls to the caller in order. Existing single-tool_call responses still work (backward compatible). Test: `test_stream_chat_with_tools_multiple_calls` creates a payload with two tool_calls and asserts both are emitted.
+- **Out of scope:** Executor-side changes to handle parallel execution. This IDEA only ensures the streaming layer doesn't drop tool_calls.
+- **Status:** queued
+

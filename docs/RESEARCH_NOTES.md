@@ -83,3 +83,23 @@ Sources should be cited inline (URLs). Each daily section has its own heading.
 - **Critical path:** UI overhaul (Phases A–F) is now fully unblocked at Phase A; no surprises in the dependency chain. Recommend committing PM to Phase A next cycle to signal that the UI overhaul is underway and sustained focus. Current queue positioning (queued but not in_progress) makes it easy to starve for other work.
 - **Short-term momentum:** Quick-wins batch (02, 04, 05) would reduce queue backlog and signal progress. Pairs well with Phase A starting — quick wins complete in ~30 min, clearing mental space for the 200+ LOC sidebar refactor.
 - **Encoding regression:** The UTF-8 undo bug is platform-specific (Windows only); suggest testing on Windows after merging to prevent undetected corruption in customer workflows. Mark IDEA-2026-05-03-01 as "test on Windows" in acceptance criteria.
+
+## 2026-05-05 — Codebase patterns
+
+Scanned two random `app/*.py` files end-to-end: `app/providers.py` (1444 lines) and `app/tool_registry.py` (144 lines).
+
+- **Multi-provider fallback chain** (providers.py:689–1035): Primary provider selected by model string. On rate-limit (402, 429, 5xx), cascades to hardcoded OpenRouter free models (gemma-4-31b-it, llama-3.3-70b, nemotron) with exponential backoff (2^attempt seconds), 3 retries per model. Fallback list is static; no alerting if all models sunset.
+- **Aggressive JSON repair pipeline** (providers.py:483–527): Direct parse → sanitized parse (strip //, fix trailing commas, quote bare keys) → aggressive repair (escape newlines) → final fallback. Handles common LLM malformations (JS-style comments, missing commas).
+- **Mode-specific system prompts** (providers.py:20–144): Coding (no screenshots, filesystem-first rules), computer_use (DOM-based, no pixel coords), default (hierarchical with screenshots). Rules hardcoded per mode; consistent structure but duplicated instructions across modes.
+- **Streaming tool call assembly** (providers.py:1155–1320): Accumulates thought buffer and tool JSON across SSE chunks. Detects finish_reason to mark completion. **Assumes single tool_call per response** (line 1297 returns immediately); if OpenRouter emits parallel tool_calls, only first is captured.
+- **Win32-specific screenshot capture** (providers.py:373–461): PrintWindow + device contexts. Explicit buffer cleanup (`.copy()` breaks PIL references). Thumbnail to 1280×800, JPEG quality=75. No Linux/macOS equivalent paths.
+- **Modular tool packs** (tool_registry.py:60–70): Core (finish, request_permission, memory_recall, todo_write) + mode-specific subsets (filesystem, terminal, browser, computer, web). Deduplication in `get_tool_guidance()` prevents redundant tool visibility.
+- **Regex-fragile schema generation** (tool_registry.py:84–122): `_json_schema_from_description()` infers types from description text via regex. Type matching is case-sensitive ("int", "dict", "list" must be lowercase; "Dict" or "List" missed). Current descriptions use lowercase, but no enforcement.
+
+### Implications for Ai_computer
+
+- **JSON return type fragility**: `_extract_json` returns `Any`. Most callers assume dict, but if LLM returns top-level array or plain string, agent crashes. Robust JSON repair, but not type-agnostic. Low immediate risk (LLMs trained for objects), but brittle on outliers.
+- **Parallel tool call loss**: `stream_chat_with_tools` returns after first tool_call (line 1297). OpenRouter can emit multiple tool_calls in one SSE chunk (rare). Only first is captured; others lost silently.
+- **Key validation deferred to first API call**: Provider keys loaded at `__init__` but never checked for emptiness or syntax. 401/403 errors delay feedback. Invalid key detected only on first task, not on startup.
+- **Hardcoded fallback model list without alerts**: If OpenRouter sunsetts gemma-4-31b-it or llama-3.3-70b, the fallback chain silently steps down. No mechanism to alert on full fallback exhaustion or model deprecation.
+
