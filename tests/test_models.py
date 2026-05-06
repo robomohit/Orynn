@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.models import Action, ActionType, AgentContext, HierarchicalPlan, SubTask, TaskRecord
+from app.providers import _extract_json
 
 
 def test_action_finish_roundtrip():
@@ -57,3 +58,25 @@ def test_task_id_pattern_for_api_matches_models():
     tid = "a1b2c3d4e5f6"
     rec = TaskRecord(id=tid, status="done", context=AgentContext(goal="ok"))
     assert rec.id == tid
+
+
+def test_extract_json_array_returns_dict():
+    result = _extract_json('[1, 2, 3]')
+    assert isinstance(result, dict)
+    assert result == {"result": [1, 2, 3]}
+
+
+def test_extract_json_string_returns_dict():
+    result = _extract_json('"hello"')
+    assert isinstance(result, dict)
+    assert result == {"result": "hello"}
+
+
+def test_extract_json_dict_unchanged():
+    result = _extract_json('{"key": "val"}')
+    assert result == {"key": "val"}
+
+
+def test_extract_json_empty_dict_unchanged():
+    result = _extract_json('{}')
+    assert result == {}

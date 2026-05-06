@@ -332,7 +332,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** After the final fallback parse in `_extract_json`, add a check: if the result is not a `dict`, wrap it as `{"result": result}` (or return `{}`). ~5–10 LOC in `app/providers.py`. Add one unit test asserting that an array-returning mock produces a dict.
 - **Acceptance criteria:** `_extract_json('[1,2,3]')` returns a dict (not a raw list). `_extract_json('{}')` and `_extract_json('{"key":"val"}')` are unaffected. Unit test added.
 - **Out of scope:** Caller-side type narrowing; refactoring the repair pipeline.
-- **Status:** in_progress
+- **Status:** done (2026-05-06: added _ensure_dict() helper inside _extract_json; all return paths wrap non-dict results as {"result": val}; 4 unit tests added to test_models.py)
 
 ### [IDEA-2026-05-06-01] Await MCP initialization at startup to close race window
 

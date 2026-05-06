@@ -480,8 +480,8 @@ def _sanitize_json_text(text: str) -> str:
     text = re.sub(r'""\s*([}\]])', r'"\1', text)
     return text
 
-def _extract_json(text: str) -> Any:
-    """Extract and repair JSON from LLM response text."""
+def _extract_json(text: str) -> dict:
+    """Extract and repair JSON from LLM response text. Always returns a dict."""
     if not text:
         return {}
 
@@ -498,31 +498,34 @@ def _extract_json(text: str) -> Any:
         # Fallback: outermost { ... }
         match = re.search(r'(\{.*\})', text, re.DOTALL)
         json_str = match.group(1) if match else text.strip()
-    
+
+    def _ensure_dict(val: Any) -> dict:
+        return val if isinstance(val, dict) else {"result": val}
+
     # Try standard parse
     try:
-        return json.loads(json_str)
+        return _ensure_dict(json.loads(json_str))
     except Exception:
         pass
-        
+
     # Try sanitized parse
     try:
         sanitized = _sanitize_json_text(json_str)
-        return json.loads(sanitized)
+        return _ensure_dict(json.loads(sanitized))
     except Exception:
         pass
-        
+
     # Aggressive repair: fix unescaped newlines in strings
     repaired = json_str.replace('\n', '\\n').replace('\r', '\\r')
     repaired = re.sub(r'\\n\s*([{}\[\]])', r'\n\1', repaired)
     repaired = re.sub(r'([{}\[\]])\s*\\n', r'\1\n', repaired)
-    
+
     try:
-        return json.loads(_sanitize_json_text(repaired))
+        return _ensure_dict(json.loads(_sanitize_json_text(repaired)))
     except Exception:
         # Final fallback: just try to load whatever we have
         try:
-            return json.loads(_sanitize_json_text(json_str))
+            return _ensure_dict(json.loads(_sanitize_json_text(json_str)))
         except Exception as e:
             raise ValueError(f"Failed to parse JSON: {e}\nRaw text was:\n{json_str}")
 
