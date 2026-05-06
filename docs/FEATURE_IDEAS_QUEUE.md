@@ -343,3 +343,12 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Out of scope:** Lazy MCP initialization, making MCP optional.
 - **Status:** queued
 
+### [IDEA-2026-05-06-02] Cap SSE subscriber queue depth to prevent unbounded memory growth
+
+- **Source:** `app/log_emitter.py` — `subscribe(task_id)` returns an `asyncio.Queue` with no `maxsize`; `app/main.py:896` pops events with `await q.get()`
+- **Why it fits Ai_computer:** A slow or stalled SSE client (network hiccup, devtools open) leaves its queue draining at zero throughput while the agent keeps emitting events. With no bound, a long-running agent + stalled client silently consumes unbounded memory. Adding a high-water mark (e.g. `maxsize=500`) causes `put_nowait` to raise `asyncio.QueueFull` instead of growing forever, which the SSE handler can catch and disconnect the client.
+- **Scope (this PR only):** In `log_emitter.subscribe()`, change `asyncio.Queue()` to `asyncio.Queue(maxsize=500)`. In the SSE emit path (`log_emitter.emit` or equivalent), catch `asyncio.QueueFull` and log a warning with the task ID. In the SSE handler (`app/main.py` stream endpoint), detect the disconnected state and break out of the stream loop. ~10–15 LOC total.
+- **Acceptance criteria:** A test fills the queue past 500 events without a consumer and verifies `QueueFull` is raised rather than growing indefinitely. Existing SSE tests still pass.
+- **Out of scope:** Per-subscriber configurable limits; back-pressure signaling to the agent.
+- **Status:** queued
+
