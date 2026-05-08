@@ -341,7 +341,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Replace `asyncio.create_task(_init_mcp)` with `await asyncio.gather(_init_mcp(), ...)` or `await _init_mcp()` directly (keep telegram/discord as fire-and-forget if they have their own timeout resilience). ~2 LOC change in `app/main.py:51`.
 - **Acceptance criteria:** MCP manager is fully initialized before lifespan yields. First GET `/api/mcp` after server startup returns `initializing:false` or omits the field (indicates ready). Test: start server, immediately hit `/api/mcp`, assert no `initializing:true` in response.
 - **Out of scope:** Lazy MCP initialization, making MCP optional.
-- **Status:** queued
+- **Status:** in_progress
 
 ### [IDEA-2026-05-06-02] Cap SSE subscriber queue depth to prevent unbounded memory growth
 
