@@ -370,3 +370,13 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** `_telegram_task` and `_discord_task` are set at startup. Lifespan teardown cancels them. Existing tests pass. No regression on server shutdown (uvicorn still exits cleanly).
 - **Out of scope:** Restarting failed integrations; monitoring integration health.
 - **Status:** queued
+
+
+### [IDEA-2026-05-10-01] Make SSE keepalive timeout configurable for slow networks
+
+- **Source:** `app/main.py:902` — `asyncio.wait_for(q.get(), timeout=30.0)` hardcoded
+- **Why it fits Ai_computer:** The 30-second keepalive timeout is safe for fast networks but risky on metered/mobile connections where events may be sparse (e.g., a long-running task with infrequent log emissions). Clients on slow networks risk connection timeout mid-stream. Exposing a configurable `?keepalive_timeout_seconds=N` parameter allows fine-tuning per use case (mobile: 60-90s, local: 30s, fast: 15s) without code changes.
+- **Scope (this PR only):** Add `keepalive_timeout_seconds` optional query param to `/api/tasks/{task_id}/stream` endpoint. Validate: min 5s, max 300s (prevent abuse), default 30s. Update `event_generator()` to use the param instead of hardcoded 30.0. ~15 LOC in main.py:871-914.
+- **Acceptance criteria:** GET `/api/tasks/{task_id}/stream?keepalive_timeout_seconds=60` uses 60s timeout. Invalid values (e.g., 2, 400) reject with 400 error. Default (no param) remains 30s. Existing SSE smoke tests pass with default timeout.
+- **Out of scope:** Adaptive timeout (calculate based on historical event frequency); metrics/monitoring for timeout events.
+- **Status:** queued
