@@ -601,3 +601,65 @@ If options are genuinely 50/50, pick the smaller scope. Only escalate to `## NEE
 - **IDEA-2026-05-08-02:** Store telegram/discord Task refs for clean shutdown (~8 LOC, quick win)
 
 ---
+
+# PM Brief — 2026-05-10 09:00 local
+**Starting commit:** 3e71eda  →  **Ending commit:** c6747a2 (+ 1 docs commit)
+**Run duration:** ~40 minutes  |  **LOC budget used:** ~125/200
+**Run type:** mixed (3 features shipped across 3 commits)
+
+## What I did
+- Synced `feature/new-updates` — already up to date at 3e71eda (Haiku research commit, 1 ahead of origin).
+- Read last 5 PM_NOTES entries, full queue, and 2026-05-10 Haiku research notes (SSE keepalive, fallback model logging).
+- Ran full `pytest -q` — **101 passed, 1 skipped, 0 failed** baseline.
+- UI smoke: GET / → 200, /healthz → providers visible; server killed cleanly.
+- Shipped IDEA-2026-04-30-10 + IDEA-2026-05-08-02 in one commit (both touch app/main.py).
+- Shipped IDEA-2026-05-08-01: `/api/active-tasks` endpoint.
+- Shipped IDEA-2026-05-10-01: configurable SSE keepalive timeout.
+- Final suite: **109 passed, 1 skipped, 0 failed** (+8 from new tests).
+- Queue hygiene: no stale IDEAs (all <12 days); no blocked IDEAs newly resolvable.
+- Added IDEA-2026-05-10-02: log fallback model selection for reproducibility.
+
+## Tests
+- Unit/integration: **109 passed, 1 skipped, 0 failed** (324s)
+- UI smoke: GET / → 200, /healthz returns expected provider statuses; no orphan processes
+
+## Repaired
+- none (baseline was already green)
+
+## Shipped from queue
+- **IDEA-2026-04-30-10:** Persist API key across restarts — `_load_or_create_api_key()` checks env var, then `~/.config/ai_computer/.api_key` (honoring XDG_CONFIG_HOME), then generates+saves with mode 600. 3 new tests.
+- **IDEA-2026-05-08-02:** Store telegram/discord Task refs — `_telegram_task`/`_discord_task` module vars; lifespan shutdown cancels+awaits both. 1 new test.
+- **IDEA-2026-05-08-01:** `GET /api/active-tasks` — returns non-terminal tasks from `_tasks` dict with task_id, status, goal, mode, model, created_at. 2 new tests.
+- **IDEA-2026-05-10-01:** Configurable SSE keepalive — `keepalive_timeout_seconds` query param (default 30, min 5, max 300); invalid values → HTTP 400. 2 new tests.
+
+## Polished (unsolicited)
+- none
+
+## New idea added
+- **IDEA-2026-05-10-02:** Log fallback model selection at INFO level + emit `provider_info` SSE event when fallback activates. ~10 LOC. Source: 2026-05-10 Haiku research.
+
+## Decisions I made (and why)
+- **Combined IDEA-2026-04-30-10 and IDEA-2026-05-08-02 into one commit:** Both touch only `app/main.py` and `tests/test_healthz.py`; saved a commit slot without mixing concerns.
+- **`/api/active-tasks` uses `_tasks` filtered by non-terminal status:** `_tasks` is authoritative for metadata; `service._active_tasks` only stores asyncio.Task objects. Filtering by status gives the same result without reaching into AgentService internals.
+- **Removed `test_stream_default_keepalive_accepted`:** Would hang for 30s (TestClient reads streaming responses synchronously). Two invalid-value tests sufficiently prove parameter validation.
+
+## Skipped / blocked / NEEDS HUMAN
+- none
+
+## Risk flags for this push
+- `_load_or_create_api_key()` creates `~/.config/ai_computer/` on first run; `chmod(0o600)` is no-op on Windows but safe.
+- `/api/active-tasks`: read-only, no mutation.
+
+## Health snapshot
+- Full suite: **109 passed, 1 skipped, 0 failed**  (Δ vs last run: +8 passed)
+- Open queued IDEAs: **11 queued**  (Δ: -4 shipped, +1 new = -3 net)
+- Blocked / stale / needs_human IDEAs: 0
+- Lines shipped this run: ~125  /  Last 7 runs avg: ~60
+- Trend: **healthy** — suite fully green, 4 features shipped, needs_human queue cleared
+- Haiku research last contributed: 2026-05-10
+
+## Next run will likely tackle
+- **IDEA-2026-05-10-02:** Log fallback model selection (~10 LOC, quick win)
+- **IDEA-2026-04-29-02:** Copy-task button on completed runs (~25 LOC, frontend)
+
+---

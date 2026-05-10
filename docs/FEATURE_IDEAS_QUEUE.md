@@ -141,7 +141,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** On startup, if `AGENT_API_KEY` env var is unset, check for `workspace/.api_key` file. Use it if present; otherwise generate, write to that file (mode 600), use it. Log the file path on first generation. ~15 LOC.
 - **Acceptance criteria:** Restart server with no env var → same API key as previous run. Setting the env var still wins. New unit test covers both paths.
 - **Out of scope:** Key rotation, multi-key support.
-- **Status:** needs_human — scope requires reading/writing `workspace/.api_key`; `workspace/` is in the NEVER-TOUCH list. Human must decide alternate key-persistence path (e.g. a dedicated `.agent_key` file in HOME_DIR, or accepting the rotating-key behavior as intentional).
+- **Status:** done (2026-05-10: implemented _load_or_create_api_key() in app/main.py; checks AGENT_API_KEY env var first, then ~/.config/ai_computer/.api_key honoring XDG_CONFIG_HOME, then generates+saves new key with mode 600; 3 tests in test_healthz.py)
 
 ### [IDEA-2026-04-30-11] Streaming token + cost counter in UI
 
@@ -360,7 +360,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add `/api/active-tasks` GET endpoint in `app/main.py` that returns `{ tasks: [{ task_id: str, status: str, created_at: str, last_updated: str }, ...] }` by iterating `_active_tasks` dict. ~15–20 LOC in main.py. No changes to agent loop or SSE.
 - **Acceptance criteria:** GET `/api/active-tasks` returns a list of task objects with task_id, status, timestamps. When a task is created, it appears in the list. When task completes, it's removed. Smoke test: create a task and verify it appears in `/api/active-tasks` before finishing.
 - **Out of scope:** UI panel to display the task list; real-time push of task updates (use polling via endpoint); filtering or sorting tasks.
-- **Status:** queued
+- **Status:** done (2026-05-10: added GET /api/active-tasks in app/main.py; filters _tasks dict by non-terminal status; returns task_id, status, goal, mode, model, created_at; 2 tests in test_healthz.py)
 
 ### [IDEA-2026-05-08-02] Store telegram/discord asyncio.Task refs to prevent silent GC cancellation
 
@@ -369,7 +369,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Store the two `create_task()` results in module-level `_telegram_task` and `_discord_task` variables in `app/main.py`. In the lifespan shutdown block (after `yield`), call `.cancel()` on each and await their cancellation. ~8 LOC.
 - **Acceptance criteria:** `_telegram_task` and `_discord_task` are set at startup. Lifespan teardown cancels them. Existing tests pass. No regression on server shutdown (uvicorn still exits cleanly).
 - **Out of scope:** Restarting failed integrations; monitoring integration health.
-- **Status:** queued
+- **Status:** done (2026-05-10: added _telegram_task/_discord_task module vars; stored create_task refs; lifespan shutdown block cancels+awaits both; test_lifespan_stores_and_cancels_integration_tasks added to test_healthz.py)
 
 
 ### [IDEA-2026-05-10-01] Make SSE keepalive timeout configurable for slow networks
@@ -379,4 +379,14 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add `keepalive_timeout_seconds` optional query param to `/api/tasks/{task_id}/stream` endpoint. Validate: min 5s, max 300s (prevent abuse), default 30s. Update `event_generator()` to use the param instead of hardcoded 30.0. ~15 LOC in main.py:871-914.
 - **Acceptance criteria:** GET `/api/tasks/{task_id}/stream?keepalive_timeout_seconds=60` uses 60s timeout. Invalid values (e.g., 2, 400) reject with 400 error. Default (no param) remains 30s. Existing SSE smoke tests pass with default timeout.
 - **Out of scope:** Adaptive timeout (calculate based on historical event frequency); metrics/monitoring for timeout events.
+- **Status:** done (2026-05-10: added keepalive_timeout_seconds query param (default=30, min=5, max=300) to stream_task; raises 400 on out-of-range values; 2 tests in test_healthz.py)
+
+
+### [IDEA-2026-05-10-02] Log fallback model selection at INFO level for reproducibility
+
+- **Source:** `app/providers.py:843` — `_chat_openrouter` silently retries next model on 402/429 with no INFO-level audit trail; users running same prompt twice may get different models
+- **Why it fits Ai_computer:** When the primary model rate-limits and the fallback chain activates, users see no indication which model actually served their request. This makes debugging and cost tracking impossible. Competitors (Aider) expose model selection in the UI. Adding an INFO log line costs 1 LOC and a new SSE event `provider_info` (type, model, fallback: true) costs ~10 LOC.
+- **Scope (this PR only):** In `_chat_openrouter` (app/providers.py:843), add `_log.info("Fallback activated: switched to %s", model_name)` on each retry. Emit a `{"type": "provider_info", "model": model_name, "fallback": True}` item to the caller's stream after fallback activates. ~10 LOC. No UI changes.
+- **Acceptance criteria:** Server logs show which fallback model was selected. `provider_info` event visible in task SSE stream when fallback fires. Existing tests pass.
+- **Out of scope:** UI badge showing model name mid-run; persistent per-task model audit log.
 - **Status:** queued

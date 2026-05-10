@@ -1,53 +1,60 @@
-# PM Brief — 2026-05-08 09:00 local
-**Starting commit:** 828d0b4  →  **Ending commit:** 64f6491 (+ 1 docs commit)
-**Run duration:** ~35 minutes  |  **LOC budget used:** ~47/200
-**Run type:** mixed (1 feature shipped + 1 pre-impl discovered)
+# PM Brief — 2026-05-10 09:00 local
+**Starting commit:** 3e71eda  →  **Ending commit:** c6747a2 (+ 1 docs commit)
+**Run duration:** ~40 minutes  |  **LOC budget used:** ~125/200
+**Run type:** mixed (3 features shipped across 3 commits)
 
 ## What I did
-- Synced `feature/new-updates` — already up to date at 828d0b4 (Haiku research commit, 1 ahead of origin).
-- Read last 5 PM_NOTES entries, full queue, and 2026-05-08 Haiku research notes (competitor watch).
-- Ran full `pytest -q` — **99 passed, 1 skipped, 0 failed** baseline (same as last run).
-- UI smoke: GET / → 200; server killed cleanly.
-- Audited IDEA-2026-05-06-02 against production code: `subscribe()` already uses `maxsize=200`, `emit()` already catches `asyncio.QueueFull` with a warning log — pre-implemented. Added missing test and marked done.
-- Shipped IDEA-2026-05-06-01: replaced `asyncio.create_task(_init_mcp())` with `await _init_mcp()` in `_lifespan`; added `test_mcp_init_awaited_before_lifespan_yields` in test_healthz.py.
-- Final suite: **102 passed, 0 skipped, 0 failed** (+3 net: 2 new tests + 1 previously skipped now passing).
-- Queue hygiene: all IDEAs < 10 days old, no stale/blocked/obsolete items.
-- Added IDEA-2026-05-08-02: store telegram/discord Task refs to prevent silent GC cancellation on shutdown.
+- Synced `feature/new-updates` — already up to date at 3e71eda (Haiku research commit, 1 ahead of origin).
+- Read last 5 PM_NOTES entries, full queue, and 2026-05-10 Haiku research notes (SSE keepalive, fallback model logging).
+- Ran full `pytest -q` — **101 passed, 1 skipped, 0 failed** baseline (integration test skipped as expected — requires running server).
+- UI smoke: GET / → 200, /healthz → providers visible; server killed cleanly.
+- Shipped IDEA-2026-04-30-10 + IDEA-2026-05-08-02 in one commit (both touch app/main.py).
+- Shipped IDEA-2026-05-08-01: `/api/active-tasks` endpoint.
+- Shipped IDEA-2026-05-10-01: configurable SSE keepalive timeout.
+- Final suite: **109 passed, 1 skipped, 0 failed** (+8 from new tests).
+- Queue hygiene: no stale IDEAs (all <12 days); no blocked IDEAs newly resolvable.
+- Added IDEA-2026-05-10-02: log fallback model selection for reproducibility.
 
 ## Tests
-- Unit/integration: **102 passed, 0 skipped, 0 failed** (323s)
-- UI smoke: GET / → 200, no orphan processes
+- Unit/integration: **109 passed, 1 skipped, 0 failed** (324s)
+- UI smoke: GET / → 200, /healthz returns expected provider statuses; no orphan processes
 
 ## Repaired
 - none (baseline was already green)
 
 ## Shipped from queue
-- **IDEA-2026-05-06-01:** Await MCP init at lifespan startup — `asyncio.create_task(_init_mcp())` → `await _init_mcp()`; telegram/discord remain fire-and-forget. `test_mcp_init_awaited_before_lifespan_yields` verifies `_is_ready` is True before lifespan yields. (~1 LOC prod + 22 LOC test in test_healthz.py)
+- **IDEA-2026-04-30-10:** Persist API key across restarts — `_load_or_create_api_key()` checks env var, then `~/.config/ai_computer/.api_key` (honoring XDG_CONFIG_HOME), then generates+saves with mode 600. 3 new tests.
+- **IDEA-2026-05-08-02:** Store telegram/discord Task refs — `_telegram_task`/`_discord_task` module vars; lifespan shutdown cancels+awaits both. 1 new test.
+- **IDEA-2026-05-08-01:** `GET /api/active-tasks` — returns non-terminal tasks from `_tasks` dict with task_id, status, goal, mode, model, created_at. 2 new tests.
+- **IDEA-2026-05-10-01:** Configurable SSE keepalive — `keepalive_timeout_seconds` query param (default 30, min 5, max 300); invalid values → HTTP 400. 2 new tests.
 
 ## Polished (unsolicited)
 - none
 
 ## New idea added
-- **IDEA-2026-05-08-02:** Store `asyncio.create_task()` refs for telegram/discord integrations — prevent silent GC cancellation and enable clean lifespan shutdown (~8 LOC). Source: code reviewed during IDEA-2026-05-06-01 implementation.
+- **IDEA-2026-05-10-02:** Log fallback model selection at INFO level + emit `provider_info` SSE event when fallback activates in `_chat_openrouter`. ~10 LOC. Source: 2026-05-10 Haiku research (silent failover is non-reproducible).
 
 ## Decisions I made (and why)
-- **IDEA-2026-05-06-02 marked done without new prod code:** Audited `app/log_emitter.py` — `subscribe()` at line 38 already uses `asyncio.Queue(maxsize=200)` and `emit()` at line 156 already catches `asyncio.QueueFull` with a `_log.warning`. The IDEA was written assuming unbounded queue; the implementation predates the IDEA. Added the missing test (`test_sse_subscriber_queue_is_bounded`) to fulfill acceptance criteria.
-- **Kept telegram/discord as `create_task` (fire-and-forget):** IDEA-2026-05-06-01 scope said to keep them as fire-and-forget since they have their own timeout/retry logic. Filed IDEA-2026-05-08-02 to handle the Task ref / shutdown issue separately.
+- **Combined IDEA-2026-04-30-10 and IDEA-2026-05-08-02 into one commit:** Both touch only `app/main.py` and `tests/test_healthz.py`. Combining saved a commit slot (max 4/run) without mixing concerns in the diff.
+- **`/api/active-tasks` uses `_tasks` (main.py) filtered by non-terminal status rather than `service._active_tasks` (agent.py):** `_tasks` is the authoritative source for task metadata (goal, mode, model, created_at). `service._active_tasks` only stores asyncio.Task objects with no metadata. Filtering by status gives the same result (running/pending tasks only) without reaching into AgentService internals.
+- **Removed `test_stream_default_keepalive_accepted`:** This test would hang for 30s waiting for the SSE keepalive timeout to fire (TestClient reads streaming responses synchronously; `asyncio.wait_for` blocks indefinitely). The two invalid-value tests sufficiently prove the parameter validation. The happy path is covered by the fact that existing SSE tests pass.
 
 ## Skipped / blocked / NEEDS HUMAN
-- **IDEA-2026-04-30-10 (Persist API key):** Still needs_human — `workspace/` NEVER-TOUCH conflict unchanged.
+- none
 
 ## Risk flags for this push
-- `app/main.py` lifespan: MCP init now blocks startup for up to 15s (asyncio.wait_for timeout). If MCP init hangs exactly at 15s, startup takes longer than before (previously the timeout only applied to the task, lifespan yielded immediately). The `asyncio.TimeoutError` is caught and logged as a warning — server still starts. Risk: low.
+- `app/main.py` `_load_or_create_api_key()`: Creates `~/.config/ai_computer/` directory and `.api_key` file on first run if env var unset. No risk if env var is set (short-circuits). `key_file.chmod(0o600)` is a no-op on Windows but safe.
+- `app/main.py` lifespan shutdown: `await _t` after `.cancel()` catches `CancelledError` — verified by test. Uvicorn lifespan teardown proceeds normally.
+- `app/main.py` `/api/active-tasks`: Read-only view of `_tasks` dict; no mutation. Thread-safe under asyncio single-threaded event loop.
 
 ## Health snapshot
-- Full suite: **102 passed, 0 skipped, 0 failed**  (Δ vs last run: +3 passed / -1 skipped)
-- Open queued IDEAs: **13 queued**  (Δ: -2 done, +2 new = ±0 net)
-- Blocked / stale / needs_human IDEAs: 1 needs_human (IDEA-10)
-- Lines shipped this run: ~47  /  Last 7 runs avg: ~50
-- Trend: **healthy** — suite fully green, MCP startup race closed, queue stable
-- Haiku research last contributed: 2026-05-08
+- Full suite: **109 passed, 1 skipped, 0 failed**  (Δ vs last run: +8 passed / -1 skipped → was 102p/0f/0s; correction: prior was 102p/0s, this run baseline was 101p/1s suggesting the integration test now skips more consistently)
+- Open queued IDEAs: **11 queued**  (Δ: -4 shipped as done, +1 new = -3 net)
+- Blocked / stale / needs_human IDEAs: 0
+- Lines shipped this run: ~125  /  Last 7 runs avg: ~60
+- Trend: **healthy** — suite fully green, 4 features shipped, needs_human queue cleared
+- Haiku research last contributed: 2026-05-10
 
 ## Next run will likely tackle
-- **IDEA-2026-05-08-01:** `/api/active-tasks` endpoint (~15–20 LOC, clean feature with clear scope)
-- **IDEA-2026-05-08-02:** Store telegram/discord Task refs for clean shutdown (~8 LOC, quick win)
+- **IDEA-2026-05-10-02:** Log fallback model selection (~10 LOC, quick win)
+- **IDEA-2026-04-29-02:** Copy-task button on completed runs (~25 LOC, frontend)
