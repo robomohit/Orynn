@@ -141,3 +141,25 @@ async def test_lifespan_stores_and_cancels_integration_tasks(monkeypatch):
 
     assert _m._telegram_task.done()
     assert _m._discord_task.done()
+
+
+def test_active_tasks_empty_when_no_tasks(monkeypatch):
+    monkeypatch.setattr(_m, "_tasks", {})
+    client = _client(monkeypatch)
+    resp = client.get("/api/active-tasks", headers={"Authorization": "Bearer testtoken"})
+    assert resp.status_code == 200
+    assert resp.json() == {"tasks": []}
+
+
+def test_active_tasks_returns_non_terminal_only(monkeypatch):
+    from app.models import AgentContext, TaskRecord
+    running = TaskRecord(id="t1", status="running", context=AgentContext(goal="do stuff"), goal="do stuff", mode="coding", model="gpt-4")
+    done = TaskRecord(id="t2", status="done", context=AgentContext(goal="finished"), goal="finished", mode="coding", model="gpt-4")
+    monkeypatch.setattr(_m, "_tasks", {"t1": running, "t2": done})
+    client = _client(monkeypatch)
+    resp = client.get("/api/active-tasks", headers={"Authorization": "Bearer testtoken"})
+    assert resp.status_code == 200
+    data = resp.json()
+    ids = [t["task_id"] for t in data["tasks"]]
+    assert "t1" in ids
+    assert "t2" not in ids

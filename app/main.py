@@ -684,6 +684,24 @@ async def get_all_tasks():
     }
 
 
+@app.get("/api/active-tasks", dependencies=[Depends(verify_token)])
+async def get_active_tasks():
+    """Return tasks currently running or pending (not in a terminal state)."""
+    active = [
+        {
+            "task_id": tid,
+            "status": rec.status,
+            "goal": rec.goal or rec.context.goal,
+            "mode": rec.mode,
+            "model": rec.model,
+            "created_at": rec.created_at,
+        }
+        for tid, rec in _tasks.items()
+        if not _is_terminal_status(rec.status)
+    ]
+    return {"tasks": active}
+
+
 @app.post("/api/tasks", dependencies=[Depends(verify_token)])
 async def create_task(body: TaskIn):
     _validate_task_id(body.task_id)
