@@ -143,6 +143,18 @@ async def test_lifespan_stores_and_cancels_integration_tasks(monkeypatch):
     assert _m._discord_task.done()
 
 
+def test_stream_invalid_keepalive_too_low(monkeypatch):
+    client = _client(monkeypatch)
+    resp = client.get("/api/tasks/sometask/stream?keepalive_timeout_seconds=2", headers={"Authorization": "Bearer testtoken"})
+    assert resp.status_code == 400
+
+
+def test_stream_invalid_keepalive_too_high(monkeypatch):
+    client = _client(monkeypatch)
+    resp = client.get("/api/tasks/sometask/stream?keepalive_timeout_seconds=400", headers={"Authorization": "Bearer testtoken"})
+    assert resp.status_code == 400
+
+
 def test_active_tasks_empty_when_no_tasks(monkeypatch):
     monkeypatch.setattr(_m, "_tasks", {})
     client = _client(monkeypatch)

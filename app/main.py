@@ -910,12 +910,14 @@ async def retry_task(task_id: str):
 
 
 @app.get("/api/tasks/{task_id}/stream")
-async def stream_task(task_id: str, request: Request, since: int = 0, credentials: HTTPAuthorizationCredentials = Security(bearer)):
+async def stream_task(task_id: str, request: Request, since: int = 0, keepalive_timeout_seconds: int = 30, credentials: HTTPAuthorizationCredentials = Security(bearer)):
     _validate_task_id(task_id)
     if not _is_authorized(request, credentials):
         async def _bad_auth():
             yield 'data: {"type":"error","message":"unauthorized"}\n\n'
         return StreamingResponse(_bad_auth(), media_type="text/event-stream", status_code=401)
+    if not (5 <= keepalive_timeout_seconds <= 300):
+        raise HTTPException(status_code=400, detail="keepalive_timeout_seconds must be between 5 and 300")
 
     async def event_generator():
         # Replay persisted events first so fast-completing tasks aren't missed
@@ -941,7 +943,7 @@ async def stream_task(task_id: str, request: Request, since: int = 0, credential
                 if await request.is_disconnected():
                     break
                 try:
-                    msg = await asyncio.wait_for(q.get(), timeout=30.0)
+                    msg = await asyncio.wait_for(q.get(), timeout=float(keepalive_timeout_seconds))
                     event_id = msg.get("seq")
                     prefix = f"id: {event_id}\n" if event_id is not None else ""
                     yield f"{prefix}data: {json.dumps(msg)}\n\n"
