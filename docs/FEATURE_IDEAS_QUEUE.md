@@ -41,7 +41,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add a small "↻ Copy task" button on each finished run card that fills the input box with the original goal text.
 - **Acceptance criteria:** Button appears only on terminal-state runs; click populates input and focuses it. Playwright smoke test added.
 - **Out of scope:** Editing/forking mid-run, history search.
-- **Status:** queued
+- **Status:** done (2026-05-13: added .history-retask CSS + history-item.terminal class; renderHistoryItem adds terminal class for done/failed/cancelled status; ↻ Copy task button fills #input and focuses it on click; stopPropagation prevents loading task log; test_copy_task_button_present_and_wired added)
 
 ### [IDEA-2026-04-29-03] /healthz endpoint with provider checks
 

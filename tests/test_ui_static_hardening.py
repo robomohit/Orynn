@@ -48,3 +48,15 @@ def test_project_folder_picker_is_present_and_persisted_client_side():
     assert "PROJECT_FOLDER_STORAGE_KEY" in html
     assert "localStorage.setItem(PROJECT_FOLDER_STORAGE_KEY" in html
     assert "project-folder-clear" in html
+
+
+def test_copy_task_button_present_and_wired():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    assert ".history-retask" in html
+    assert ".history-item.terminal .history-retask" in html
+    assert "isTerminal" in html
+    assert "↻ Copy task" in html
+    assert "e.stopPropagation()" in html
+    assert "inp.value = taskRecord.goal" in html
+    assert "inp.focus()" in html

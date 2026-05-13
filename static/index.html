@@ -545,6 +545,22 @@
     font-family: var(--font-mono);
     letter-spacing: 0;
   }
+  .history-retask {
+    display: none;
+    margin-top: 4px;
+    padding: 1px 6px;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    color: var(--muted-2);
+    font-size: var(--fs-micro);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast);
+  }
+  .history-item:hover .history-retask { opacity: 1; }
+  .history-item:hover .history-retask:hover { color: var(--ink); border-color: var(--line-2); }
+  .history-item.terminal .history-retask { display: inline-block; }
 
   .history-empty {
     margin: 6px 6px 0;
@@ -3281,9 +3297,10 @@
   const renderHistoryItem = (taskRecord, makeActive = false) => {
     const item = document.createElement('button');
     item.type = 'button';
-    item.className = `history-item${makeActive ? ' active' : ''}`;
-    item.dataset.taskId = taskRecord.id || '';
     const status = (taskRecord.status || '').toLowerCase();
+    const isTerminal = ['done', 'complete', 'failed', 'error', 'cancelled'].includes(status);
+    item.className = `history-item${makeActive ? ' active' : ''}${isTerminal ? ' terminal' : ''}`;
+    item.dataset.taskId = taskRecord.id || '';
     const dotState = status === 'running' ? 'running'
       : (status === 'done' || status === 'complete') ? 'done'
       : (status === 'failed' || status === 'error') ? 'failed'
@@ -3293,10 +3310,18 @@
       <span class="history-copy">
         <span class="history-goal"></span>
         <span class="history-meta">${relTime(taskRecord.created_at || taskRecord.timestamp || taskRecord.finished_at) || humanize(status || 'saved')}</span>
+        <button type="button" class="history-retask" tabindex="-1">↻ Copy task</button>
       </span>
     `;
     item.querySelector('.history-goal').textContent = taskRecord.goal || '(untitled)';
     item.title = [taskRecord.mode, taskRecord.model].filter(Boolean).join(' / ');
+    item.querySelector('.history-retask')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const inp = $('input');
+      inp.value = taskRecord.goal || '';
+      inp.dispatchEvent(new Event('input'));
+      inp.focus();
+    });
     $('task-history').prepend(item);
     historyItems.unshift(item);
     bindHistoryItem(item, taskRecord.id);
