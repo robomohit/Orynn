@@ -389,7 +389,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** In `_chat_openrouter` (app/providers.py:843), add `_log.info("Fallback activated: switched to %s", model_name)` on each retry. Emit a `{"type": "provider_info", "model": model_name, "fallback": True}` item to the caller's stream after fallback activates. ~10 LOC. No UI changes.
 - **Acceptance criteria:** Server logs show which fallback model was selected. `provider_info` event visible in task SSE stream when fallback fires. Existing tests pass.
 - **Out of scope:** UI badge showing model name mid-run; persistent per-task model audit log.
-- **Status:** queued
+- **Status:** in_progress
 
 ### [IDEA-2026-05-13-01] Run memory consolidation in background to prevent agent loop hangs
 
