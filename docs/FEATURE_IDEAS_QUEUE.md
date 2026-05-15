@@ -426,3 +426,11 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Out of scope:** Dynamic allow-list reload (restart required); per-user allow-lists (team/org-level is the first step); cost budgets or rate limiting.
 - **Status:** done (2026-05-15: added _get_allowed_models() in providers.py; filters fallback chain in _openrouter_models_to_try(); raises ValueError if all models blocked; empty/unset env var allows all; 3 tests added to test_providers.py)
 
+### [IDEA-2026-05-15-02] Support glob patterns in ALLOWED_MODELS for flexible model governance
+
+- **Source:** Follow-up to IDEA-2026-05-15-01 — current exact-match whitelist requires listing every model variant; enterprise deployments need prefix patterns like `claude-*` to allow all Claude models without enumerating each version.
+- **Why it fits Ai_computer:** `ALLOWED_MODELS="claude-3-5-sonnet,claude-3-7-sonnet"` breaks as soon as a new Claude model ships. `ALLOWED_MODELS="claude-*"` is stable across model version bumps. `fnmatch` stdlib handles glob patterns, no new deps.
+- **Scope (this PR only):** Change `_get_allowed_models()` in `app/providers.py` to return a list of patterns (not a frozenset). Change the filter in `_openrouter_models_to_try` to use `fnmatch.fnmatch(model, pattern)` for any pattern in the list. Exact strings still work (fnmatch treats literals as exact match). ~5 LOC change in providers.py. Update test to cover wildcard.
+- **Acceptance criteria:** `ALLOWED_MODELS="claude-*"` allows `claude-3-5-sonnet` and `claude-3-7-sonnet` but blocks `gpt-4`. Exact-match behavior unchanged. Test added.
+- **Out of scope:** Regex patterns; per-user lists; case-insensitive matching.
+- **Status:** queued
