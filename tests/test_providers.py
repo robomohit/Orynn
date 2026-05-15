@@ -160,3 +160,39 @@ async def test_stream_chat_fallback_emits_provider_info(monkeypatch):
     assert len(pinfo) == 1
     assert pinfo[0]["model"] == "fallback-model"
     assert pinfo[0]["fallback"] is True
+
+
+def test_allowed_models_whitelist_blocks_disallowed_model(monkeypatch):
+    """ALLOWED_MODELS env var prevents disallowed models from entering the fallback chain."""
+    monkeypatch.setenv("ALLOWED_MODELS", "claude-3-5-sonnet,gpt-4")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from importlib import reload
+    import app.providers as _prov
+    reload(_prov)
+    p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
+    with pytest.raises(ValueError, match="ALLOWED_MODELS"):
+        p._openrouter_models_to_try("google/gemma-4-31b-it:free")
+
+
+def test_allowed_models_empty_allows_all(monkeypatch):
+    """Unset ALLOWED_MODELS permits all models (backward compatible)."""
+    monkeypatch.delenv("ALLOWED_MODELS", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from importlib import reload
+    import app.providers as _prov
+    reload(_prov)
+    p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
+    result = p._openrouter_models_to_try("google/gemma-4-31b-it:free")
+    assert "google/gemma-4-31b-it:free" in result
+
+
+def test_allowed_models_permits_matching_model(monkeypatch):
+    """Requests matching the allow-list succeed; non-matching fallbacks are stripped."""
+    monkeypatch.setenv("ALLOWED_MODELS", "google/gemma-4-31b-it:free")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from importlib import reload
+    import app.providers as _prov
+    reload(_prov)
+    p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
+    result = p._openrouter_models_to_try("google/gemma-4-31b-it:free")
+    assert result == ["google/gemma-4-31b-it:free"]

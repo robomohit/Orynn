@@ -407,6 +407,14 @@ def _image_data_url(image_data: Optional[str], default_mime: str = "image/jpeg")
     return f"data:{mime or default_mime};base64,{payload}"
 
 
+def _get_allowed_models() -> Optional[frozenset]:
+    """Parse ALLOWED_MODELS env var (comma-separated). Returns None when all models are permitted."""
+    raw = os.environ.get("ALLOWED_MODELS", "").strip()
+    if not raw:
+        return None
+    return frozenset(m.strip() for m in raw.split(",") if m.strip())
+
+
 def _capture_hwnd_image(hwnd: int) -> Image.Image:
     import ctypes
     import win32con  # type: ignore
@@ -912,6 +920,14 @@ class PlannerProvider:
         for candidate in models_to_try:
             if candidate not in deduped:
                 deduped.append(candidate)
+
+        allowed = _get_allowed_models()
+        if allowed is not None:
+            deduped = [m for m in deduped if m in allowed]
+            if not deduped:
+                raise ValueError(
+                    f"No models in fallback chain are permitted by ALLOWED_MODELS={os.environ.get('ALLOWED_MODELS')!r}"
+                )
         return deduped
 
     def _chat_google(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:

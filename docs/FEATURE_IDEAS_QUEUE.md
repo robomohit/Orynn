@@ -424,5 +424,5 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add `_validate_allowed_models(model_name: str) -> bool` utility in `app/providers.py`. At startup (e.g., in `__init__` of ProviderClient), parse `ALLOWED_MODELS` env var (default: empty = all allowed). In `_chat_openrouter`, before calling the provider, check `_validate_allowed_models(model)` and raise ValueError if disallowed. ~15 LOC in providers.py. Add one unit test: `test_allowed_models_whitelist_blocks_disallowed_model`.
 - **Acceptance criteria:** With `ALLOWED_MODELS="claude-3-5-sonnet,gpt-4"`, calling with model `gemma-3-27b-it` raises ValueError before HTTP call. Empty/unset `ALLOWED_MODELS` allows all models (backward compatible). Test passes.
 - **Out of scope:** Dynamic allow-list reload (restart required); per-user allow-lists (team/org-level is the first step); cost budgets or rate limiting.
-- **Status:** queued
+- **Status:** done (2026-05-15: added _get_allowed_models() in providers.py; filters fallback chain in _openrouter_models_to_try(); raises ValueError if all models blocked; empty/unset env var allows all; 3 tests added to test_providers.py)
 
