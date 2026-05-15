@@ -398,7 +398,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Change `maybe_auto_consolidate()` from synchronous to fire-and-forget: spawn `asyncio.create_task(self.consolidate())` instead of returning the result. Remove the return value (callers don't use it). Update one call-site in `app/agent.py` where `maybe_auto_consolidate()` is invoked. ~5 LOC.
 - **Acceptance criteria:** A test that triggers 50+ `summarize_session()` calls verifies that the consolidation task is enqueued (via mock/spy) rather than blocking. No latency regression in the fast path (agent loop). Existing test_memory.py tests still pass.
 - **Out of scope:** Reducing AUTO_CONSOLIDATE_EVERY or parallelizing Jaccard (those are tier-2 optimizations if background consolidation doesn't solve the issue).
-- **Status:** in_progress
+- **Status:** done (2026-05-15: changed 3 asyncio.to_thread(maybe_auto_consolidate) call sites in agent.py to asyncio.create_task(asyncio.to_thread(...)) — consolidation no longer blocks agent loop; test_maybe_auto_consolidate_fires_at_threshold added to test_memory.py)
 
 ### [IDEA-2026-05-13-02] Add watchdog timer to detect dead MCP server listeners
 
