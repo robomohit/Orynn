@@ -417,3 +417,12 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** Test passes on machines with Chroma installed; auto-skips on CI where Chroma is absent. If the top-1 result diverges between backends for an obvious query, the test must fail and surface the difference.
 - **Out of scope:** Fixing any divergence (that's a separate IDEA); BM25 parameter tuning.
 - **Status:** queued
+### [IDEA-2026-05-15-01] Add ALLOWED_MODELS env var for enterprise model governance
+
+- **Source:** Cursor Enterprise Admin Controls (May 2026) — model allow-lists restrict which models teams can access; OpenRouter fallback chain (providers.py:872-910) currently has no restrictions.
+- **Why it fits Ai_computer:** Enterprise/org deployments need cost control and compliance (e.g., "no closed-source models", "only Claude 3.5+"). Currently any LLM provider/model can be used. Adding `ALLOWED_MODELS` env var (comma-separated list or regex pattern) acts as a whitelist, rejecting disallowed models before calling provider. Prevents users/agents from accidentally consuming expensive out-of-policy models.
+- **Scope (this PR only):** Add `_validate_allowed_models(model_name: str) -> bool` utility in `app/providers.py`. At startup (e.g., in `__init__` of ProviderClient), parse `ALLOWED_MODELS` env var (default: empty = all allowed). In `_chat_openrouter`, before calling the provider, check `_validate_allowed_models(model)` and raise ValueError if disallowed. ~15 LOC in providers.py. Add one unit test: `test_allowed_models_whitelist_blocks_disallowed_model`.
+- **Acceptance criteria:** With `ALLOWED_MODELS="claude-3-5-sonnet,gpt-4"`, calling with model `gemma-3-27b-it` raises ValueError before HTTP call. Empty/unset `ALLOWED_MODELS` allows all models (backward compatible). Test passes.
+- **Out of scope:** Dynamic allow-list reload (restart required); per-user allow-lists (team/org-level is the first step); cost budgets or rate limiting.
+- **Status:** queued
+
