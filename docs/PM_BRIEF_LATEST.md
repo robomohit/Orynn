@@ -1,60 +1,55 @@
-# PM Brief — 2026-05-15 09:00 local
-**Starting commit:** 4f79340  →  **Ending commit:** f8c49a1 (+ 1 docs commit)
-**Run duration:** ~35 minutes  |  **LOC budget used:** ~88/200 (44 prod + 44 test)
-**Run type:** mixed (3 features shipped)
+# PM Brief — 2026-05-16 09:00 local
+**Starting commit:** 4bfe84c  →  **Ending commit:** 66a5f4c
+**Run duration:** ~30 minutes  |  **LOC budget used:** ~124/200 (net; 131 added, 7 removed)
+**Run type:** feature (1 UI phase shipped)
 
 ## What I did
-- Synced `feature/new-updates` — already up to date at 4f79340 (Haiku research commit, 1 ahead of origin).
-- Read last 5 PM_NOTES entries, full queue, and 2026-05-15 Haiku research notes (competitor watch).
-- Ran full `pytest -q` — **111 passed, 1 skipped, 0 failed** baseline (same as last run).
-- UI smoke: GET / → 200; killed orphan python process; server clean.
-- Shipped IDEA-2026-05-13-01: background memory consolidation (3 agent.py lines + 1 test).
-- Shipped IDEA-2026-05-13-02: MCP server watchdog timer (25 LOC in mcp_manager.py + 1 test).
-- Shipped IDEA-2026-05-15-01: ALLOWED_MODELS env var for model governance (16 LOC in providers.py + 3 tests).
-- Final suite: **117 passed, 0 failed** (+6 from new tests).
-- Queue hygiene: no stale IDEAs (all < 17 days); no blocked IDEAs resolved.
-- Added IDEA-2026-05-15-02: glob pattern support in ALLOWED_MODELS (~5 LOC follow-up).
+- Synced `feature/new-updates` — branch was 1 commit ahead of origin (Haiku research); pulled, already up to date.
+- Read last 5 PM_NOTES entries, full queue, and 2026-05-16 research notes (tools.py / desktop_bridge.py scan).
+- Ran full `pytest -q` — **116 passed, 1 skipped, 0 failed** baseline (green).
+- UI smoke: GET / → 200; server killed cleanly.
+- Shipped IDEA-2026-05-02-10 (Phase C1 — turn summary collapse).
+- Added IDEA-2026-05-16-02 (plugin handler full traceback logging).
+- Queue hygiene: all IDEAs < 18 days old; no stale, blocked, or obsolete items.
+- Final suite: **117 passed, 1 skipped, 0 failed** (+1 from new test).
+- Pushed 4 commits (2 feat, 2 docs).
 
 ## Tests
-- Unit/integration: **117 passed, 0 failed** (387s)
+- Unit/integration: **117 passed, 1 skipped, 0 failed** (345s)
 - UI smoke: GET / → 200, no orphan processes
 
 ## Repaired
 - none (baseline was already green)
 
 ## Shipped from queue
-- **IDEA-2026-05-13-01:** Background memory consolidation — changed 3x `await asyncio.to_thread(memory.maybe_auto_consolidate)` in agent.py to `asyncio.create_task(asyncio.to_thread(...))`. O(n²) Jaccard consolidation no longer blocks the agent loop mid-task. `test_maybe_auto_consolidate_fires_at_threshold` added.
-- **IDEA-2026-05-13-02:** MCP server watchdog — `_watchdog()` async task polls every 1s; marks server dead and cancels in-flight calls if no response for `_WATCHDOG_TIMEOUT=15s` while calls are pending. Previously callers waited full 60s `_CALL_TIMEOUT`. `_last_response_at` updated in `_listen()` on each response. `test_mcp_watchdog_marks_dead_when_pending_calls_get_no_response` added.
-- **IDEA-2026-05-15-01:** ALLOWED_MODELS env var — `_get_allowed_models()` parses comma-separated whitelist; `_openrouter_models_to_try()` filters fallback chain and raises ValueError if all models blocked. Empty/unset allows all. 3 tests in test_providers.py.
+- **IDEA-2026-05-02-10 (Phase C1):** Turn summary — all `action_start`/tool events between reasoning events now grouped into ONE collapsible `.turn-summary` container. Present-tense live (`Running 2 commands…`); past-tense on finalize (`Ran 2 commands, Edited 1 file ›`). Click header to expand and see stacked tool cards. `finalizeTurnSummary()` inserted before every non-tool event boundary (`reasoning`, `plan`, `reflection`, `screenshot`, `done`, `error`, `cancelled`, `approval_required`, `permission_required`). `activeTurnSummary` reset in `resetTaskView`. `test_phase_c1_turn_summary_present` added to `test_ui_static_hardening.py`. ~124 LOC net.
 
 ## Polished (unsolicited)
-- none (at 4-commit limit before polish step)
+- none
 
 ## New idea added
-- **IDEA-2026-05-15-02:** Glob patterns in ALLOWED_MODELS — use `fnmatch.fnmatch` for patterns like `claude-*`; exact strings still work; ~5 LOC change.
+- **IDEA-2026-05-16-02:** Log full traceback for plugin handler errors — 3 LOC fix in `app/tools.py:~1561` to call `logging.error(traceback.format_exc())` before returning short ToolResult summary. Source: 2026-05-16 research notes.
 
 ## Decisions I made (and why)
-- **IDEA-2026-05-13-01 — no Task ref storage:** `asyncio.create_task()` tasks are held by the event loop while executing; CPython won't GC them mid-run. Short-lived consolidation tasks (~1-2s) don't need stored refs. Filed IDEA-2026-05-15-02 pattern if needed.
-- **IDEA-2026-05-13-02 — watchdog fires when calls IN-FLIGHT (not absent):** The IDEA spec said "no call is in-flight" but that would false-positive on idle servers. Correct condition: pending calls exist AND no response for >15s. Documented in commit message.
-- **IDEA-2026-05-15-01 — filter in models_to_try, not _chat_openrouter:** Filtering the whole fallback chain in one place is cleaner than checking each candidate individually; raises ValueError upfront if no permitted models, avoiding wasted HTTP calls.
-- **In-progress marker counted as a commit:** Used 1 of 4 commit slots for the in_progress marker. Accepted — rules require the marker before implementation.
+- **Tool cards appended to `turn.body`, not `$('feed')` directly:** Changed `ensureActionCard` to bypass `createFeedCard` (which always appends to feed) and instead create the card element manually, then append to `turn.body`. This keeps existing card structure (tool-card CSS, chevron, body, detail-list) intact while routing them into the turn container.
+- **`setActiveCard(card)` still called on individual tool cards:** Keeps the glow animation working on whichever tool card is currently "live", even though it lives inside the collapsed turn summary.
+- **Turn summary not added to `actionCards` dict:** The summary container is a transient grouping UI element, not a card entry. Tool cards inside it are still keyed by `action_id` in `actionCards` as before.
 
 ## Skipped / blocked / NEEDS HUMAN
 - none
 
 ## Risk flags for this push
-- `app/agent.py`: background consolidation tasks have no stored refs — low risk (event loop holds them). If consolidation fails silently, no retry mechanism (unchanged from prior behavior).
-- `app/mcp_manager.py`: watchdog adds 1s polling overhead per running server. At scale (many MCP servers), this is negligible.
-- `app/providers.py`: ALLOWED_MODELS is read on every `_openrouter_models_to_try()` call (env var lookup ~1µs). Could cache in `__init__` if profiling shows it matters — filed as IDEA-2026-05-15-02 follow-up.
+- `static/index.html`: `ensureActionCard` no longer calls `createFeedCard` — card is created manually with same class names. Any caller expecting `scrollFeed()` after card creation will not get it for nested tool cards (acceptable: the turn summary itself is in the feed and already visible).
+- Approval/permission entries still call `ensureActionCard` (and thus go into a turn). `finalizeTurnSummary()` fires first, so they appear after the closed turn. Correct behavior.
 
 ## Health snapshot
-- Full suite: **117 passed, 0 failed**  (Δ vs last run: +6 passed / ±0 failed)
-- Open queued IDEAs: **12 queued**  (Δ: -3 shipped, +1 new = -2 net)
+- Full suite: **117 passed, 1 skipped, 0 failed**  (Δ vs last run: +1 passed)
+- Open queued IDEAs: **12 queued**  (Δ: -1 shipped, +1 new = ±0 net)
 - Blocked / stale / needs_human IDEAs: 0
-- Lines shipped this run: ~88  /  Last 7 runs avg: ~72
-- Trend: **healthy** — suite fully green, 3 features shipped, queue shrinking
-- Haiku research last contributed: 2026-05-15
+- Lines shipped this run: ~124  /  Last 7 runs avg: ~90
+- Trend: **healthy** — suite green, Phase C1 shipped, UI priority phases progressing
+- Haiku research last contributed: 2026-05-16
 
 ## Next run will likely tackle
-- **IDEA-2026-05-13-03:** Chroma vs FallbackCollection parity test (~30 LOC, auto-skips on CI)
-- **IDEA-2026-05-15-02:** Glob patterns in ALLOWED_MODELS (~5 LOC, quick follow-up)
+- **IDEA-2026-05-02-11 (Phase E):** Typography + whitespace pass (~50 LOC CSS-only)
+- **IDEA-2026-05-15-02:** Glob patterns in ALLOWED_MODELS (~5 LOC, quick win)
