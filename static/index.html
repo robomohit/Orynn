@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -93,23 +93,23 @@
     color-scheme: dark;
   }
 
-  /* ---------------- LIGHT THEME ---------------- */
+  /* ---------------- LIGHT THEME (Claude-matched warm cream) ---------------- */
   [data-theme='light'] {
-    --bg-0: #f3f1ec;
-    --bg-1: #fafaf8;
-    --bg-2: #ffffff;
-    --bg-3: #f5f4f0;
-    --bg-inset: #f0eee8;
+    --bg-0: #f8f8f6;                 /* Claude body cream — behind everything */
+    --bg-1: #f8f8f6;                 /* paper — flat, no layering like Claude */
+    --bg-2: #ffffff;                 /* raised — composer / modal cards */
+    --bg-3: #efeeeb;                 /* sunken/nested — Claude user-bubble grey */
+    --bg-inset: #f1f0ec;
 
-    --ink: #17171a;
-    --ink-2: #2e2e33;
-    --muted: #6b6b73;
-    --muted-2: #8e8e95;
-    --muted-3: #c2c2c8;
+    --ink: #1f1f1e;                  /* Claude near-black, warm */
+    --ink-2: #3d3d39;
+    --muted: #73726c;
+    --muted-2: #9a988f;
+    --muted-3: #c4c2b8;
 
-    --line: rgba(15,15,20,0.07);
-    --line-2: rgba(15,15,20,0.1);
-    --line-3: rgba(15,15,20,0.16);
+    --line: rgba(31,31,30,0.08);
+    --line-2: rgba(31,31,30,0.13);
+    --line-3: rgba(31,31,30,0.20);
 
     --accent: hsl(var(--accent-h) calc(var(--accent-s) - 18%) calc(var(--accent-l) - 14%));
     --accent-soft: hsl(var(--accent-h) var(--accent-s) calc(var(--accent-l) - 8%) / 0.12);
@@ -127,9 +127,9 @@
     --grain-opacity: 0.04;
     --grain-color: rgba(40,30,20,1);
 
-    --shadow-inset: inset 0 1px 0 rgba(255,255,255,0.7);
-    --shadow-card: 0 1px 0 rgba(15,15,20,0.02), 0 10px 24px -14px rgba(20,17,12,0.18);
-    --shadow-pop: 0 20px 48px -16px rgba(20,17,12,0.22), 0 2px 6px -2px rgba(20,17,12,0.12);
+    --shadow-inset: none;
+    --shadow-card: 0 4px 20px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(31,31,30,0.12);
+    --shadow-pop: 0 12px 40px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(31,31,30,0.18);
 
     color-scheme: light;
   }
@@ -2858,9 +2858,9 @@
 <script>
   /* ---------------- tweak defaults (persisted via host protocol) ---------------- */
   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-    "theme": "dark",
+    "theme": "light",
     "accentHue": 220,
-    "glow": 0.35,
+    "glow": 0,
     "density": 1,
     "grain": "off",
     "budgetPct": 44
