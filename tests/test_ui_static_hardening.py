@@ -69,7 +69,8 @@ def test_copy_task_button_present_and_wired():
     assert ".history-retask" in html
     assert ".history-item.terminal .history-retask" in html
     assert "isTerminal" in html
-    assert "↻ Copy task" in html
+    assert "aria-label=\"Copy task\"" in html
+    assert "Copy task" in html
     assert "e.stopPropagation()" in html
     assert "inp.value = taskRecord.goal" in html
     assert "inp.focus()" in html

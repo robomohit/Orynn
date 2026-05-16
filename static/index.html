@@ -2164,13 +2164,19 @@
     line-height: 1.45;
     animation: card-appear 0.24s var(--ease-spring) both;
   }
+  .toast {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
   .toast.info { border-color: var(--line-3); }
   .toast.ok   { border-color: color-mix(in oklab, var(--ok) 45%, var(--line-2)); }
-  .toast.ok::before    { content: '✓ '; color: var(--ok); font-weight: 700; }
   .toast.warn { border-color: color-mix(in oklab, var(--warn) 45%, var(--line-2)); }
-  .toast.warn::before  { content: '⚠ '; color: var(--warn); font-weight: 700; }
   .toast.err  { border-color: color-mix(in oklab, var(--err) 45%, var(--line-2)); }
-  .toast.err::before   { content: '✕ '; color: var(--err); font-weight: 700; }
+  .toast-icon { flex-shrink: 0; margin-top: 2px; }
+  .toast.ok .toast-icon { color: var(--ok); }
+  .toast.warn .toast-icon { color: var(--warn); }
+  .toast.err .toast-icon { color: var(--err); }
 
   .overlay {
     position: fixed;
@@ -2371,13 +2377,13 @@
     text-transform: uppercase;
     color: var(--muted);
   }
-  #tweaks header .t-close {
+  .t-close {
     width: 22px; height: 22px; border-radius: 4px;
     display: grid; place-items: center;
     color: var(--muted);
     border: 1px solid transparent;
   }
-  #tweaks header .t-close:hover { color: var(--ink); border-color: var(--line-2); }
+  .t-close:hover { color: var(--ink); border-color: var(--line-2); }
   #tweaks .t-body { padding: 10px 12px 14px; display: grid; gap: 12px; max-height: 72vh; overflow: auto; }
   #tweaks .t-section { display: grid; gap: 6px; }
   #tweaks .t-row {
@@ -2595,7 +2601,9 @@
     <div class="modal settings-modal">
       <div class="settings-head">
         <h3>Settings</h3>
-        <button class="t-close" id="settings-close" type="button" aria-label="Close settings">✕</button>
+        <button class="t-close" id="settings-close" type="button" aria-label="Close settings">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
       <div class="settings-body">
         <div class="settings-group">
@@ -3118,7 +3126,7 @@
     textSpan.textContent = 'Working…';
     const chevronEl = document.createElement('span');
     chevronEl.className = 'turn-summary-chevron';
-    chevronEl.textContent = '›';
+    chevronEl.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2.5L7.5 6L4 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     headerEl.appendChild(textSpan);
     headerEl.appendChild(chevronEl);
     const body = document.createElement('div');
@@ -3138,7 +3146,7 @@
   const finalizeTurnSummary = () => {
     if (!activeTurnSummary) return;
     const { textSpan, types } = activeTurnSummary;
-    textSpan.textContent = _turnSummaryText(types, false) + ' ›';
+    textSpan.textContent = _turnSummaryText(types, false);
     activeTurnSummary = null;
   };
 
@@ -3316,7 +3324,17 @@
   const toast = (message, kind = 'info', ttl = 3200) => {
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
-    el.textContent = message;
+
+    let iconSvg = '';
+    if (kind === 'ok') {
+      iconSvg = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    } else if (kind === 'warn') {
+      iconSvg = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+    } else if (kind === 'err') {
+      iconSvg = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+    }
+
+    el.innerHTML = `${iconSvg}<div>${escapeHtml(message)}</div>`;
     $('toast-stack').appendChild(el);
     if (ttl > 0) setTimeout(() => el.remove(), ttl);
   };
@@ -3491,7 +3509,10 @@
       <span class="history-copy">
         <span class="history-goal"></span>
         <span class="history-meta">${relTime(taskRecord.created_at || taskRecord.timestamp || taskRecord.finished_at) || humanize(status || 'saved')}</span>
-        <button type="button" class="history-retask" tabindex="-1">↻ Copy task</button>
+        <button type="button" class="history-retask" tabindex="-1" aria-label="Copy task">
+          <svg style="margin-right: 3px; vertical-align: text-bottom;" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+          Copy task
+        </button>
       </span>
     `;
     item.querySelector('.history-goal').textContent = taskRecord.goal || '(untitled)';
@@ -3748,7 +3769,8 @@
       window.subtaskStates[subtask.id] = 'pending';
       const row = document.createElement('div');
       row.className = 'subtask-item';
-      row.innerHTML = `<div class="subtask-icon">${String(index + 1).padStart(2,'0')}</div><div class="subtask-text"></div>`;
+      const stepNum = String(index + 1).padStart(2,'0');
+      row.innerHTML = `<div class="subtask-icon" data-original="${stepNum}">${stepNum}</div><div class="subtask-text"></div>`;
       row.querySelector('.subtask-text').textContent = subtask.description;
       subtaskEls[subtask.id] = row;
       list.appendChild(row);
@@ -3771,8 +3793,16 @@
     row.className = `subtask-item ${state}`.trim();
     const icon = row.querySelector('.subtask-icon');
     if (!icon) return;
-    const fallback = icon.textContent;
-    icon.textContent = state === 'done' ? '✓' : state === 'running' ? '●' : state === 'failed' ? '✕' : fallback;
+    const fallback = icon.dataset.original || icon.textContent;
+    if (state === 'done') {
+      icon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-label="done"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    } else if (state === 'running') {
+      icon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-label="running"><circle cx="12" cy="12" r="8"></circle></svg>';
+    } else if (state === 'failed') {
+      icon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-label="failed"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+    } else {
+      icon.innerHTML = fallback;
+    }
   };
 
   const ensureActionCard = (actionId, actionType = 'action', summary = '') => {
@@ -4846,8 +4876,8 @@
 
       const toggle = document.createElement('div');
       toggle.className = 'skill-toggle';
-      toggle.style.cssText = 'background:transparent; color:var(--muted); font-size:16px; display:flex; align-items:center; justify-content:flex-end;';
-      toggle.textContent = '>';
+      toggle.style.cssText = 'background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:flex-end;';
+      toggle.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
       item.append(info, toggle);
       grid.appendChild(item);
     });
