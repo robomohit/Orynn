@@ -1441,6 +1441,17 @@
   .state-chip.fail    { color: var(--err); border-color: color-mix(in oklab, var(--err) 40%, var(--line-2)); }
   .state-chip.waiting { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 40%, var(--line-2)); }
 
+  /* duration label — a time, not a state. quiet, lowercase, borderless. */
+  .time-chip {
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: var(--fs-micro);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-2);
+    letter-spacing: 0;
+    text-transform: lowercase;
+  }
+
   /* monospaced payloads */
   .tool-output,
   .artifact-preview,
@@ -3479,8 +3490,14 @@
 
   const createStateChip = (label, cls = '') => {
     const chip = document.createElement('span');
-    chip.className = `state-chip ${cls}`.trim();
-    chip.textContent = label;
+    // A bare duration ("20s", "2.4s") is a time, not a state — render it quiet.
+    if (!cls && /^[\d.]+\s*s$/i.test(String(label).trim())) {
+      chip.className = 'time-chip';
+      chip.textContent = String(label).trim().toLowerCase();
+    } else {
+      chip.className = `state-chip ${cls}`.trim();
+      chip.textContent = label;
+    }
     return chip;
   };
 
@@ -4168,6 +4185,7 @@
       if (terminalStateKey === errorKey) return;
       terminalStateKey = errorKey;
       finalizeLiveStatus();
+      clearLiveIndicators();
       setStatus('error');
       appendMessage(`Error: ${event.message}`, 'system-error');
       if (!replay) { markHistoryFinal('failed'); stopEverything(); }
@@ -4180,6 +4198,7 @@
       if (terminalStateKey === doneKey) return;
       terminalStateKey = doneKey;
       finalizeLiveStatus();
+      clearLiveIndicators();
       if (event.complete) {
         setStatus('complete');
         appendMessage('Task completed successfully.', 'system-success');
@@ -4199,6 +4218,7 @@
       if (terminalStateKey === key) return;
       terminalStateKey = key;
       finalizeLiveStatus();
+      clearLiveIndicators();
       setStatus('cancelled');
       appendMessage(event.message || 'Task was cancelled.', 'system-cancelled');
       if (!replay) { markHistoryFinal('cancelled'); stopEverything(); }
@@ -4208,7 +4228,9 @@
   const scheduleReconnect = (listenTask) => {
     clearReconnectTimer();
     reconnectAttempts += 1;
-    const delay = Math.min(3000 * reconnectAttempts, 15000);
+    // First attempt is near-instant: a stream close usually means the task
+    // just finished — poll status fast so the UI never looks stuck "running".
+    const delay = reconnectAttempts === 1 ? 500 : Math.min(3000 * reconnectAttempts, 15000);
     reconnectTimer = setTimeout(async () => {
       try {
         const record = await api(`/api/tasks/${listenTask}`);
@@ -4304,6 +4326,19 @@
     }
   };
 
+  // Clear lingering in-progress indicators — runs on BOTH live completion
+  // and history replay, so a finished task never shows a stuck "active" dot.
+  const clearLiveIndicators = () => {
+    document.querySelectorAll('.feed-card.is-active').forEach(c => c.classList.remove('is-active'));
+    lastActiveCard = null;
+    // Any tool chip still stuck on "running" never got an action_result — mark it done.
+    document.querySelectorAll('.state-chip.running').forEach(chip => {
+      chip.classList.remove('running');
+      chip.classList.add('ok');
+      chip.textContent = 'Done';
+    });
+  };
+
   const stopEverything = () => {
     clearInterval(timer);
     clearReconnectTimer();
@@ -4311,6 +4346,7 @@
     if (sse) { sse.close(); sse = null; }
     finalizeLiveStatus();
     setDesktopSessionActive(false);
+    clearLiveIndicators();
     showPostRunControls();
   };
 
