@@ -50,6 +50,19 @@ def test_project_folder_picker_is_present_and_persisted_client_side():
     assert "project-folder-clear" in html
 
 
+def test_phase_c1_turn_summary_present():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    assert "turn-summary" in html
+    assert "turn-summary-head" in html
+    assert "turn-summary-body" in html
+    assert "startTurnSummary" in html
+    assert "finalizeTurnSummary" in html
+    assert "_turnSummaryText" in html
+    assert "activeTurnSummary" in html
+    assert "finalizeTurnSummary();" in html
+
+
 def test_copy_task_button_present_and_wired():
     html = STATIC_HTML.read_text(encoding="utf-8")
 

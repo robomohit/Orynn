@@ -48,7 +48,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** In `processTaskEvent()` / `ensureActionCard()` (`static/index.html` ~3566/3883), collect all action/tool/terminal events that occur between two assistant text outputs into ONE summary container. Head = a single line: present tense while the turn streams (`Running command…`, `Searching…`, `Editing files…`); past tense once the turn completes (`Ran 3 commands`, `Edited 2 files`, `Read 4 files`) + `›`. Collapsed by default. For C1, the expanded body may simply stack the existing per-action cards — the icon-gutter step timeline is C2. ~120 LOC.
 - **Acceptance criteria:** A task doing 5 tool actions then answering shows ONE collapsed summary line + answer text below (not 5 cards). Line is present-tense live, past-tense after completion. Click expands. Pytest green. UI smoke fires a trivial coding task and verifies one summary line appears.
 - **Out of scope:** The icon-gutter step timeline inside the expanded view (IDEA-13). Inline source/citation chips.
-- **Status:** in_progress
+- **Status:** done (2026-05-16: added turn-summary container that groups all action/tool events between reasoning events into ONE collapsed summary line; present-tense live ("Ran 2 commands, Edited 1 file…"), past-tense on finalize; click expands to show stacked tool cards; finalizeTurnSummary() called before reasoning/plan/reflection/screenshot/done/error/cancelled/approval/permission events; activeTurnSummary reset in resetTaskView; test_phase_c1_turn_summary_present added to test_ui_static_hardening.py; ~120 LOC)
 
 ### [IDEA-2026-05-02-11] UI Phase E — Typography + whitespace pass for tool-aesthetic feel
 

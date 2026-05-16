@@ -1582,6 +1582,45 @@
     position: relative;
   }
 
+  /* Phase C1 — turn summary (collapses all tool actions into one muted line) */
+  .turn-summary { position: relative; padding-left: 24px; margin: 0; }
+  .turn-summary::before {
+    content: '';
+    position: absolute;
+    left: 4px; top: 14px;
+    width: 7px; height: 7px;
+    border-radius: 999px;
+    background: var(--bg-1);
+    border: 1px solid var(--line-3);
+    z-index: 1;
+  }
+  .turn-summary-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0 4px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .turn-summary-text {
+    font-size: 13px;
+    color: var(--ink-3);
+    flex: 1;
+  }
+  .turn-summary-chevron {
+    font-size: 14px;
+    color: var(--ink-3);
+    line-height: 1;
+    transition: transform 0.15s ease;
+  }
+  .turn-summary.expanded .turn-summary-chevron { transform: rotate(90deg); }
+  .turn-summary-body { padding: 0 0 4px 0; }
+  .turn-summary-body.collapsed { display: none; }
+  /* nested tool cards lose their left timeline decoration */
+  .turn-summary-body .feed-card { padding-left: 0; }
+  .turn-summary-body .feed-card::before { display: none; }
+  .turn-summary-body .feed-card.is-active::after { inset: -2px 0; }
+
   /* reasoning note */
   .reasoning-note { }
   .reasoning-note .card-head { padding: 6px 0 4px; }
@@ -3044,6 +3083,64 @@
   let terminalStateKey = null;
   const actionCards = {};
   let lastActiveCard = null;
+  let activeTurnSummary = null; // Phase C1: groups tool actions between reasoning events
+
+  const _actionTypeLabel = (type = '') => {
+    if (/run_command|bash|terminal/i.test(type)) return 'command';
+    if (/read_file|write_file|edit_file|str_replace|create_file|delete_file|undo_edit|view_file/i.test(type)) return 'file';
+    if (/search|web_search|browse/i.test(type)) return 'search';
+    if (/computer|click|type|scroll|screenshot|key/i.test(type)) return 'action';
+    return 'step';
+  };
+
+  const _turnSummaryText = (types, live) => {
+    const buckets = {};
+    types.forEach(t => { buckets[t] = (buckets[t] || 0) + 1; });
+    const parts = Object.entries(buckets).map(([t, n]) => {
+      if (t === 'command') return live ? `Running ${n > 1 ? n + ' commands' : 'command'}…` : `Ran ${n} command${n > 1 ? 's' : ''}`;
+      if (t === 'file') return live ? `Editing ${n > 1 ? n + ' files' : 'file'}…` : `Edited ${n} file${n > 1 ? 's' : ''}`;
+      if (t === 'search') return live ? 'Searching…' : `Searched ${n} time${n > 1 ? 's' : ''}`;
+      if (t === 'action') return live ? 'Acting…' : `${n} action${n > 1 ? 's' : ''}`;
+      return live ? 'Working…' : `${n} step${n > 1 ? 's' : ''}`;
+    });
+    return parts.join(', ') || (live ? 'Working…' : `${types.length} step${types.length !== 1 ? 's' : ''}`);
+  };
+
+  const startTurnSummary = () => {
+    if (activeTurnSummary) return activeTurnSummary;
+    removeWelcome();
+    const card = document.createElement('div');
+    card.className = 'turn-summary';
+    const headerEl = document.createElement('div');
+    headerEl.className = 'turn-summary-head';
+    const textSpan = document.createElement('span');
+    textSpan.className = 'turn-summary-text';
+    textSpan.textContent = 'Working…';
+    const chevronEl = document.createElement('span');
+    chevronEl.className = 'turn-summary-chevron';
+    chevronEl.textContent = '›';
+    headerEl.appendChild(textSpan);
+    headerEl.appendChild(chevronEl);
+    const body = document.createElement('div');
+    body.className = 'turn-summary-body collapsed';
+    headerEl.addEventListener('click', () => {
+      const isCollapsed = body.classList.toggle('collapsed');
+      card.classList.toggle('expanded', !isCollapsed);
+    });
+    card.appendChild(headerEl);
+    card.appendChild(body);
+    $('feed').appendChild(card);
+    scrollFeed();
+    activeTurnSummary = { card, body, textSpan, types: [] };
+    return activeTurnSummary;
+  };
+
+  const finalizeTurnSummary = () => {
+    if (!activeTurnSummary) return;
+    const { textSpan, types } = activeTurnSummary;
+    textSpan.textContent = _turnSummaryText(types, false) + ' ›';
+    activeTurnSummary = null;
+  };
 
   const WELCOME_HTML = document.getElementById('welcome').outerHTML;
   const PROJECT_FOLDER_STORAGE_KEY = 'ai-computer.project-folder.v1';
@@ -3686,7 +3783,15 @@
       return existing;
     }
 
-    const card = createFeedCard('tool-card');
+    // Phase C1: group into active turn summary
+    const turn = startTurnSummary();
+    turn.types.push(_actionTypeLabel(actionType));
+    turn.textSpan.textContent = _turnSummaryText(turn.types, true);
+
+    removeWelcome();
+    const card = document.createElement('div');
+    card.className = 'feed-card tool-card';
+    setActiveCard(card);
     const label = humanize(actionType || 'action');
     const parts = createCardHead({
       eyebrow: 'Tool',
@@ -3716,6 +3821,7 @@
     inner.appendChild(output);
     inner.appendChild(details);
     card.appendChild(body);
+    turn.body.appendChild(card);
 
     parts.head.addEventListener('click', () => {
       const collapsed = body.classList.toggle('collapsed');
@@ -3941,7 +4047,7 @@
     planSubtasks = []; currentSubtaskIdx = 0; subtaskEls = {};
     screenshotStore.clear(); lastActionId = null; terminalStateKey = null;
     Object.keys(actionCards).forEach((k) => delete actionCards[k]);
-    lastActiveCard = null;
+    lastActiveCard = null; activeTurnSummary = null;
 
     setStatus('ready');
     setMode($('mode-id').value || 'coding');
@@ -3998,8 +4104,8 @@
   const processTaskEvent = (event, { replay = false, taskId = task, suppressToasts = false } = {}) => {
     if (event.type === 'task_created') return;
 
-    if (event.type === 'reasoning') { renderReasoning(event); return; }
-    if (event.type === 'plan') { renderPlan(event); return; }
+    if (event.type === 'reasoning') { finalizeTurnSummary(); renderReasoning(event); return; }
+    if (event.type === 'plan') { finalizeTurnSummary(); renderPlan(event); return; }
 
     if (event.type === 'status') {
       if (event.heartbeat) return;
@@ -4089,8 +4195,8 @@
       return;
     }
 
-    if (event.type === 'screenshot') { renderScreenshot(event); return; }
-    if (event.type === 'reflection') { renderReflection(event); return; }
+    if (event.type === 'screenshot') { finalizeTurnSummary(); renderScreenshot(event); return; }
+    if (event.type === 'reflection') { finalizeTurnSummary(); renderReflection(event); return; }
 
     if (event.type === 'token_usage' || event.type === 'budget') {
       if (Number.isFinite(event.percent)) setBudget(event.percent);
@@ -4098,6 +4204,7 @@
     }
 
     if (event.type === 'approval_required') {
+      finalizeTurnSummary();
       finalizeLiveStatus();
       const reason = event.reason || event.action?.explanation || 'High risk action requires approval.';
       const entry = ensureActionCard(event.action_id, event.action?.type || 'approval', reason);
@@ -4139,6 +4246,7 @@
     }
 
     if (event.type === 'permission_required') {
+      finalizeTurnSummary();
       finalizeLiveStatus();
       const detail = event.reason || event.explanation || `The agent needs ${event.scope || 'additional'} access.`;
       const entry = ensureActionCard(event.action_id, 'request_permission', detail);
@@ -4184,6 +4292,7 @@
       const errorKey = `error:${event.message || ''}`;
       if (terminalStateKey === errorKey) return;
       terminalStateKey = errorKey;
+      finalizeTurnSummary();
       finalizeLiveStatus();
       clearLiveIndicators();
       setStatus('error');
@@ -4197,6 +4306,7 @@
       const doneKey = `done:${event.complete ? '1' : '0'}:${event.reason || ''}:${event.blocked ? '1' : '0'}`;
       if (terminalStateKey === doneKey) return;
       terminalStateKey = doneKey;
+      finalizeTurnSummary();
       finalizeLiveStatus();
       clearLiveIndicators();
       if (event.complete) {
@@ -4217,6 +4327,7 @@
       const key = `cancelled:${event.message || ''}`;
       if (terminalStateKey === key) return;
       terminalStateKey = key;
+      finalizeTurnSummary();
       finalizeLiveStatus();
       clearLiveIndicators();
       setStatus('cancelled');
