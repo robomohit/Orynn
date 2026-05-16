@@ -41,13 +41,13 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Out of scope:** Visual styling of the modal beyond pattern-match to cmdk-overlay; drag-to-reorder; per-skill settings.
 - **Status:** done (2026-05-15: manual ship — sidebar restructured to pure nav; brand block removed, Expertise/MCP/Model/Mode moved into new Settings modal opened via gear button in sidebar footer; all element IDs preserved so renderSkills/renderMCPServers/setMode untouched)
 
-### [IDEA-2026-05-02-10] UI Phase C1 — Terser one-line tool-call summaries in feed cards
+### [IDEA-2026-05-02-10] UI Phase C1 — Collapse a turn's tool activity into one summary line
 
-- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase C1"). Reference: Claude Code shows tool calls as `"Browsed the web, used 12 tools ›"`, `"Edited 3 files ›"`, `"Ran a command ›"` — collapsed by default with chevron to expand.
-- **Why it fits Ai_computer:** Each feed-card head currently renders `<eyebrow> · <title> · <subtitle> · <state-chip>` — verbose; reads like a debug dump. Claude Code's terse one-liner pattern is denser and friendlier.
-- **Scope (this PR only):** Rewrite `createCardHead()` in `static/index.html` (line 3389) so the head text becomes a single terse line: `Read 2 files`, `Ran a command`, `Edited file.py`, `Searched code`, etc. Map action types to verbs. Body keeps full detail and the existing collapse-on-click behavior (lines 3605–3608, already wired). ~80 LOC. Cards remain 1:1 with actions (grouping is C2, separate IDEA).
-- **Acceptance criteria:** Every feed-card head is one short line ≤60 chars. Click chevron expands body and shows full args/output. Pytest green. UI smoke fires a trivial coding task and verifies the cards render correctly.
-- **Out of scope:** Grouping consecutive same-verb actions into one card (that's IDEA-13 / Phase C2). Custom verbs per tool name beyond the obvious ones.
+- **Source / context:** Direct study of claude.ai on 2026-05-16 (live conversations + a fresh tool-using chat). Claude collapses ALL tool/thinking activity for an assistant turn into ONE muted past-tense line — e.g. `"Retrieved current USD-CAD exchange rate ›"`, `"Synthesized multiple price sources and identified clustering range ›"`. It sits above the answer, collapsed by default: 14px, muted color `rgb(55,55,52)`, `›` chevron, 8px icon gap. The answer text below it is separate and full-contrast (16px, near-black).
+- **Why it fits Ai_computer:** AI Computer's feed is a wall of equal-weight `feed-card`s, one per action, each with eyebrow/title/subtitle/state-chip — reads like a debug dump. Claude's model makes tool activity *subordinate* (one quiet line) and the answer *primary*. Single biggest feed-readability change.
+- **Scope (this PR only):** In `processTaskEvent()` / `ensureActionCard()` (`static/index.html` ~3566/3883), collect all action/tool/terminal events that occur between two assistant text outputs into ONE summary container. Head = a single line: present tense while the turn streams (`Running command…`, `Searching…`, `Editing files…`); past tense once the turn completes (`Ran 3 commands`, `Edited 2 files`, `Read 4 files`) + `›`. Collapsed by default. For C1, the expanded body may simply stack the existing per-action cards — the icon-gutter step timeline is C2. ~120 LOC.
+- **Acceptance criteria:** A task doing 5 tool actions then answering shows ONE collapsed summary line + answer text below (not 5 cards). Line is present-tense live, past-tense after completion. Click expands. Pytest green. UI smoke fires a trivial coding task and verifies one summary line appears.
+- **Out of scope:** The icon-gutter step timeline inside the expanded view (IDEA-13). Inline source/citation chips.
 - **Status:** queued
 
 ### [IDEA-2026-05-02-11] UI Phase E — Typography + whitespace pass for tool-aesthetic feel
@@ -74,14 +74,14 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Out of scope:** Module-splitting JS into ESM; bundler/build step; CSS module/extraction.
 - **Status:** queued
 
-### [IDEA-2026-05-02-13] UI Phase C2 — Group consecutive same-verb tool calls into one card
+### [IDEA-2026-05-02-13] UI Phase C2 — Expandable step timeline inside the tool summary
 
-- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase C2"). Reference: Claude Code's `"Edited 3 files ›"` collapses 3 individual writes into one row.
-- **Why it fits Ai_computer:** Even with terser per-card titles (Phase C1 / IDEA-10), a long task with many tool calls produces a wall of cards. Grouping consecutive same-verb actions into one collapsed card with a count is the final density step.
-- **Scope (this PR only):** In `processTaskEvent()` (`static/index.html` line 3883), when an `action_start` arrives for the same verb as the immediately-prior action, merge into the existing card instead of creating a new one. Card head shows `<verb> · <count>` (e.g. `Edited 3 files`, `Ran 2 commands`). Body lists each individual sub-detail. ~150–200 LOC. Higher risk than C1 because it changes event-routing.
-- **Acceptance criteria:** A task that does 5 sequential write_file actions produces ONE card titled "Edited 5 files" with 5 expandable detail rows. A task that interleaves write_file + shell + write_file produces 3 cards (no over-grouping). Pytest green. UI smoke covers both interleaved and consecutive cases.
-- **Out of scope:** Grouping non-consecutive (interleaved) same-verb actions; configurable grouping rules.
-- **Status:** queued (depends on Phase C1 — IDEA-10 — having shipped first; defer until other phases stable)
+- **Source / context:** Direct study of claude.ai on 2026-05-16. Expanding a collapsed tool summary (IDEA-10) reveals a **vertical step timeline** with a small monochrome icon gutter on the left. Each step is one line: a 🕐 thinking step (reasoning text), a 🌐 tool/search step (query text + `N results` right-aligned), 🕐 intermediate findings, and a final ⊙ `Done`. Rich tool output (web-search results, file lists) renders as a **nested bordered card** — for search, rows of `favicon + title + domain`; scrollable. Everything in the timeline is quiet/muted; the answer below stays primary.
+- **Why it fits Ai_computer:** C1 collapses a turn into one line but its expanded body just stacks old cards. The Claude pattern is a clean step timeline — far more readable for multi-step agent runs, which is exactly AI Computer's core workload (plan → act → reflect).
+- **Scope (this PR only):** Replace the C1 expanded body with a step-timeline component in `static/index.html`. Left icon gutter (~20px), one row per step. Map AI Computer event types to step types: reasoning/`intent` → thinking step; `action_start`+`tool_call` → tool step (show args summary + result count/state); `terminal_output` → nested output card; final state → `Done`/`Failed` row. Reuse `processTaskEvent()` data already captured by C1. Nested output uses a bordered card (`var(--bg-2)`, 8px radius, max-height + scroll). ~180 LOC. Highest-risk UI phase — touches event routing + new component.
+- **Acceptance criteria:** Expanding a multi-step task's summary shows an icon-gutter timeline: thinking rows, tool rows with arg summaries, terminal output in a scrollable nested card, a final Done/Failed row. Collapsed state unchanged (IDEA-10). Pytest green. UI smoke covers a task with ≥3 mixed steps.
+- **Out of scope:** Animated step-by-step reveal during streaming (C1 already handles the live present-tense line); inline source chips; per-step copy buttons.
+- **Status:** queued (depends on Phase C1 — IDEA-10 — shipping first)
 
 ### [IDEA-2026-04-29-01] Persist last-used mode across reloads
 
