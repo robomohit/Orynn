@@ -18,9 +18,19 @@ If options are genuinely 50/50, pick the smaller scope. Only escalate to `## NEE
 
 ---
 
+## Priority directive — UI redesign (set 2026-05-15)
+
+**The 5 remaining UI redesign phases are top priority until all are `done`.**
+Order: IDEA-2026-05-02-07 (Phase A) → -10 (C1) → -11 (E) → -12 (F) → -13 (C2).
+
+- Each run, after the repair pass, pick the **top queued UI Phase IDEA** even if smaller/safer backend IDEAs exist below it. Do not let backend discovery items jump ahead of the UI phases.
+- **Phase A (IDEA-07) may consume the full 200 LOC budget alone.** If a UI phase needs the whole run, that is expected and correct — do not skip it for being "too big."
+- Backend IDEAs and Haiku-discovered items wait until all 5 UI phases are `done`. Exception: a red baseline still gets repaired first (repair pass is unchanged).
+- Phase A was implemented manually on 2026-05-15 (see that day's brief). If IDEA-07 is already `done` when you read this, start at C1.
+
 ## Pending answers from user
 
-**Q1: A** — IDEA-2026-04-30-10 (Persist AGENT_API_KEY): user approved option A. Implement persistence at `~/.config/ai_computer/.api_key` (honor `$XDG_CONFIG_HOME` if set, fall back to `~/.config/ai_computer/`). File mode 600. Generate once on first run if env var unset; reuse on subsequent restarts. ~15 LOC. Treat as authorized; clear `needs_human`, mark `queued`, ship next run. Do NOT modify anything in `workspace/`.
+**Q1: A** — IDEA-2026-04-30-10 (Persist AGENT_API_KEY): user approved option A. Implement persistence at `~/.config/ai_computer/.api_key` (honor `$XDG_CONFIG_HOME` if set, fall back to `~/.config/ai_computer/`). File mode 600. Generate once on first run if env var unset; reuse on subsequent restarts. ~15 LOC. Treat as authorized; clear `needs_human`, mark `queued`, ship next run. Do NOT modify anything in `workspace/`. (NOTE: shipped 2026-05-10 in commit f76d325 — this answer is now historical.)
 
 ---
 

@@ -27,6 +27,62 @@ Convention:
 
 _(Discovery cron will append below. You can seed items manually.)_
 
+### [IDEA-2026-05-02-07] UI Phase A — Sidebar restructure (move toggles/MCP/Model/Mode to Settings modal)
+
+- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase A"). Reference: user's Claude Code UI screenshot — sidebar is pure text rows, no inline toggles, settings live in a separate panel.
+- **Why it fits Ai_computer:** Today the sidebar mixes navigation (Sessions) with settings (Expertise toggles, MCP servers, Model dropdown, Mode dropdown) and decorative elements (duplicate brand stamp). Industry pattern (Cursor, Claude Code, VS Code, Codex) is sidebar = nav only; settings live in a modal/panel.
+- **Scope (this PR only):** Move out of `static/index.html` sidebar (lines 2458–2528) into a new Settings modal:
+  - Brand block (lines 2459–2465) — titlebar already shows "AI Computer"
+  - Expertise Library (lines 2484–2489) — `renderSkills()` at line 4517 must wire to modal DOM
+  - Active MCP Servers (lines 2490–2495) — `renderMCPServers()` at line 4551
+  - Model + Mode dropdowns (lines 2507–2521) — `setMode()` at line 3237
+  Keep in sidebar: New session button, Project folder row, Search history input, Sessions list. Add a small `⚙ Settings` button at sidebar bottom that opens the new modal. Pattern after `cmdk-overlay` (line 1898) — do NOT reuse the `tweaks` modal (that's for theme/density). Net change ≤200 LOC.
+- **Acceptance criteria:** Sidebar shows only Sessions + project folder + new-session + ⚙ Settings. Clicking ⚙ opens a modal containing Expertise toggles, MCP list, Model + Mode pickers — all functional (toggle on/off still triggers the same handlers). Pytest stays green. UI smoke verifies modal opens/closes via Esc.
+- **Out of scope:** Visual styling of the modal beyond pattern-match to cmdk-overlay; drag-to-reorder; per-skill settings.
+- **Status:** queued
+
+### [IDEA-2026-05-02-10] UI Phase C1 — Terser one-line tool-call summaries in feed cards
+
+- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase C1"). Reference: Claude Code shows tool calls as `"Browsed the web, used 12 tools ›"`, `"Edited 3 files ›"`, `"Ran a command ›"` — collapsed by default with chevron to expand.
+- **Why it fits Ai_computer:** Each feed-card head currently renders `<eyebrow> · <title> · <subtitle> · <state-chip>` — verbose; reads like a debug dump. Claude Code's terse one-liner pattern is denser and friendlier.
+- **Scope (this PR only):** Rewrite `createCardHead()` in `static/index.html` (line 3389) so the head text becomes a single terse line: `Read 2 files`, `Ran a command`, `Edited file.py`, `Searched code`, etc. Map action types to verbs. Body keeps full detail and the existing collapse-on-click behavior (lines 3605–3608, already wired). ~80 LOC. Cards remain 1:1 with actions (grouping is C2, separate IDEA).
+- **Acceptance criteria:** Every feed-card head is one short line ≤60 chars. Click chevron expands body and shows full args/output. Pytest green. UI smoke fires a trivial coding task and verifies the cards render correctly.
+- **Out of scope:** Grouping consecutive same-verb actions into one card (that's IDEA-13 / Phase C2). Custom verbs per tool name beyond the obvious ones.
+- **Status:** queued
+
+### [IDEA-2026-05-02-11] UI Phase E — Typography + whitespace pass for tool-aesthetic feel
+
+- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase E"). Reference: Claude Code uses generous whitespace, no card borders, hover-only background shifts.
+- **Why it fits Ai_computer:** Even after the structural phases, AI Computer's feed-cards have crisp 1px borders and tight padding that feel "demo." Claude Code's pattern is borderless cards with hover bg-shift, taller line-heights for readability.
+- **Scope (this PR only):** CSS-only in `static/index.html`:
+  - Feed-card vertical padding bumped to ~16px
+  - Feed line-height 1.5 → 1.6
+  - Replace `border: 1px solid` on `.feed-card` with hover-only `background: var(--bg-2)` shift
+  - Strip color from session-list status dots → small text status (`done`, `failed`, `running`)
+  - Worker-tag colors reduced from 5 to 1 accent + monochrome neutrals
+  ~50 LOC net change. No HTML or JS edits.
+- **Acceptance criteria:** Visible whitespace increase in feed (compare screenshots before/after). No regressions in light theme. Pytest green.
+- **Out of scope:** Font swap; new color palette; dark/light theme parity audit (separate IDEA-06).
+- **Status:** queued
+
+### [IDEA-2026-05-02-12] UI Phase F — Split static/index.html into 3 files (refactor unlocker)
+
+- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase F"). Pure refactor. Encountered the override-block-fighting-base-rules problem in commit `3900273` — that issue will recur every UI change until the file is split.
+- **Why it fits Ai_computer:** `static/index.html` is 4968 LOC of inline CSS + JS. Hard to navigate, easy to introduce CSS specificity bugs across distant rules. Splitting unlocks every future UI improvement.
+- **Scope (this PR only):** Move all `<style>` block content (lines 11–2432) to `static/style.css`. Move all inline `<script>` content (lines 2803–4852) to `static/app.js`. Update `static/index.html` to reference both via `<link rel="stylesheet">` and `<script src="…" defer>`. Confirm `app/main.py` static mount serves both new files. Zero visual change. Net LOC moved ~5000, no new logic.
+- **Acceptance criteria:** Page loads identically (visual diff at zero). All JS interactivity works. Pytest green. UI smoke playwright validates: page loads, mode dropdown works, task can be submitted.
+- **Out of scope:** Module-splitting JS into ESM; bundler/build step; CSS module/extraction.
+- **Status:** queued
+
+### [IDEA-2026-05-02-13] UI Phase C2 — Group consecutive same-verb tool calls into one card
+
+- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase C2"). Reference: Claude Code's `"Edited 3 files ›"` collapses 3 individual writes into one row.
+- **Why it fits Ai_computer:** Even with terser per-card titles (Phase C1 / IDEA-10), a long task with many tool calls produces a wall of cards. Grouping consecutive same-verb actions into one collapsed card with a count is the final density step.
+- **Scope (this PR only):** In `processTaskEvent()` (`static/index.html` line 3883), when an `action_start` arrives for the same verb as the immediately-prior action, merge into the existing card instead of creating a new one. Card head shows `<verb> · <count>` (e.g. `Edited 3 files`, `Ran 2 commands`). Body lists each individual sub-detail. ~150–200 LOC. Higher risk than C1 because it changes event-routing.
+- **Acceptance criteria:** A task that does 5 sequential write_file actions produces ONE card titled "Edited 5 files" with 5 expandable detail rows. A task that interleaves write_file + shell + write_file produces 3 cards (no over-grouping). Pytest green. UI smoke covers both interleaved and consecutive cases.
+- **Out of scope:** Grouping non-consecutive (interleaved) same-verb actions; configurable grouping rules.
+- **Status:** queued (depends on Phase C1 — IDEA-10 — having shipped first; defer until other phases stable)
+
 ### [IDEA-2026-04-29-01] Persist last-used mode across reloads
 
 - **Why it fits Ai_computer:** Users reload the UI often during long agent runs; losing the selected mode (Coding/Browser/Desktop) is friction.
@@ -224,20 +280,6 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Out of scope:** Adding new themes, redesigning the palette, system-theme auto-detection.
 - **Status:** queued
 
-### [IDEA-2026-05-02-07] UI Phase A — Sidebar restructure (move toggles/MCP/Model/Mode to Settings modal)
-
-- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase A"). Reference: user's Claude Code UI screenshot — sidebar is pure text rows, no inline toggles, settings live in a separate panel.
-- **Why it fits Ai_computer:** Today the sidebar mixes navigation (Sessions) with settings (Expertise toggles, MCP servers, Model dropdown, Mode dropdown) and decorative elements (duplicate brand stamp). Industry pattern (Cursor, Claude Code, VS Code, Codex) is sidebar = nav only; settings live in a modal/panel.
-- **Scope (this PR only):** Move out of `static/index.html` sidebar (lines 2458–2528) into a new Settings modal:
-  - Brand block (lines 2459–2465) — titlebar already shows "AI Computer"
-  - Expertise Library (lines 2484–2489) — `renderSkills()` at line 4517 must wire to modal DOM
-  - Active MCP Servers (lines 2490–2495) — `renderMCPServers()` at line 4551
-  - Model + Mode dropdowns (lines 2507–2521) — `setMode()` at line 3237
-  Keep in sidebar: New session button, Project folder row, Search history input, Sessions list. Add a small `⚙ Settings` button at sidebar bottom that opens the new modal. Pattern after `cmdk-overlay` (line 1898) — do NOT reuse the `tweaks` modal (that's for theme/density). Net change ≤200 LOC.
-- **Acceptance criteria:** Sidebar shows only Sessions + project folder + new-session + ⚙ Settings. Clicking ⚙ opens a modal containing Expertise toggles, MCP list, Model + Mode pickers — all functional (toggle on/off still triggers the same handlers). Pytest stays green. UI smoke verifies modal opens/closes via Esc.
-- **Out of scope:** Visual styling of the modal beyond pattern-match to cmdk-overlay; drag-to-reorder; per-skill settings.
-- **Status:** queued
-
 ### [IDEA-2026-05-02-08] UI Phase D — Drop the READY pill from topbar
 
 - **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase D"). Reference: Claude Code has no decorative "READY" pill anywhere.
@@ -255,48 +297,6 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** Idle state: topbar shows project folder name (or empty). Running state: shows truncated goal + mode label + model name with `·` separators + small status dot. Pytest green. UI smoke verifies the breadcrumb updates on task start.
 - **Out of scope:** Clickable breadcrumb segments; multi-task tabs.
 - **Status:** done (2026-05-04: added topbar-row flex container with status dot + ctx span; extended setTaskTitle(title, ctx) to render mode·model context; setStatus() syncs dot color; all 5 call sites updated)
-
-### [IDEA-2026-05-02-10] UI Phase C1 — Terser one-line tool-call summaries in feed cards
-
-- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase C1"). Reference: Claude Code shows tool calls as `"Browsed the web, used 12 tools ›"`, `"Edited 3 files ›"`, `"Ran a command ›"` — collapsed by default with chevron to expand.
-- **Why it fits Ai_computer:** Each feed-card head currently renders `<eyebrow> · <title> · <subtitle> · <state-chip>` — verbose; reads like a debug dump. Claude Code's terse one-liner pattern is denser and friendlier.
-- **Scope (this PR only):** Rewrite `createCardHead()` in `static/index.html` (line 3389) so the head text becomes a single terse line: `Read 2 files`, `Ran a command`, `Edited file.py`, `Searched code`, etc. Map action types to verbs. Body keeps full detail and the existing collapse-on-click behavior (lines 3605–3608, already wired). ~80 LOC. Cards remain 1:1 with actions (grouping is C2, separate IDEA).
-- **Acceptance criteria:** Every feed-card head is one short line ≤60 chars. Click chevron expands body and shows full args/output. Pytest green. UI smoke fires a trivial coding task and verifies the cards render correctly.
-- **Out of scope:** Grouping consecutive same-verb actions into one card (that's IDEA-13 / Phase C2). Custom verbs per tool name beyond the obvious ones.
-- **Status:** queued
-
-### [IDEA-2026-05-02-11] UI Phase E — Typography + whitespace pass for tool-aesthetic feel
-
-- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase E"). Reference: Claude Code uses generous whitespace, no card borders, hover-only background shifts.
-- **Why it fits Ai_computer:** Even after the structural phases, AI Computer's feed-cards have crisp 1px borders and tight padding that feel "demo." Claude Code's pattern is borderless cards with hover bg-shift, taller line-heights for readability.
-- **Scope (this PR only):** CSS-only in `static/index.html`:
-  - Feed-card vertical padding bumped to ~16px
-  - Feed line-height 1.5 → 1.6
-  - Replace `border: 1px solid` on `.feed-card` with hover-only `background: var(--bg-2)` shift
-  - Strip color from session-list status dots → small text status (`done`, `failed`, `running`)
-  - Worker-tag colors reduced from 5 to 1 accent + monochrome neutrals
-  ~50 LOC net change. No HTML or JS edits.
-- **Acceptance criteria:** Visible whitespace increase in feed (compare screenshots before/after). No regressions in light theme. Pytest green.
-- **Out of scope:** Font swap; new color palette; dark/light theme parity audit (separate IDEA-06).
-- **Status:** queued
-
-### [IDEA-2026-05-02-12] UI Phase F — Split static/index.html into 3 files (refactor unlocker)
-
-- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase F"). Pure refactor. Encountered the override-block-fighting-base-rules problem in commit `3900273` — that issue will recur every UI change until the file is split.
-- **Why it fits Ai_computer:** `static/index.html` is 4968 LOC of inline CSS + JS. Hard to navigate, easy to introduce CSS specificity bugs across distant rules. Splitting unlocks every future UI improvement.
-- **Scope (this PR only):** Move all `<style>` block content (lines 11–2432) to `static/style.css`. Move all inline `<script>` content (lines 2803–4852) to `static/app.js`. Update `static/index.html` to reference both via `<link rel="stylesheet">` and `<script src="…" defer>`. Confirm `app/main.py` static mount serves both new files. Zero visual change. Net LOC moved ~5000, no new logic.
-- **Acceptance criteria:** Page loads identically (visual diff at zero). All JS interactivity works. Pytest green. UI smoke playwright validates: page loads, mode dropdown works, task can be submitted.
-- **Out of scope:** Module-splitting JS into ESM; bundler/build step; CSS module/extraction.
-- **Status:** queued
-
-### [IDEA-2026-05-02-13] UI Phase C2 — Group consecutive same-verb tool calls into one card
-
-- **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase C2"). Reference: Claude Code's `"Edited 3 files ›"` collapses 3 individual writes into one row.
-- **Why it fits Ai_computer:** Even with terser per-card titles (Phase C1 / IDEA-10), a long task with many tool calls produces a wall of cards. Grouping consecutive same-verb actions into one collapsed card with a count is the final density step.
-- **Scope (this PR only):** In `processTaskEvent()` (`static/index.html` line 3883), when an `action_start` arrives for the same verb as the immediately-prior action, merge into the existing card instead of creating a new one. Card head shows `<verb> · <count>` (e.g. `Edited 3 files`, `Ran 2 commands`). Body lists each individual sub-detail. ~150–200 LOC. Higher risk than C1 because it changes event-routing.
-- **Acceptance criteria:** A task that does 5 sequential write_file actions produces ONE card titled "Edited 5 files" with 5 expandable detail rows. A task that interleaves write_file + shell + write_file produces 3 cards (no over-grouping). Pytest green. UI smoke covers both interleaved and consecutive cases.
-- **Out of scope:** Grouping non-consecutive (interleaved) same-verb actions; configurable grouping rules.
-- **Status:** queued (depends on Phase C1 — IDEA-10 — having shipped first; defer until other phases stable)
 
 ### [IDEA-2026-05-03-01] Fix undo_edit missing encoding — silent UTF-8 corruption on Windows
 
