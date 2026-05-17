@@ -561,3 +561,73 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** A skill authored as `skills/<name>/SKILL.md` is discovered, shows in the Expertise Library, and its body loads only when invoked. Existing skills unaffected.
 - **Out of scope:** A skill marketplace; `scripts/`/`references/` bundle execution; hooks.
 - **Status:** queued
+
+### [IDEA-2026-05-17-12] DIFFERENTIATOR: "Watch & Act" — local event-triggered autonomous runs
+
+- **Source / context:** Competitive research 2026-05-17. The strategic wedge: AI Computer runs on the user's own machine, free, always-on. Scheduled/unattended agents are a top-requested feature but Manus/Cursor-cloud/Devin meter or paywall them, and cloud agents *structurally cannot* watch a local filesystem or the user's real apps. OpenClaw triggers off chat messages only. **Nobody offers free, local, multi-trigger automation in one tool.**
+- **Why it fits Ai_computer:** Converts the product from "a thing I prompt" into "a thing that runs my life" — the always-on local advantage cloud agents can't copy. Attracts every user type: researchers (daily digests), automation people (folder watchers), coders (CI-failure responders).
+- **This is a MASTER ticket — do not implement directly.** It is built in slices: IDEA-17-13 (trigger foundation + cron), 17-14 (filesystem watch), 17-15 (message-channel trigger), 17-16 (Rules UI), 17-17 (safety rails). Ship 17-13 and 17-17 first (foundation + caps), then the rest.
+- **Status:** split (pick a sub-ticket)
+
+### [IDEA-2026-05-17-13] Watch & Act slice 1 — trigger foundation + cron schedule
+
+- **Source / context:** Slice of IDEA-17-12. Reference: APScheduler for cron; existing task-run machinery in `app/agent.py` + `app/main.py`.
+- **Why it fits Ai_computer:** The foundation every other trigger builds on — a rule model + a registry + the first trigger type (time/cron).
+- **Scope (this PR only):** Add an `AutomationRule` model (`{id, name, trigger_type, trigger_config, goal, mode, enabled, created_at}`) persisted to `workspace/automation_rules.json` (gitignored). Add an `automation` module with a registry that loads rules and, for `trigger_type == "cron"`, schedules them via `APScheduler` (add to requirements). When a rule fires, start a normal agent task with the rule's `goal`/`mode`. CRUD endpoints: `GET/POST/DELETE /api/automation/rules`. ~150-200 LOC + tests. No UI yet (17-16).
+- **Acceptance criteria:** A cron rule created via the API fires an agent task at its scheduled time (test with a near-future cron). Rules survive a server restart. Pytest green.
+- **Out of scope:** Filesystem/message triggers (later slices); UI; the safety caps (17-17 — but do not enable autonomous firing in production until 17-17 ships).
+- **Status:** queued
+
+### [IDEA-2026-05-17-14] Watch & Act slice 2 — filesystem-watch trigger
+
+- **Source / context:** Slice of IDEA-17-12. Uses the `watchdog` library.
+- **Why it fits Ai_computer:** "When a file lands in ~/Invoices, process it" — a workflow no cloud agent can do. Strong for automation users.
+- **Scope (this PR only):** Add a `filesystem` trigger type to the automation registry (IDEA-17-13). A rule with `trigger_config: {path, event: created|modified, glob}` registers a `watchdog` observer; on a matching event, fire the rule's task with the changed file path injected into the goal context. Debounce rapid events. ~100-140 LOC + tests.
+- **Acceptance criteria:** Dropping a file matching the glob into the watched folder fires exactly one task (debounced). Observer stops cleanly on rule disable / shutdown. Pytest green with a temp dir.
+- **Out of scope:** Recursive cross-drive watching; the other trigger types.
+- **Status:** queued (depends on IDEA-17-13)
+
+### [IDEA-2026-05-17-15] Watch & Act slice 3 — message-channel trigger
+
+- **Source / context:** Slice of IDEA-17-12. Reuses the existing Discord/Telegram integration listeners.
+- **Why it fits Ai_computer:** "When CI posts a failure in this Discord channel, reproduce and draft a fix." Coders + teams.
+- **Scope (this PR only):** Add a `message` trigger type. A rule with `trigger_config: {channel, contains?}` hooks the existing Discord/Telegram listener — when a matching message arrives, fire the rule's task with the message text as context. Reuse the integration code already in `app/integrations/`. ~90-120 LOC + tests (mock the listener).
+- **Acceptance criteria:** A simulated channel message matching the filter fires the rule's task with the message text in context. Pytest green.
+- **Out of scope:** New chat platforms; replying back in-channel (the agent's normal delivery handles that).
+- **Status:** queued (depends on IDEA-17-13)
+
+### [IDEA-2026-05-17-16] Watch & Act slice 4 — Automation Rules UI
+
+- **Source / context:** Slice of IDEA-17-12. The CRUD API exists (17-13); users need a UI.
+- **Why it fits Ai_computer:** Rules are useless if you must hand-edit JSON.
+- **Scope (this PR only):** Add an "Automation" panel (in the Settings modal or its own sidebar entry) listing rules — name, trigger summary, enabled toggle, last-fired time, delete. A small form to create a rule (name, trigger type + config, goal, mode). Talks to `/api/automation/rules`. ~120-160 LOC in `static/index.html`.
+- **Acceptance criteria:** A user can create, toggle, and delete a cron rule from the UI; it round-trips through the API. UI smoke covers create + delete.
+- **Out of scope:** Visual cron builder; rule run-history view.
+- **Status:** queued (depends on IDEA-17-13)
+
+### [IDEA-2026-05-17-17] Watch & Act slice 5 — safety rails for unattended runs
+
+- **Source / context:** Slice of IDEA-17-12. CRITICAL — autonomous triggers can loop and burn the free model quota; a top Reddit complaint about agents is silent token-burn.
+- **Why it fits Ai_computer:** Unattended firing is only safe with hard limits. Ship before enabling triggers in production.
+- **Scope (this PR only):** For automation-fired runs: a per-rule max-runs-per-hour cap; a global concurrent-automation-run cap; a per-run step/token ceiling (reuse `TOKEN_BUDGET`); a `dry_run` flag on a rule that makes it log "would have run" instead of firing; loop detection (same rule firing >N times in a window → auto-disable + notify). ~120-160 LOC + tests.
+- **Acceptance criteria:** A rule exceeding its hourly cap is skipped with a logged reason. A `dry_run` rule never starts a real task. A rule that fires too fast auto-disables. Pytest green.
+- **Out of scope:** Cost dashboards; per-model budgets.
+- **Status:** queued (depends on IDEA-17-13)
+
+### [IDEA-2026-05-17-18] DIFFERENTIATOR: Closed-Loop Build & QA — run the app, drive its real UI, verify
+
+- **Source / context:** Competitive research 2026-05-17 (2nd-ranked differentiator). After writing code, AI Computer launches the app, drives its real UI (browser for localhost, desktop control for native apps), reads the console, screenshots failures, and self-corrects until it actually works. Cursor's cloud agents do localhost click-through but in a sterile VM; paid QA products (Agentiqa) do browser-only. AI Computer is the only *free* tool that closes the loop AND can QA native desktop apps. Directly attacks the "agent says done but it's broken" complaint.
+- **Why it fits Ai_computer:** It's the combination — coding + browser + desktop control — that no single competitor has, and it makes the agent's output trustworthy.
+- **Scope (NEEDS the PC-control robustness work first — IDEA-17-02 window-ready + 17-03 per-action screenshot):** After a coding task that produced a runnable app, the agent: (1) starts the dev server / launches the app, (2) generates a short verification plan from the goal, (3) drives the UI (browser or desktop) clicking through the plan, (4) on a failure screenshot/console-error, feeds it back and re-attempts, capped at N cycles. First PR: just the orchestration skeleton + the localhost-browser path. ~150-200 LOC.
+- **Acceptance criteria:** A "build a localhost page with a button that does X" task ends with the agent having actually clicked the button and confirmed X, or reporting the specific failure. Step-capped. Pytest + UI smoke.
+- **Out of scope:** Native-desktop QA (follow-up once PC-control hardening lands); visual-regression diffing.
+- **Status:** queued (depends on IDEA-17-02 and IDEA-17-03)
+
+### [IDEA-2026-05-17-19] Private Context Bridge — research across logged-in browser + local notes
+
+- **Source / context:** Competitive research 2026-05-17 (3rd-ranked). Pull from the user's authenticated browser sessions (internal wikis, Gmail, paywalled sites) and local notes/files together — nothing leaves the machine. Cloud agents fundamentally cannot (they're not logged into your accounts).
+- **Why it fits Ai_computer:** Strong privacy + research wedge. Ranked last — overlaps with Watch & Act research workflows and "use my real browser profile" has CDP-stability + security rough edges.
+- **Scope (NEEDS DESIGN — do not implement blind):** Write a design note covering (a) safely attaching to the user's real browser profile vs a dedicated agent profile, (b) a local-notes indexer (Obsidian/markdown/folders), (c) the security model — explicit per-source consent, never exfiltrate. Then file implementation IDEAs.
+- **Acceptance criteria (design phase):** A design note in `docs/` with the browser-profile approach, notes-index approach, and consent model.
+- **Out of scope:** Implementation until the design note is reviewed.
+- **Status:** queued
