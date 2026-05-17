@@ -462,3 +462,12 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** An agent reply containing a fenced code block renders as a real code block; inline backticks render as `<code>`; no raw HTML injection possible (test with a reply containing `<script>`). Plain-text replies unchanged.
 - **Out of scope:** Full CommonMark compliance; tables; syntax highlighting inside code blocks.
 - **Status:** done (2026-05-17: manual ship — added renderMarkdown() safe parser; assistant messages render fenced code blocks, inline code, bold/italic, bullet lists; HTML-escaped first so no injection)
+
+### [IDEA-2026-05-17-02] Log WARN when memory recall_count metadata update fails
+
+- **Source:** `app/memory.py:438` — `collection.update(ids=[item.id], metadatas=[meta])` wrapped in bare `except Exception: pass` after incrementing `recall_count` in `recall_sessions()`.
+- **Why it fits Ai_computer:** The MMR re-ranking uses `recall_count` as a log-scaled reinforcement boost (memory.py:426-439). If `collection.update()` fails silently (e.g. Chroma offline, schema mismatch), the count is never persisted. On the next recall, the same memory gets re-boosted from its stale low count, artificially inflating its score forever. Silent failures in the memory persistence layer are the hardest bugs to diagnose.
+- **Scope (this PR only):** In `recall_sessions()` (`app/memory.py:~438`), change the bare `except Exception: pass` to `except Exception as e: _log.warning("recall_count update failed for %s: %s", item.id, e)`. 1 LOC change. Add 1 test that mocks `collection.update` to raise and asserts a warning is logged.
+- **Acceptance criteria:** When `collection.update` raises, a WARNING is emitted with the item id and error. Normal recall path unchanged. Existing memory tests still pass.
+- **Out of scope:** Retry logic; falling back to in-memory counter; fixing root cause of Chroma failures.
+- **Status:** queued
