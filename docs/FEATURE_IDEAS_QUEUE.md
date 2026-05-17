@@ -50,7 +50,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Out of scope:** The icon-gutter step timeline inside the expanded view (IDEA-13). Inline source/citation chips.
 - **Status:** done (2026-05-16: added turn-summary container that groups all action/tool events between reasoning events into ONE collapsed summary line; present-tense live ("Ran 2 commands, Edited 1 file…"), past-tense on finalize; click expands to show stacked tool cards; finalizeTurnSummary() called before reasoning/plan/reflection/screenshot/done/error/cancelled/approval/permission events; activeTurnSummary reset in resetTaskView; test_phase_c1_turn_summary_present added to test_ui_static_hardening.py; ~120 LOC)
 
-### [IDEA-2026-05-02-11] UI Phase E — Typography + whitespace pass for tool-aesthetic feel
+### [IDEA-2026-05-02-11] UI Phase E — Typography + whitespace pass for tool-aesthetic feel [in_progress]
 
 - **Source / context:** Full plan at `C:\Users\mohit\.claude\plans\okay-see-with-this-streamed-summit.md` ("Phase E"). Reference: Claude Code uses generous whitespace, no card borders, hover-only background shifts.
 - **Why it fits Ai_computer:** Even after the structural phases, AI Computer's feed-cards have crisp 1px borders and tight padding that feel "demo." Claude Code's pattern is borderless cards with hover bg-shift, taller line-heights for readability.
