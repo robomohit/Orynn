@@ -63,6 +63,20 @@ def test_phase_c1_turn_summary_present():
     assert "finalizeTurnSummary();" in html
 
 
+def test_phase_e_typography_whitespace():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    # feed-card hover state
+    assert ".feed-card:not(.is-active):hover" in html
+    # line-height bumped to 1.6
+    assert "line-height: 1.6;" in html
+    # status dots replaced with text labels
+    assert ".history-dot.running::after" in html
+    assert "content: 'done'" in html
+    # worker-tag colors reduced (workers 2-5 color lines removed)
+    assert ".worker-tag.worker-2" not in html
+
+
 def test_copy_task_button_present_and_wired():
     html = STATIC_HTML.read_text(encoding="utf-8")
 

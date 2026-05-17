@@ -63,7 +63,7 @@ _(Discovery cron will append below. You can seed items manually.)_
   ~50 LOC net change. No HTML or JS edits.
 - **Acceptance criteria:** Visible whitespace increase in feed (compare screenshots before/after). No regressions in light theme. Pytest green.
 - **Out of scope:** Font swap; new color palette; dark/light theme parity audit (separate IDEA-06).
-- **Status:** queued
+- **Status:** done (2026-05-17: CSS-only pass — .feed-card gets 8px top+bottom padding and hover bg-shift on :not(.is-active); card-subtitle/detail-copy/status-subtitle line-heights bumped from 1.5/1.55 to 1.6; history-dot colored circles replaced with small text labels via ::after (running/done/failed/cancelled); worker-tag theme colors reduced from 5 to 1 accent — workers 2-5 fall back to neutral base style; test_phase_e_typography_whitespace added)
 
 ### [IDEA-2026-05-02-12] UI Phase F — Split static/index.html into 3 files (refactor unlocker)
 
