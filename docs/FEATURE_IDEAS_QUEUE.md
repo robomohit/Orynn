@@ -471,3 +471,57 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** When `collection.update` raises, a WARNING is emitted with the item id and error. Normal recall path unchanged. Existing memory tests still pass.
 - **Out of scope:** Retry logic; falling back to in-memory counter; fixing root cause of Chroma failures.
 - **Status:** queued
+
+### [IDEA-2026-05-17-02] PC-control: wait-for-window-ready before interacting
+
+- **Source / context:** PC-control audit 2026-05-17. The core real workflow is "code an app -> run it -> drive its UI." Today the agent runs `python app.py` and immediately screenshots/clicks — but the window may not exist yet or may be unpainted, so it gets a blank image or a click into nothing, then blindly retries.
+- **Why it fits Ai_computer:** This is the #1 robustness gap for the code-then-test loop the product is built around. Claude Computer Use / Operator never act on a window that isn't ready.
+- **Scope (this PR only):** Add a `wait_for_window(title_substr, timeout=10s)` helper in `app/tools.py` (or `providers.py`) that polls `win32gui.EnumWindows` until a matching visible window with a non-zero rect appears, then waits one extra short beat for first paint. Expose it as a tool action `wait_for_window` so the agent can call it explicitly, and call it automatically after `run_command`/launch actions in computer/isolated mode. ~50-70 LOC + 1 test.
+- **Acceptance criteria:** Launching an app then calling `wait_for_window` blocks until the window is enumerable; times out cleanly with `ok=False` if it never appears. Unit test with a mocked EnumWindows.
+- **Out of scope:** Detecting "fully rendered" via frame diff (separate idea); cross-process readiness for web apps (use the browser path).
+- **Status:** queued
+
+### [IDEA-2026-05-17-03] PC-control: screenshot + state-change check after every UI action
+
+- **Source / context:** PC-control audit 2026-05-17. AI Computer only refreshes the screenshot for a subset of actions (`_SCREENSHOT_ACTIONS`) and never compares before/after. A click consumed by an overlay, or a `keyboard_type` that dropped chars, isn't noticed until the reflection loop ~5 steps later.
+- **Why it fits Ai_computer:** Claude Computer Use takes a screenshot after EVERY action and the model sees the effect before the next step. Without this, multi-step UI workflows drift silently.
+- **Scope (this PR only):** In the computer-mode loop (`app/agent.py`, the `mode in ("computer","computer_isolated")` block), capture a screenshot after every UI action (not just the `_SCREENSHOT_ACTIONS` subset) and feed it to the next model turn. Add a cheap before/after perceptual check (e.g. compare a downscaled-image hash); if a click/type produced zero visual change, surface a `no-effect` hint to the model. ~60-90 LOC.
+- **Acceptance criteria:** After a click, the next model turn receives a fresh screenshot. A click that changes nothing on screen produces a `no-effect` note in the agent context. No change to coding/browser modes.
+- **Out of scope:** OCR; element grounding; pixel-diff visualization in the UI.
+- **Status:** queued
+
+### [IDEA-2026-05-17-04] PC-control: guard PrintWindow against indefinite hangs
+
+- **Source / context:** PC-control audit 2026-05-17. `ctypes.windll.user32.PrintWindow` in `_capture_hwnd_image` (`app/providers.py`) can block indefinitely on some DWM/overlay/remote-session scenarios — it freezes the whole agent thread with no timeout.
+- **Why it fits Ai_computer:** A single unkillable screenshot call stalls the entire task. Needs a bounded wait.
+- **Scope (this PR only):** Run the `PrintWindow` call (and the BitBlt fallback) inside a worker thread with a hard timeout (~5s) via `concurrent.futures`. On timeout, abandon the capture and raise a clean `RuntimeError("window capture timed out")` so the caller falls back to the full-screen `mss` path. ~30 LOC + 1 test with a mocked slow PrintWindow.
+- **Acceptance criteria:** A simulated slow PrintWindow is abandoned after the timeout; the agent continues instead of hanging. GDI handles still released (the IDEA-2026-05-17 leak fix stays intact).
+- **Out of scope:** Changing the capture method; async rework of the screenshot path.
+- **Status:** queued
+
+### [IDEA-2026-05-17-05] PC-control: multi-monitor / per-window DPI-correct coordinates
+
+- **Source / context:** PC-control audit 2026-05-17. Coordinate scaling (`_scale`, `get_scale_factor`) uses `pyautogui.size()` (primary monitor) regardless of which monitor the target window is on. On a multi-monitor setup with mixed DPI, clicks land off-target (observed ~25% off in the audit). Isolated-HWND clicks also never apply the computed scale factor.
+- **Why it fits Ai_computer:** Off-target clicks silently break every desktop workflow on any multi-monitor machine — common for the target users.
+- **Scope (this PR only):** When scaling coordinates for a desktop/isolated action, resolve the target window's monitor (`win32api.MonitorFromWindow`) and use that monitor's geometry + DPI (`GetDpiForWindow`) instead of the primary screen. Apply the scale factor in `_mouse_click_isolated`. ~70-110 LOC.
+- **Acceptance criteria:** A click targeted at a window on a secondary monitor lands at the correct pixel. Single-monitor behavior unchanged. Unit test with mocked monitor geometry.
+- **Out of scope:** Mixed-DPI screenshot stitching; the browser path.
+- **Status:** queued
+
+### [IDEA-2026-05-17-06] PC-control: detect and recover from hung application windows
+
+- **Source / context:** PC-control audit 2026-05-17. `_is_hung_app_window()` detects a frozen window but the agent has no recovery action — if an app it launched freezes mid-workflow, the task just hangs.
+- **Why it fits Ai_computer:** The code-then-test loop will regularly hit apps that hang (a buggy build the agent just wrote). The agent needs a way out.
+- **Scope (this PR only):** Add a `force_close_window` / `kill_app` tool action that, given a window title or pid, terminates the process (`taskkill` / `psutil`). When `_is_hung_app_window()` is true for the current target, surface a hint to the model suggesting it kill + relaunch. ~40-60 LOC + 1 test.
+- **Acceptance criteria:** The agent can terminate a hung app it launched and relaunch it. Killing is scoped to processes the agent started or an explicit pid/title — never a blanket kill.
+- **Out of scope:** Killing system processes; a process manager UI.
+- **Status:** queued
+
+### [IDEA-2026-05-17-07] Connectors: pluggable coding backends (Claude Code CLI, Google Antigravity)
+
+- **Source / context:** Product direction 2026-05-17. AI Computer is the always-on main agent; users connect free models for general use, but free models are weak at code. The agent should be able to delegate coding-heavy subtasks to a stronger free-but-capable backend the user has connected — e.g. Claude Code CLI, or Google Antigravity's free coding models.
+- **Why it fits Ai_computer:** Lets users keep the free-model default for orchestration/chat while getting real coding quality on demand — without paying for a frontier API as the primary.
+- **Scope (NEEDS DESIGN — do not implement blind):** This is a feature, not a small PR. Before coding: write a short design note covering (a) a `CodingBackend` interface (detect availability, send a coding brief, return a diff/result), (b) adapters for `claude` CLI and Antigravity, (c) how the agent decides to delegate (task complexity / explicit user request), (d) config + a Settings-modal connector list. Then split into implementation IDEAs. First PR should be just the interface + the `claude` CLI adapter + availability detection.
+- **Acceptance criteria (design phase):** A design note in `docs/` enumerating the interface, adapters, routing rule, and config. Implementation IDEAs filed from it.
+- **Out of scope:** Implementing all adapters at once; billing/quota tracking.
+- **Status:** queued
