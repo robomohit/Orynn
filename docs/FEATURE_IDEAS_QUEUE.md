@@ -631,3 +631,30 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria (design phase):** A design note in `docs/` with the browser-profile approach, notes-index approach, and consent model.
 - **Out of scope:** Implementation until the design note is reviewed.
 - **Status:** queued
+
+### [IDEA-2026-05-17-20] Voice in + out via the browser Web Speech API (free, no deps)
+
+- **Source / context:** Studied farzaa/clicky 2026-05-17 — a macOS AI companion whose whole UX is "talk to it, it talks back." Clicky pays for AssemblyAI (STT) + ElevenLabs (TTS). AI Computer is a web app, so it can do BOTH for free with the browser's built-in `SpeechRecognition` + `SpeechSynthesis` Web Speech APIs — zero dependencies, runs locally, no API keys. Clicky's headline feature, free.
+- **Why it fits Ai_computer:** Voice is a major UX upgrade and a real differentiator at the free tier. Lets users dictate a task hands-free and have the agent's answer read back — strong for accessibility and for the always-on companion direction.
+- **Scope (this PR only):** In `static/index.html`: (1) a mic button on the composer that uses `webkitSpeechRecognition`/`SpeechRecognition` to dictate into the task input (push-to-hold or click-to-toggle); (2) a "read replies aloud" toggle that runs the `assistant` message text through `speechSynthesis.speak()` when a task completes. Feature-detect and hide the controls gracefully where the API is absent (some browsers). Strip markdown before TTS so it doesn't read backticks. ~90-130 LOC, frontend only.
+- **Acceptance criteria:** Mic button dictates into the composer in a supporting browser; with "read aloud" on, a completed agent reply is spoken. Controls hidden cleanly where unsupported. No regression to typed input. UI smoke covers the mic button presence.
+- **Out of scope:** Streaming/real-time transcription; a paid TTS voice; wake-word; voice on the desktop (pywebview) wrapper if its webview lacks the API.
+- **Status:** queued
+
+### [IDEA-2026-05-17-21] Visual pointer overlay — show where the agent is acting in desktop mode
+
+- **Source / context:** Studied farzaa/clicky 2026-05-17 — it flies a blue cursor overlay to UI elements Claude references, making on-screen guidance legible. AI Computer's desktop control clicks invisibly today; the user can't see what it's doing. `app/desktop_bridge.py` already creates transparent overlay windows.
+- **Why it fits Ai_computer:** Makes desktop/computer-use mode trustworthy and watchable — the user sees the agent move to a target before it clicks, instead of mysterious cursor jumps. Also useful for a future "explain my screen" mode.
+- **Scope (this PR only):** Before a desktop mouse action (`mouse_click`, `double_click`, etc.) in computer/isolated mode, briefly render a visible marker (a ring or arrow) at the target coordinates via a transparent always-on-top overlay — reuse the overlay-window machinery in `app/desktop_bridge.py`. Show ~400ms, then act. Make it toggleable (off by default for speed, on for "watch mode"). ~80-120 LOC.
+- **Acceptance criteria:** With the pointer overlay enabled, a desktop click shows a marker at the target before the click fires; disabled, behavior is unchanged. Overlay never steals focus or blocks the click. Pytest green.
+- **Out of scope:** Animated bezier-arc cursor flight; multi-monitor arc routing; the browser path (browser mode has its own page).
+- **Status:** queued
+
+### [IDEA-2026-05-17-22] "Explain my screen" companion mode — read-only screen help
+
+- **Source / context:** Studied farzaa/clicky 2026-05-17. Clicky's core mode is read-only: it sees your screen and *explains*, never acts — a gentler product than a full action agent. AI Computer only has action modes.
+- **Why it fits Ai_computer:** A calm, low-risk entry point that pulls non-technical users — "what am I looking at / help me with this" with no fear the agent will change anything. Complements the action modes.
+- **Scope (NEEDS small design):** A new `explain` mode: capture a screenshot, send it + the user's question to the model, return an explanation — NO tool actions, NO mouse/keyboard, purely read-only. Wire it as a mode option; the agent loop short-circuits to a single vision-answer turn. Pairs well with IDEA-17-20 (voice) and IDEA-17-21 (pointer overlay) for a true companion. Write a 1-paragraph design note on how the mode bypasses the action loop, then implement. ~60-100 LOC.
+- **Acceptance criteria:** Selecting `explain` mode and asking about the current screen returns an explanation and performs zero actions (no clicks/types/writes). Pytest asserts the explain path never dispatches a tool action.
+- **Out of scope:** Pointing at elements (that's 17-21); voice (17-20); multi-turn screen conversations.
+- **Status:** queued
