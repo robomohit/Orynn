@@ -72,7 +72,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Move all `<style>` block content (lines 11–2432) to `static/style.css`. Move all inline `<script>` content (lines 2803–4852) to `static/app.js`. Update `static/index.html` to reference both via `<link rel="stylesheet">` and `<script src="…" defer>`. Confirm `app/main.py` static mount serves both new files. Zero visual change. Net LOC moved ~5000, no new logic.
 - **Acceptance criteria:** Page loads identically (visual diff at zero). All JS interactivity works. Pytest green. UI smoke playwright validates: page loads, mode dropdown works, task can be submitted.
 - **Out of scope:** Module-splitting JS into ESM; bundler/build step; CSS module/extraction.
-- **Status:** in_progress (2026-05-19: extracting CSS/JS into style.css and app.js)
+- **Status:** done (2026-05-19: moved all inline CSS to static/style.css (~2719 lines) and inline JS to static/app.js (~2605 lines); index.html now 445 lines of pure HTML + link/script tags; test_phase_f_static_assets_split added; all tests updated to read combined files)
 
 ### [IDEA-2026-05-02-13] UI Phase C2 — Expandable step timeline inside the tool summary
 

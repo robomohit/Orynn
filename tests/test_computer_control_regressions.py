@@ -646,7 +646,13 @@ async def test_killed_task_finalizes_as_cancelled_not_max_steps(monkeypatch, wor
 
 
 def test_static_ui_avoids_innerhtml_for_untrusted_dynamic_sections():
-    html = Path("static/index.html").read_text(encoding="utf-8")
+    static = Path("static")
+    parts = [(static / "index.html").read_text(encoding="utf-8")]
+    for name in ("style.css", "app.js"):
+        p = static / name
+        if p.exists():
+            parts.append(p.read_text(encoding="utf-8"))
+    html = "\n".join(parts)
 
     assert "row.querySelector('.detail-title').innerHTML" not in html
     assert "worker-tag worker-${workerNum}\">${event.worker_id}" not in html
