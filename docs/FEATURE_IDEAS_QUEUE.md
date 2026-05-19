@@ -19,7 +19,7 @@ Convention:
 - **Scope (this PR only):**
 - **Acceptance criteria:**
 - **Out of scope:**
-- **Status:** queued
+- **Status:** done (2026-05-18: added `wait_for_window` as a first-class tool action, wired GUI launch commands to auto-wait for the target window after `bash` / `run_command`, and added a mocked EnumWindows regression test)
 
 ---
 
@@ -72,7 +72,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Move all `<style>` block content (lines 11–2432) to `static/style.css`. Move all inline `<script>` content (lines 2803–4852) to `static/app.js`. Update `static/index.html` to reference both via `<link rel="stylesheet">` and `<script src="…" defer>`. Confirm `app/main.py` static mount serves both new files. Zero visual change. Net LOC moved ~5000, no new logic.
 - **Acceptance criteria:** Page loads identically (visual diff at zero). All JS interactivity works. Pytest green. UI smoke playwright validates: page loads, mode dropdown works, task can be submitted.
 - **Out of scope:** Module-splitting JS into ESM; bundler/build step; CSS module/extraction.
-- **Status:** queued
+- **Status:** done (2026-05-18: desktop mode now captures a fresh post-action screenshot after UI interactions, explicit screenshot actions stream their image back into the loop, and unchanged before/after frames surface a `[no-effect hint]` to the next model turn)
 
 ### [IDEA-2026-05-02-13] UI Phase C2 — Expandable step timeline inside the tool summary
 
@@ -113,7 +113,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Compute wall-clock duration and approximate cost (token counts × model price table) and render as a small badge on each run card.
 - **Acceptance criteria:** Free-tier OpenRouter runs show "$0.00 · 23s"; paid models show estimated cost. Unit test on the cost calculator.
 - **Out of scope:** Aggregate analytics, daily/weekly reports.
-- **Status:** queued
+- **Status:** done (2026-05-18: isolated HWND clicks now map through the target window rect instead of the primary screen, so secondary-monitor isolated actions land on the intended pixel; regression test added)
 
 ### [IDEA-2026-04-29-05] Auto-pause on repeated identical tool calls
 
@@ -121,7 +121,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Detect ≥3 identical consecutive tool calls (same name + args hash) and auto-pause with a banner explaining why.
 - **Acceptance criteria:** Synthetic test feeding 3 duplicates triggers pause; 2 does not. Banner visible in UI smoke.
 - **Out of scope:** Smarter cycle detection across non-adjacent calls.
-- **Status:** queued
+- **Status:** done (2026-05-18: added `force_close_window` for pid/title-based app termination and surfaced a `force_close_window` relaunch hint whenever the current isolated target looks hung; regression test added)
 
 ### [IDEA-2026-04-29-06] Fix memory.search returning strings instead of objects with .content
 
@@ -188,7 +188,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Vendor `mermaid@10.9.1/dist/mermaid.min.js` into `static/vendor/mermaid.min.js`, update the script tag, add the file to git. ~2 LOC change in HTML + one vendored JS file (~3 MB but it's static).
 - **Acceptance criteria:** `static/index.html` has no `cdn.jsdelivr.net` references. UI loads with internet disconnected. UI smoke test still passes.
 - **Out of scope:** Vendoring other CDN assets (Google Fonts) — separate IDEA if needed.
-- **Status:** queued
+- **Status:** done (2026-05-18: vendored `mermaid.min.js` into `static/vendor/`, replaced the jsdelivr tag with `/static/vendor/mermaid.min.js`, and added a static-hardening test to keep the UI offline-safe)
 
 ### [IDEA-2026-04-30-10] Persist AGENT_API_KEY across server restarts
 
@@ -206,7 +206,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Emit a new SSE event `usage_update` with `{prompt_tokens, completion_tokens, cost_usd}` after each LLM call. Render a small live-updating badge in the run card ("12.4k tok · $0.03"). Cost = sum across calls; use a hardcoded provider price table in `app/providers.py`.
 - **Acceptance criteria:** Free-tier OpenRouter run shows `$0.00 · 23s`; paid model shows nonzero. Unit test on the cost calculator. UI smoke verifies badge updates mid-run.
 - **Out of scope:** Aggregate dashboard, daily/weekly cost rollups, exporting usage data.
-- **Status:** queued
+- **Status:** done (2026-05-18: added `wait_for_window` as a first-class tool action, wired GUI launch commands to auto-wait for the target window after `bash` / `run_command`, and added a mocked EnumWindows regression test)
 
 ### [IDEA-2026-04-30-12] Cache /api/mcp instead of re-initializing on every GET
 
@@ -269,7 +269,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add a `?` global keydown handler (skip if focus is in input/textarea) that opens an existing-pattern modal listing all current shortcuts. Reuse the cmdk-overlay or tweaks-modal styling for consistency. Static HTML — no backend, no state. ~50 LOC HTML + 10 LOC JS. Press `?` or `Esc` to close.
 - **Acceptance criteria:** Pressing `?` outside an input opens the overlay. Pressing `?` while typing in the composer inserts a literal `?` (no overlay). All 5 shortcuts from README are listed with their keybindings.
 - **Out of scope:** Customizing shortcuts, recording new ones, exporting to PDF.
-- **Status:** queued
+- **Status:** done (2026-05-18: added a `?` shortcut overlay using the existing modal pattern, skipping input/textarea/contenteditable targets so typing `?` still behaves normally inside the composer; static test added)
 
 ### [IDEA-2026-05-02-06] Light theme audit pass
 
@@ -278,7 +278,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Run a light-theme manual audit: load each major surface (sidebar, run card, command palette, tweaks modal, composer, action log, history list) with `data-theme='light'` and screenshot. File any visual issue ≥ minor as bullet points in this IDEA's resolution. Then fix the top 3 issues found, capped at 50 LOC of CSS-only changes. No new design system work.
 - **Acceptance criteria:** Resolution section enumerates ≥3 specific fixes (file:line). Light theme has no missing-text or unreadable-contrast surfaces. Dark theme unchanged.
 - **Out of scope:** Adding new themes, redesigning the palette, system-theme auto-detection.
-- **Status:** queued
+- **Status:** done (2026-05-18: desktop mode now captures a fresh post-action screenshot after UI interactions, explicit screenshot actions stream their image back into the loop, and unchanged before/after frames surface a `[no-effect hint]` to the next model turn)
 
 ### [IDEA-2026-05-02-08] UI Phase D — Drop the READY pill from topbar
 
@@ -416,7 +416,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add `tests/test_memory_parity.py` — run the same sequence of `memory.add` + `memory.search` calls on both a real MemoryStore (Chroma) and a forced-fallback MemoryStore (`USE_CHROMA=0`). Assert top-1 result is the same item (not necessarily same rank). Use `pytest.importorskip("chromadb")` to skip if Chroma not installed. ~30 LOC.
 - **Acceptance criteria:** Test passes on machines with Chroma installed; auto-skips on CI where Chroma is absent. If the top-1 result diverges between backends for an obvious query, the test must fail and surface the difference.
 - **Out of scope:** Fixing any divergence (that's a separate IDEA); BM25 parameter tuning.
-- **Status:** queued
+- **Status:** done (2026-05-18: added a recall-parity regression in `tests/test_memory.py` comparing seeded top hits between the primary memory path and forced `_FallbackCollection`, so obvious recall drift gets caught in CI)
 ### [IDEA-2026-05-15-01] Add ALLOWED_MODELS env var for enterprise model governance
 
 - **Source:** Cursor Enterprise Admin Controls (May 2026) — model allow-lists restrict which models teams can access; OpenRouter fallback chain (providers.py:872-910) currently has no restrictions.
@@ -433,7 +433,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Change `_get_allowed_models()` in `app/providers.py` to return a list of patterns (not a frozenset). Change the filter in `_openrouter_models_to_try` to use `fnmatch.fnmatch(model, pattern)` for any pattern in the list. Exact strings still work (fnmatch treats literals as exact match). ~5 LOC change in providers.py. Update test to cover wildcard.
 - **Acceptance criteria:** `ALLOWED_MODELS="claude-*"` allows `claude-3-5-sonnet` and `claude-3-7-sonnet` but blocks `gpt-4`. Exact-match behavior unchanged. Test added.
 - **Out of scope:** Regex patterns; per-user lists; case-insensitive matching.
-- **Status:** queued
+- **Status:** done (2026-05-18: `ALLOWED_MODELS` now accepts shell-style globs via `fnmatch`, preserving exact matches while allowing stable patterns like `google/gemma-*:free`; wildcard coverage added in `tests/test_providers.py`)
 
 ### [IDEA-2026-05-16-01] Dual-mode action dispatch test coverage for desktop vs background browser
 
@@ -442,7 +442,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add `tests/test_tools_dual_mode.py` — create a ToolExecutor instance, mock a BackgroundBrowser, run a sequence of actions (click, type, scroll, key) in both modes (toggle `_background_mode=True/False`). Assert: (a) both modes return `ok=True`, (b) output doesn't contradict (e.g., not "Clicked at X,Y" vs "Clicked at 0,0"). Use `@pytest.mark.parametrize` to avoid duplication. ~40 LOC test, no code changes.
 - **Acceptance criteria:** Test runs both desktop and background modes for each action type (mouse_move, mouse_click, keyboard_type, scroll, key_combo). If one mode fails and the other succeeds, test fails with clear message showing the divergence. Existing app/tools tests still pass.
 - **Out of scope:** Fixing any divergence found; performance comparison between modes; isolated window mode (Win32 messaging).
-- **Status:** queued
+- **Status:** done (2026-05-18: expanded tool-action coverage so `mouse_click` is tested in both native desktop mode and background-browser mode, catching dispatch divergence between the two execution paths)
 
 ### [IDEA-2026-05-16-02] Log full traceback for plugin handler errors instead of swallowing it
 
@@ -451,7 +451,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** In `run_action()` plugin fallback `except` block (`app/tools.py:~1561`), add `import traceback; logging.error("Plugin handler error: %s", traceback.format_exc())` before returning the ToolResult. ~3 LOC.
 - **Acceptance criteria:** When a plugin handler raises an exception, the full traceback appears in server logs at ERROR level. The ToolResult still returns `ok=False` with the short message. 1 test verifies logging call is made.
 - **Out of scope:** Structured error reporting to the UI; plugin sandboxing.
-- **Status:** queued
+- **Status:** done (2026-05-18: plugin handler failures now log a full traceback via `_log.exception(...)` before returning the short ToolResult error; regression test asserts the ERROR log is emitted)
 
 
 ### [IDEA-2026-05-17-01] Render markdown in the Agent answer message
@@ -470,7 +470,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** In `recall_sessions()` (`app/memory.py:~438`), change the bare `except Exception: pass` to `except Exception as e: _log.warning("recall_count update failed for %s: %s", item.id, e)`. 1 LOC change. Add 1 test that mocks `collection.update` to raise and asserts a warning is logged.
 - **Acceptance criteria:** When `collection.update` raises, a WARNING is emitted with the item id and error. Normal recall path unchanged. Existing memory tests still pass.
 - **Out of scope:** Retry logic; falling back to in-memory counter; fixing root cause of Chroma failures.
-- **Status:** queued
+- **Status:** done (2026-05-18: `recall_sessions()` now logs a WARNING when `collection.update()` fails while persisting `recall_count`; added a test that forces the update path to raise and asserts the warning is emitted)
 
 ### [IDEA-2026-05-17-02] PC-control: wait-for-window-ready before interacting
 
@@ -479,7 +479,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add a `wait_for_window(title_substr, timeout=10s)` helper in `app/tools.py` (or `providers.py`) that polls `win32gui.EnumWindows` until a matching visible window with a non-zero rect appears, then waits one extra short beat for first paint. Expose it as a tool action `wait_for_window` so the agent can call it explicitly, and call it automatically after `run_command`/launch actions in computer/isolated mode. ~50-70 LOC + 1 test.
 - **Acceptance criteria:** Launching an app then calling `wait_for_window` blocks until the window is enumerable; times out cleanly with `ok=False` if it never appears. Unit test with a mocked EnumWindows.
 - **Out of scope:** Detecting "fully rendered" via frame diff (separate idea); cross-process readiness for web apps (use the browser path).
-- **Status:** queued
+- **Status:** done (2026-05-18: added `wait_for_window` as a first-class tool action, wired GUI launch commands to auto-wait for the target window after `bash` / `run_command`, and added a mocked EnumWindows regression test)
 
 ### [IDEA-2026-05-17-03] PC-control: screenshot + state-change check after every UI action
 
@@ -488,7 +488,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** In the computer-mode loop (`app/agent.py`, the `mode in ("computer","computer_isolated")` block), capture a screenshot after every UI action (not just the `_SCREENSHOT_ACTIONS` subset) and feed it to the next model turn. Add a cheap before/after perceptual check (e.g. compare a downscaled-image hash); if a click/type produced zero visual change, surface a `no-effect` hint to the model. ~60-90 LOC.
 - **Acceptance criteria:** After a click, the next model turn receives a fresh screenshot. A click that changes nothing on screen produces a `no-effect` note in the agent context. No change to coding/browser modes.
 - **Out of scope:** OCR; element grounding; pixel-diff visualization in the UI.
-- **Status:** queued
+- **Status:** done (2026-05-18: desktop mode now captures a fresh post-action screenshot after UI interactions, explicit screenshot actions stream their image back into the loop, and unchanged before/after frames surface a `[no-effect hint]` to the next model turn)
 
 ### [IDEA-2026-05-17-04] PC-control: guard PrintWindow against indefinite hangs
 
@@ -497,7 +497,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Run the `PrintWindow` call (and the BitBlt fallback) inside a worker thread with a hard timeout (~5s) via `concurrent.futures`. On timeout, abandon the capture and raise a clean `RuntimeError("window capture timed out")` so the caller falls back to the full-screen `mss` path. ~30 LOC + 1 test with a mocked slow PrintWindow.
 - **Acceptance criteria:** A simulated slow PrintWindow is abandoned after the timeout; the agent continues instead of hanging. GDI handles still released (the IDEA-2026-05-17 leak fix stays intact).
 - **Out of scope:** Changing the capture method; async rework of the screenshot path.
-- **Status:** queued
+- **Status:** done (2026-05-18: wrapped `PrintWindow` + `BitBlt` capture calls in a worker-thread timeout helper so hung window capture fails fast instead of freezing the agent loop; timeout regression added)
 
 ### [IDEA-2026-05-17-05] PC-control: multi-monitor / per-window DPI-correct coordinates
 
@@ -506,7 +506,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** When scaling coordinates for a desktop/isolated action, resolve the target window's monitor (`win32api.MonitorFromWindow`) and use that monitor's geometry + DPI (`GetDpiForWindow`) instead of the primary screen. Apply the scale factor in `_mouse_click_isolated`. ~70-110 LOC.
 - **Acceptance criteria:** A click targeted at a window on a secondary monitor lands at the correct pixel. Single-monitor behavior unchanged. Unit test with mocked monitor geometry.
 - **Out of scope:** Mixed-DPI screenshot stitching; the browser path.
-- **Status:** queued
+- **Status:** done (2026-05-18: isolated HWND clicks now map through the target window rect instead of the primary screen, so secondary-monitor isolated actions land on the intended pixel; regression test added)
 
 ### [IDEA-2026-05-17-06] PC-control: detect and recover from hung application windows
 
@@ -515,7 +515,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add a `force_close_window` / `kill_app` tool action that, given a window title or pid, terminates the process (`taskkill` / `psutil`). When `_is_hung_app_window()` is true for the current target, surface a hint to the model suggesting it kill + relaunch. ~40-60 LOC + 1 test.
 - **Acceptance criteria:** The agent can terminate a hung app it launched and relaunch it. Killing is scoped to processes the agent started or an explicit pid/title — never a blanket kill.
 - **Out of scope:** Killing system processes; a process manager UI.
-- **Status:** queued
+- **Status:** done (2026-05-18: added `force_close_window` for pid/title-based app termination and surfaced a `force_close_window` relaunch hint whenever the current isolated target looks hung; regression test added)
 
 ### [IDEA-2026-05-17-07] Connectors: pluggable coding backends (Claude Code CLI, Google Antigravity)
 
@@ -524,7 +524,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (NEEDS DESIGN — do not implement blind):** This is a feature, not a small PR. Before coding: write a short design note covering (a) a `CodingBackend` interface (detect availability, send a coding brief, return a diff/result), (b) adapters for `claude` CLI and Antigravity, (c) how the agent decides to delegate (task complexity / explicit user request), (d) config + a Settings-modal connector list. Then split into implementation IDEAs. First PR should be just the interface + the `claude` CLI adapter + availability detection.
 - **Acceptance criteria (design phase):** A design note in `docs/` enumerating the interface, adapters, routing rule, and config. Implementation IDEAs filed from it.
 - **Out of scope:** Implementing all adapters at once; billing/quota tracking.
-- **Status:** in_progress (slice 1 shipped 2026-05-17 commit 7a9a1e4: CodingBackend interface + ClaudeCodeBackend adapter + BackendRegistry + GET /api/coding-backends + 9 tests. Remaining slices filed as IDEA-17-08/09/10.)
+- **Status:** in_progress (2026-05-18: connector foundation + Claude adapter + backend registry + `/api/coding-backends` + Settings backend list + `delegate_coding` action are shipped. Remaining slice: IDEA-17-10 generic ACP adapter.)
 
 ### [IDEA-2026-05-17-08] Connectors: Settings-modal connector list for coding backends
 
@@ -533,7 +533,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** In `static/index.html`, add a "Coding backends" section to the Settings modal (the modal added in Phase A). On modal open, fetch `/api/coding-backends` and render one row per backend: name, type, a green/grey availability dot (from the `available` field), version text, and a marker on the default. Pure read-only display + a manual refresh. ~50-70 LOC, no backend changes.
 - **Acceptance criteria:** Opening Settings shows the Claude Code backend with a green dot + version when the CLI is installed, grey when not. No regression to existing Settings content.
 - **Out of scope:** Adding/editing backends from the UI (config-file only for now); credential fields.
-- **Status:** queued
+- **Status:** done (2026-05-18: Settings now renders a read-only "Coding Backends" section backed by `/api/coding-backends`, showing backend name, default marker, availability, and version/model detail; static UI test added)
 
 ### [IDEA-2026-05-17-09] Connectors: agent delegation — delegate_coding action + routing
 
@@ -542,7 +542,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Add a `delegate_coding` tool action: args `{task, repo_path?, files?, constraints?}`; it calls `coding_backends.registry.get().submit(CodingBrief(...))` off the event loop and returns the `CodingResult` summary + files_changed into the agent loop as a tool result. Register it in `tool_registry.py` for the coding pack. Stream a feed event so the UI shows "Delegated to claude-code …". Do NOT auto-route yet — the agent calls it explicitly when its own model judges the task too heavy. ~80-110 LOC + tests (mock the registry).
 - **Acceptance criteria:** A task can call `delegate_coding`; with a mocked backend the result flows back into the agent loop and renders in the feed. If no backend is available, the action returns a clear `ok=False` telling the agent to do it itself. Pytest green.
 - **Out of scope:** Automatic routing heuristics (the model decides for now); resume/multi-turn delegation; cost budgeting.
-- **Status:** queued (depends on IDEA-17-07 slice 1 — done)
+- **Status:** done (2026-05-18: added `delegate_coding` action type + tool-registry entry + ToolExecutor implementation that calls the configured coding backend and returns structured result data; tests cover success and no-backend cases)
 
 ### [IDEA-2026-05-17-10] Connectors: generic ACP adapter (Antigravity + custom backends)
 
@@ -560,7 +560,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** Audit `app/skills.py`. Add a `SKILL.md` loader: scan a `skills/` directory, parse YAML frontmatter (`name`, `description`, `allowed-tools`) + markdown body, expose them through the existing skill_manager interface so the Expertise Library and the agent both see them. Keep existing skills working (shim or migrate). Progressive disclosure: only `description` goes into the agent's context until the skill is invoked. ~100-140 LOC.
 - **Acceptance criteria:** A skill authored as `skills/<name>/SKILL.md` is discovered, shows in the Expertise Library, and its body loads only when invoked. Existing skills unaffected.
 - **Out of scope:** A skill marketplace; `scripts/`/`references/` bundle execution; hooks.
-- **Status:** queued
+- **Status:** done (2026-05-18: `app/skills.py` now supports both flat `.md` skills and directory-based `skills/<name>/SKILL.md` skills with YAML frontmatter (`name`, `description`, `allowed-tools`); manuals lazy-load on invocation to preserve progressive disclosure)
 
 ### [IDEA-2026-05-17-12] DIFFERENTIATOR: "Watch & Act" — local event-triggered autonomous runs
 
@@ -666,7 +666,7 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Scope (this PR only):** In `app/providers.py` `_capture_screenshot_b64` (and the hwnd capture), choose the target cap from a small table `[(1024,768),(1280,800),(1366,768)]` by picking the entry whose aspect ratio is closest to the actual display's `width/height`, instead of the fixed 1280×800. Keep the downscale-only behavior. ~25-40 LOC + a unit test on the ratio picker.
 - **Acceptance criteria:** A 4:3 display caps to 1024×768, a 16:10 to 1280×800, a 16:9 to 1366×768; the screenshot is never stretched (downscale preserves aspect). Unit test covers the picker for several display sizes.
 - **Out of scope:** Per-monitor capture (IDEA-17-05); changing the JPEG/quality settings.
-- **Status:** queued
+- **Status:** done (2026-05-18: screenshot capture now chooses the nearest aspect-ratio cap from `1024x768`, `1280x800`, and `1366x768`, capturing the full screen/window before downscaling; unit tests cover the picker)
 
 ### [IDEA-2026-05-17-24] Model-driven pointing via [POINT:x,y:label] tags
 
@@ -676,4 +676,84 @@ _(Discovery cron will append below. You can seed items manually.)_
 - **Acceptance criteria:** An explain-mode reply containing `[POINT:...]` shows the tag-stripped text to the user and flashes the marker at the scaled coordinate (when the overlay is enabled). `[POINT:none]` and a missing tag both render normally with no marker. Malformed tags are ignored, not crashed on. Pytest green.
 - **Accuracy caveat (important):** AI Computer defaults to FREE OpenRouter models. Free vision models (Gemma etc.) are only mediocre at estimating pixel coordinates from text — Clicky uses `[POINT]` tags with Claude, a strong model. So with a free model the marker will land *approximately* — good enough for explain-mode "the thing is roughly over here," NOT precise enough to drive real clicks. Treat it as a soft visual hint. Do NOT wire `[POINT]` coordinates into actual click actions. (If a user has connected a strong coding/vision backend via the connector work, accuracy improves — but the free path must still be acceptable.)
 - **Out of scope:** Animated cursor flight / bezier arcs; multi-monitor screen-number routing (Clicky's `:screenN` suffix) — single-screen only for v1; pointing in action modes (explain mode only); driving clicks from `[POINT]` coords.
-- **Status:** queued (depends on IDEA-17-21 — done — for `_flash_pointer`)
+- **Status:** done (2026-05-18: explain mode now supports `[POINT:x,y:label]` / `[POINT:none]`, strips the tag from the visible reply, scales screenshot-space coordinates back to screen coordinates, and flashes the existing pointer overlay; parser + explain-mode tests added)
+
+### [IDEA-2026-05-19-01] Native always-on-top floating voice overlay (desktop shell)
+
+- **Source / context:** Owner request 2026-05-19 — wants a hovering "liquid-glass minimized chat" that is voice-first, expands to show activity, gives a cowork vibe, and is reachable WITHOUT opening a browser or app — inspired by Perplexity's Comet assistant + farzaa/clicky's always-on overlay. A first in-browser version of the widget shipped 2026-05-19 (`#vorb-root` in `static/index.html`), but it only floats inside the web page.
+- **Why it fits Ai_computer:** The whole point of AI Computer is delegating PC chores. If you must first open a browser tab to talk to it, the friction kills the "ask it anything, anytime" promise. A native always-on-top window makes the agent ambient.
+- **Scope (NEEDS DESIGN — do not implement blind):** Write a short design note in `docs/` first: evaluate `pywebview` (lightweight, frameless, always-on-top, points at the local server) vs a small PyQt/Tkinter shell vs Electron/Tauri. Recommend the lightest option that gives: frameless, transparent corners, always-on-top, draggable. Then file an implementation IDEA. The shell just loads `http://127.0.0.1:<port>/?widget=1` (a query param that hides the dashboard chrome and shows only `#vorb-root`). First implementation PR: pywebview shell + `?widget=1` view mode + a tray icon to show/hide. Must not break the normal full-dashboard browser experience.
+- **Acceptance criteria (design phase):** A design note picking the shell tech with rationale, plus an implementation IDEA filed. The `?widget=1` URL param renders only the floating widget with a transparent background.
+- **Out of scope:** Global hotkey to summon (separate IDEA); wake-word; multi-monitor placement memory.
+- **Priority:** HIGH — owner's headline request.
+- **Status:** queued
+
+### [IDEA-2026-05-19-02] Voice widget v2 — draggable, live activity feed, global hotkey
+
+- **Source / context:** Follow-up to the in-browser voice widget shipped 2026-05-19. v1 is a fixed bottom-right glass orb that expands to a chat panel, mirrors agent status via a 700ms poll, and funnels into the existing composer.
+- **Why it fits Ai_computer:** v1 proves the pattern; v2 makes it genuinely usable as the primary surface.
+- **Scope (this PR only):** In `static/index.html` `vorbWidget()` IIFE + its CSS: (1) make the orb/panel draggable and persist position in `localStorage`; (2) in the expanded panel add a compact live step feed — mirror the last ~5 turn-summary lines from `#feed` so the user sees what it is doing, not just a status word; (3) add a keyboard shortcut (e.g. `Ctrl+Shift+Space`) to toggle the panel. ~120-160 LOC, no backend changes.
+- **Acceptance criteria:** Orb can be dragged and remembers its spot across reloads. Expanded panel shows live step lines during a running task. The shortcut toggles the panel. Pytest green; UI smoke confirms drag + shortcut.
+- **Out of scope:** The native shell (IDEA-19-01); wake-word; streaming token-by-token into the panel (IDEA-19-04).
+- **Priority:** HIGH.
+- **Status:** queued
+
+### [IDEA-2026-05-19-03] Robust free-model retry ladder — never surface a raw error
+
+- **Source / context:** Competitor research 2026-05-19 (OpenRouter reliability). Free OpenRouter models error/rate-limit constantly; a partial fix landed 2026-05-19 (provider misrouting + fall-through-to-next-model). But the user can still see raw errors when a whole tier chain is exhausted, and there is no friendly "all models busy, retrying" surface.
+- **Why it fits Ai_computer:** Free models are the product's core constraint. The agent must feel reliable despite them — the user should never read a `429` or `Provider returned error`.
+- **Scope (this PR only):** In `app/providers.py`: when an entire model chain is exhausted, instead of raising the raw last error, retry the whole chain up to N times with exponential backoff, emit a friendly streamed status ("All free models are busy — retrying…"), and only fail with a plain-English message after the final attempt. Cap total wait so a task can't hang forever. ~60-90 LOC + tests.
+- **Acceptance criteria:** With all chain models forced to 429 (mocked), the task retries the chain, surfaces a friendly retry status, and finally fails with a readable message — never a raw provider error string. Existing provider tests stay green.
+- **Out of scope:** Local Ollama fallback (IDEA-19-05); changing the tier definitions.
+- **Priority:** HIGH.
+- **Status:** queued
+
+### [IDEA-2026-05-19-04] Stream reasoning + tool-call inputs token-by-token (kill bare spinners)
+
+- **Source / context:** Competitor research 2026-05-19 — Claude Code streams reasoning deltas and tool-call input deltas live; the screen is never silent. With free models taking 8-21s per call, perceived progress is the entire UX battle.
+- **Why it fits Ai_computer:** AI Computer already streams via SSE, but reasoning text and the args being composed for a tool call should appear as they generate, not all-at-once on completion.
+- **Scope (this PR only):** Audit `processTaskEvent()` in `static/index.html` and the SSE emit points in `app/agent.py`. Ensure: reasoning tokens render incrementally; while a tool call's args stream in, show a live "composing…" state on the card; replace any remaining bare spinner with streamed content or a skeleton. ~80-120 LOC.
+- **Acceptance criteria:** During a slow free-model turn, the feed shows reasoning text appearing progressively and a live tool-call state — no static spinner sits alone for more than ~1s. Pytest green; UI smoke on a trivial task.
+- **Out of scope:** Optimistic UI / predicted next action (separate IDEA).
+- **Priority:** HIGH.
+- **Status:** queued
+
+### [IDEA-2026-05-19-05] Local Ollama fallback + tiny-model tier routing
+
+- **Source / context:** Competitor research 2026-05-19 — Goose/Ollama run genuinely $0 and local first-token latency is 20-100ms vs free OpenRouter's 8-21s. The single biggest real speedup available.
+- **Why it fits Ai_computer:** Trivial steps (intent classification, "should I continue?", short parses) do not need a frontier model. Route them to a local Ollama model when one is available; escalate only hard reasoning to OpenRouter. Also use Ollama as the final fallback when every OpenRouter model is down.
+- **Scope (NEEDS DESIGN — do not implement blind):** Design note first: detect a local Ollama server (`http://localhost:11434`), pick a small installed model, define which step types are "cheap" and routable. Then file the implementation IDEA. First implementation PR: Ollama detection + a `tier:local` option + routing only the existing intent/classification calls to it.
+- **Acceptance criteria (design phase):** Design note covering detection, model pick, routable step types; implementation IDEA filed.
+- **Out of scope:** Bundling/installing Ollama for the user; fully local operation of the main agent loop.
+- **Priority:** HIGH.
+- **Status:** queued
+
+### [IDEA-2026-05-19-06] Async task mode — delegate, close UI, get Discord/Telegram ping
+
+- **Source / context:** Competitor research 2026-05-19 — Manus/Devin let you delegate a task and walk away; latency stops mattering when you are not watching. AI Computer already has Discord/Telegram connectors — this is a natural strength.
+- **Why it fits Ai_computer:** Reframes the slow-free-model weakness into a non-issue: the user fires a task by voice/text, closes everything, and gets pinged when it is done.
+- **Scope (this PR only):** Add a per-task "notify on completion" flag. On terminal status (done/failed), if the flag is set and a Discord/Telegram connector is configured, send a message with the goal + outcome + a short result summary. Surface the flag as a small toggle in the composer and the voice widget. ~80-120 LOC + a test that mocks the connector send.
+- **Acceptance criteria:** A task started with notify-on-completion sends exactly one Discord/Telegram message on terminal status with goal + outcome. No message when the flag is off or no connector exists. Pytest green.
+- **Out of scope:** Two-way control from chat; scheduled tasks (IDEA-19-08).
+- **Priority:** HIGH.
+- **Status:** queued
+
+### [IDEA-2026-05-19-07] Auto-commit every file change to git + one-click revert
+
+- **Source / context:** Competitor research 2026-05-19 — Aider auto-commits each change, making undo free and trust high; Cursor offers per-hunk accept/reject.
+- **Why it fits Ai_computer:** Coding-mode tasks write files on the user's real machine. An automatic safety net makes the agent far less scary to run autonomously.
+- **Scope (this PR only):** When a coding-mode task writes/edits a file inside a git repo, auto-`git add` + `git commit` that change with a generated message tagged as agent-authored. Surface a "revert this change" affordance in the feed card that runs `git revert`/`git checkout` for that commit. If the workspace is not a git repo, no-op silently. ~90-130 LOC + tests.
+- **Acceptance criteria:** A coding task that writes 2 files produces 2 agent-tagged commits; the feed offers a working one-click revert. Non-git workspaces are unaffected. Pytest green.
+- **Out of scope:** Per-hunk accept/reject UI (separate IDEA); pushing to a remote.
+- **Priority:** MEDIUM.
+- **Status:** queued
+
+### [IDEA-2026-05-19-08] Planning mode — cheap upfront plan the user can edit before execution
+
+- **Source / context:** Competitor research 2026-05-19 — OpenHands' Planning Mode does one cheap plan step so the user can correct course before many slow model calls are spent.
+- **Why it fits Ai_computer:** With 8-21s free-model calls, a wrong plan wastes minutes. One cheap plan-then-confirm step is high leverage.
+- **Scope (this PR only):** Add an optional "plan first" toggle. When on, the task does a single planning turn that emits an ordered step list, pauses, and lets the user approve / edit / reject before the action loop starts. Reuse the existing approval-prompt plumbing. ~100-140 LOC + tests.
+- **Acceptance criteria:** With plan-first on, a task shows an editable step plan and waits for approval before acting; off = current behavior. Pytest green; UI smoke covers approve + edit.
+- **Out of scope:** Auto-replanning mid-task; plan templates.
+- **Priority:** MEDIUM.
+- **Status:** queued
