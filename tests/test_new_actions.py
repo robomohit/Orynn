@@ -5,7 +5,7 @@ import sys
 import types
 import time
 
-from app.models import Action, ActionType
+from app.models import Action, ActionType, ToolResult
 from app.safety import SafetyManager
 from app.text_editor import TextEditorTool
 from app.tools import ToolExecutor
@@ -197,3 +197,248 @@ async def test_run_action_streams_run_command(workspace, monkeypatch):
     )
     assert result.ok
     assert seen == ["hello\n", "world\n"]
+
+
+def test_wait_for_window_returns_visible_match(workspace, monkeypatch):
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+
+    fake_win32gui = types.SimpleNamespace(
+        EnumWindows=lambda callback, acc: [callback(10, acc), callback(11, acc)],
+        IsWindow=lambda hwnd: hwnd == 11,
+        IsWindowVisible=lambda hwnd: hwnd == 11,
+        GetWindowText=lambda hwnd: "Untitled - Notepad" if hwnd == 11 else "Hidden",
+        GetWindowRect=lambda hwnd: (100, 120, 500, 420),
+    )
+    fake_win32process = types.SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (1, 4242))
+
+    monkeypatch.setattr(tools_module, "win32gui", fake_win32gui)
+    monkeypatch.setattr(tools_module, "win32process", fake_win32process)
+    monkeypatch.setattr(tools_module, "_is_hung_app_window", lambda hwnd: False)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+
+    result = t.wait_for_window("notepad", timeout=0.2)
+
+    assert result.ok
+    assert result.data == {"hwnd": 11, "pid": 4242, "title": "Untitled - Notepad"}
+    assert t._isolated_hwnd == 11
+
+
+def test_bash_gui_launch_waits_for_window_and_tracks_pid(workspace, monkeypatch):
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    t.set_isolated_hwnd(None, "Notepad")
+
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: types.SimpleNamespace(pid=999))
+    monkeypatch.setattr(
+        t,
+        "wait_for_window",
+        lambda title, timeout=10.0, paint_seconds=0.35: ToolResult(
+            ok=True,
+            output="Window ready: 'Untitled - Notepad' (pid 4242)",
+            data={"hwnd": 55, "pid": 4242, "title": "Untitled - Notepad"},
+        ),
+    )
+
+    result = t.bash("start notepad")
+
+    assert result.ok
+    assert "Window ready" in result.output
+    assert t._isolated_hwnd == 55
+    assert 4242 in t._started_pids
+
+
+def test_isolated_click_uses_window_rect_for_secondary_monitor(workspace, monkeypatch):
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    t.set_isolated_hwnd(55, "Notepad")
+    seen = {}
+
+    def screen_to_client(hwnd, point):
+        seen["screen_point"] = point
+        return (point[0] - 2000, point[1] - 300)
+
+    fake_win32gui = types.SimpleNamespace(
+        IsWindow=lambda hwnd: True,
+        GetWindowRect=lambda hwnd: (2000, 300, 2600, 900),
+        ScreenToClient=screen_to_client,
+        PostMessage=lambda *args: seen.setdefault("post", []).append(args),
+    )
+    fake_win32api = types.SimpleNamespace(MAKELONG=lambda x, y: (x, y))
+    fake_win32con = types.SimpleNamespace(
+        WM_LBUTTONDOWN=1,
+        WM_LBUTTONUP=2,
+        WM_RBUTTONDOWN=3,
+        WM_RBUTTONUP=4,
+        MK_LBUTTON=5,
+        MK_RBUTTON=6,
+    )
+
+    monkeypatch.setattr(tools_module, "win32gui", fake_win32gui)
+    monkeypatch.setattr(tools_module, "win32api", fake_win32api)
+    monkeypatch.setattr(tools_module, "win32con", fake_win32con)
+    monkeypatch.setattr(tools_module, "_is_hung_app_window", lambda hwnd: False)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+
+    result = t._mouse_click_isolated(640, 400, "left", 1, 1280, 800)
+
+    assert result.ok
+    assert seen["screen_point"] == (2300, 600)
+
+
+def test_force_close_window_resolves_pid_from_title(workspace, monkeypatch):
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    t._started_pids.add(4242)
+
+    class NoSuchProcess(Exception):
+        pass
+
+    events = {}
+
+    class FakeProcess:
+        def __init__(self, pid):
+            assert pid == 4242
+
+        def name(self):
+            return "notepad.exe"
+
+        def kill(self):
+            events["kill"] = True
+
+        def terminate(self):
+            events["terminate"] = True
+
+        def wait(self, timeout=5):
+            events["wait"] = timeout
+
+    monkeypatch.setattr(t, "_get_hwnd_for_title", lambda title: 77)
+    monkeypatch.setattr(tools_module, "win32process", types.SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (1, 4242)))
+    monkeypatch.setitem(sys.modules, "psutil", types.SimpleNamespace(Process=FakeProcess, NoSuchProcess=NoSuchProcess))
+
+    result = t.force_close_window(title="Notepad", force=True)
+
+    assert result.ok
+    assert "Closed 'Notepad'" in result.output
+    assert events["kill"] is True
+    assert 4242 not in t._started_pids
+
+
+@pytest.mark.asyncio
+async def test_plugin_failures_log_traceback(workspace, caplog):
+    class BoomRegistry:
+        def handlers(self):
+            return {"browser_screenshot": lambda **kwargs: (_ for _ in ()).throw(RuntimeError("plugin exploded"))}
+
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace), plugin_registry=BoomRegistry())
+    action = Action(id="plugin", type=ActionType.browser_screenshot, args={})
+
+    with caplog.at_level("ERROR"):
+        result = await t.run_action(action)
+
+    assert result.ok is False
+    assert "Plugin error: plugin exploded" == result.output
+    assert "Plugin handler browser_screenshot failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_delegate_coding_returns_backend_result(workspace, monkeypatch):
+    class FakeBackend:
+        name = "claude-code"
+
+        def detect(self):
+            return {"available": True, "detail": "ok"}
+
+        def submit(self, brief):
+            assert brief.task == "Refactor parser"
+            assert "app/parser.py" in brief.files
+            return types.SimpleNamespace(
+                ok=True,
+                summary="Refactored parser and added tests.",
+                files_changed=["app/parser.py", "tests/test_parser.py"],
+                cost_usd=0.0,
+                session_id="sess-1",
+                error="",
+                to_dict=lambda: {
+                    "ok": True,
+                    "summary": "Refactored parser and added tests.",
+                    "files_changed": ["app/parser.py", "tests/test_parser.py"],
+                    "cost_usd": 0.0,
+                    "session_id": "sess-1",
+                    "error": "",
+                },
+            )
+
+    class FakeRegistry:
+        def get(self, name=None):
+            return FakeBackend()
+
+    monkeypatch.setattr("app.coding_backends.registry", FakeRegistry())
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    result = await t.run_action(
+        Action(
+            id="delegate",
+            type=ActionType.delegate_coding,
+            args={"task": "Refactor parser", "files": ["app/parser.py"]},
+        )
+    )
+
+    assert result.ok is True
+    assert "Delegated to claude-code" in result.output
+    assert result.data["backend"] == "claude-code"
+    assert "app/parser.py" in result.data["files_changed"]
+
+
+@pytest.mark.asyncio
+async def test_delegate_coding_reports_missing_backend(workspace, monkeypatch):
+    class EmptyRegistry:
+        def get(self, name=None):
+            return None
+
+    monkeypatch.setattr("app.coding_backends.registry", EmptyRegistry())
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    result = await t.run_action(
+        Action(
+            id="delegate-missing",
+            type=ActionType.delegate_coding,
+            args={"task": "Refactor parser"},
+        )
+    )
+
+    assert result.ok is False
+    assert "no coding backend is available" in result.output
+
+
+@pytest.mark.asyncio
+async def test_mouse_click_dispatches_to_background_browser_when_attached(workspace):
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    seen = {}
+
+    class FakeBrowser:
+        is_running = True
+
+        async def mouse_click(self, x, y, button="left", click_count=1):
+            seen["mouse_click"] = (x, y, button, click_count)
+
+    t.set_background_browser(FakeBrowser())
+    result = await t.run_action(Action(id="bg-click", type=ActionType.mouse_click, args={"x": 12, "y": 34}))
+
+    assert result.ok
+    assert seen["mouse_click"] == (12, 34, "left", 1)
+
+
+@pytest.mark.asyncio
+async def test_mouse_click_uses_desktop_path_without_background_browser(workspace, monkeypatch):
+    calls = {}
+    pg = types.SimpleNamespace(
+        moveTo=lambda *a, **k: calls.setdefault("moveTo", []).append((a, k)),
+        click=lambda *a, **k: calls.setdefault("click", []).append((a, k)),
+        size=lambda: (1920, 1080),
+        easeInOutQuad=lambda n: n,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "pyautogui", pg)
+    monkeypatch.setattr("app.tools._flash_pointer", lambda *args, **kwargs: None)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    t._background_mode = False
+    result = await t.run_action(Action(id="desktop-click", type=ActionType.mouse_click, args={"x": 12, "y": 34}))
+
+    assert result.ok
+    assert calls["click"]

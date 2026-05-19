@@ -9,7 +9,7 @@ import httpx
 
 from app.agent import AgentService
 from app.log_emitter import LogEmitter
-from app.models import Action, ActionType, HierarchicalPlan, SubTask
+from app.models import Action, ActionType, HierarchicalPlan, SubTask, ToolResult
 from app.providers import PlannerProvider, detect_task_mode, infer_isolated_app_name
 
 
@@ -168,6 +168,119 @@ async def test_structured_desktop_finish_finalizes_without_reflection(monkeypatc
     assert finalizations
     assert finalizations[-1][1] == "done"
     assert finalizations[-1][2] == "Desktop task is complete."
+
+
+@pytest.mark.asyncio
+async def test_desktop_action_emits_post_screenshot_and_no_effect_hint(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    capture_calls = {"count": 0}
+
+    def fake_capture(sw, sh):
+        capture_calls["count"] += 1
+        return "initial-shot" if capture_calls["count"] == 1 else "after-shot"
+
+    monkeypatch.setattr("app.agent._capture_screenshot_b64", fake_capture)
+    monkeypatch.setattr("app.agent._post_action_no_effect_hint", lambda before, after: "[no-effect hint] unchanged")
+
+    class FakeProvider:
+        total_tokens = 0
+
+        def __init__(self):
+            self.turn = 0
+            self.last_observation = ""
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.turn += 1
+            if self.turn == 1:
+                yield {"type": "tool_call", "id": "call-1", "name": "mouse_click", "args": {"x": 50, "y": 60}, "thought": "click it"}
+                return
+            self.last_observation = messages[-1]["content"]
+            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def fake_run_action(action, sw=1280, sh=800, on_stream=None):
+        if action.type == ActionType.mouse_click:
+            return ToolResult(ok=True, output="Clicked", base64_image=None, data=None)
+        return ToolResult(ok=True, output="done", base64_image=None, data=None)
+
+    monkeypatch.setattr(service.tools, "run_action", fake_run_action)
+
+    events = []
+
+    async def capture_event(task_id, event_type, data):
+        events.append((event_type, data))
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", capture_event)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-desktop-no-effect", "Click and verify", mode="computer")
+
+    assert any(event == "screenshot" and data["data"] == "after-shot" for event, data in events)
+    assert "[no-effect hint] unchanged" in provider.last_observation
+
+
+@pytest.mark.asyncio
+async def test_isolated_hung_app_hint_is_added_to_observation(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent._get_hwnd_for_title", lambda title: 1234)
+    monkeypatch.setattr("app.providers._capture_hwnd_screenshot_b64", lambda hwnd: "isolated-shot")
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.tools, "current_target_hung_info", lambda: {"title": "Untitled - Notepad", "pid": 4242})
+
+    class FakeProvider:
+        total_tokens = 0
+
+        def __init__(self):
+            self.turn = 0
+            self.last_observation = ""
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.turn += 1
+            if self.turn == 1:
+                yield {"type": "tool_call", "id": "call-1", "name": "mouse_click", "args": {"x": 40, "y": 30}, "thought": "click"}
+                return
+            self.last_observation = messages[-1]["content"]
+            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def fake_run_action(action, sw=1280, sh=800, on_stream=None):
+        if action.type == ActionType.mouse_click:
+            return ToolResult(ok=True, output="Clicked", base64_image=None, data=None)
+        return ToolResult(ok=True, output="done", base64_image=None, data=None)
+
+    monkeypatch.setattr(service.tools, "run_action", fake_run_action)
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-isolated-hung", "Use notepad", mode="computer_isolated", isolated_app="Notepad")
+
+    assert "force_close_window" in provider.last_observation
+    assert "Untitled - Notepad" in provider.last_observation
 
 
 def test_persistent_logs_omit_raw_screenshot_payload(tmp_path, monkeypatch):

@@ -1,5 +1,6 @@
 import pytest
 import time
+import asyncio
 from app.agent import AgentService
 from app.log_emitter import log_emitter
 from app.models import Action, ActionType, HierarchicalPlan, SubTask
@@ -70,3 +71,89 @@ async def test_phase_updates_emit_progress(monkeypatch, workspace):
     assert result == "ok"
     assert any(msg == "Thinking" for msg in seen)
     assert any("Still planning" in msg for msg in seen)
+
+
+@pytest.mark.asyncio
+async def test_hierarchical_parallel_plan_respects_dependencies(monkeypatch, workspace):
+    s = AgentService(workspace, log_emitter=log_emitter)
+    order = []
+
+    plan = HierarchicalPlan(
+        reasoning="r",
+        execution_mode="parallel",
+        max_parallel_workers=2,
+        sub_tasks=[
+            SubTask(
+                id="s2",
+                description="second",
+                depends_on=["s1"],
+                actions=[Action(id="a2", type=ActionType.wait_action, args={"seconds": 0})],
+            ),
+            SubTask(
+                id="s1",
+                description="first",
+                actions=[Action(id="a1", type=ActionType.wait_action, args={"seconds": 0})],
+            ),
+        ],
+        overall_complete=False,
+    )
+
+    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
+    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
+    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
+
+    async def fake_run_action(self, action, **kwargs):
+        order.append(action.id)
+        return type("Res", (), {"ok": True, "output": action.id, "base64_image": None, "data": None})()
+
+    monkeypatch.setattr("app.tools.ToolExecutor.run_action", fake_run_action)
+
+    await s.run_task("dep-plan", "refactor", mode="computer")
+
+    assert order == ["a1", "a2"]
+
+
+@pytest.mark.asyncio
+async def test_hierarchical_parallel_plan_runs_disjoint_write_scopes_concurrently(monkeypatch, workspace):
+    s = AgentService(workspace, log_emitter=log_emitter)
+    peak_active = 0
+    active = 0
+
+    plan = HierarchicalPlan(
+        reasoning="r",
+        execution_mode="parallel",
+        max_parallel_workers=2,
+        sub_tasks=[
+            SubTask(
+                id="s1",
+                description="left",
+                write_scope=["src/a.py"],
+                actions=[Action(id="a1", type=ActionType.wait_action, args={"seconds": 0})],
+            ),
+            SubTask(
+                id="s2",
+                description="right",
+                write_scope=["src/b.py"],
+                actions=[Action(id="a2", type=ActionType.wait_action, args={"seconds": 0})],
+            ),
+        ],
+        overall_complete=False,
+    )
+
+    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
+    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
+    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
+
+    async def fake_run_action(self, action, **kwargs):
+        nonlocal active, peak_active
+        active += 1
+        peak_active = max(peak_active, active)
+        await asyncio.sleep(0.02)
+        active -= 1
+        return type("Res", (), {"ok": True, "output": action.id, "base64_image": None, "data": None})()
+
+    monkeypatch.setattr("app.tools.ToolExecutor.run_action", fake_run_action)
+
+    await s.run_task("parallel-plan", "refactor", mode="computer")
+
+    assert peak_active >= 2

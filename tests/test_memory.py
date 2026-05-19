@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from app.memory import MemoryStore
+from app.memory import MemoryStore, _FallbackCollection
 
 
 def test_memory_store(workspace):
@@ -32,3 +32,38 @@ def test_maybe_auto_consolidate_fires_at_threshold(workspace):
     result = m.maybe_auto_consolidate()
     assert result is not None
     assert "merged" in result
+
+
+def test_recall_sessions_logs_warning_when_metadata_update_fails(workspace, caplog, monkeypatch):
+    m = MemoryStore(workspace / "db.sqlite")
+    m.add("session_summary", "Network debugging summary", {"task_id": "t1", "recall_count": 0})
+
+    def boom(**kwargs):
+        raise RuntimeError("db is read-only")
+
+    monkeypatch.setattr(m.collection, "update", boom, raising=False)
+    with caplog.at_level("WARNING"):
+        items = m.recall_sessions("network debugging", n=1)
+
+    assert items
+    assert "Failed to update memory recall_count metadata" in caplog.text
+
+
+def test_recall_sessions_parity_between_primary_and_fallback_collection(workspace):
+    def seed(store):
+        store.add("session_summary", "Network timeout while loading dashboard", {"task_id": "t1", "recall_count": 0})
+        store.add("session_summary", "Login page CSS polish and typography cleanup", {"task_id": "t2", "recall_count": 0})
+        store.add("session_summary", "Network retry logic for websocket reconnect", {"task_id": "t3", "recall_count": 0})
+        return [item.content for item in store.recall_sessions("network reconnect timeout", n=2)]
+
+    primary = MemoryStore(workspace / "primary.sqlite")
+    fallback = MemoryStore(workspace / "fallback.sqlite")
+    fallback.collection = _FallbackCollection()
+
+    primary_hits = seed(primary)
+    fallback_hits = seed(fallback)
+
+    assert primary_hits
+    assert fallback_hits
+    assert primary_hits[0] == fallback_hits[0]
+    assert set(primary_hits[:2]) == set(fallback_hits[:2])

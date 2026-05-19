@@ -87,3 +87,30 @@ def test_copy_task_button_present_and_wired():
     assert "e.stopPropagation()" in html
     assert "inp.value = taskRecord.goal" in html
     assert "inp.focus()" in html
+
+
+def test_settings_modal_surfaces_coding_backends():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    assert 'id="coding-backends-section"' in html
+    assert 'id="coding-backends-grid"' in html
+    assert 'id="coding-backend-count"' in html
+    assert "loadCodingBackends" in html
+    assert "renderCodingBackends" in html
+
+
+def test_mermaid_is_self_hosted():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    assert "cdn.jsdelivr.net/npm/mermaid" not in html
+    assert '/static/vendor/mermaid.min.js' in html
+
+
+def test_shortcut_help_overlay_is_present_and_question_mark_wired():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+
+    assert 'id="shortcut-help"' in html
+    assert "Keyboard shortcuts" in html
+    assert "e.key === '?'" in html
+    assert "isTextEntryTarget(e.target)" in html
+    assert "openShortcutHelp()" in html

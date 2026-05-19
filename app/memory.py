@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
@@ -11,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .log_emitter import MAX_TEXT_FIELD_CHARS
 from .models import MemoryItem
+
+_log = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -125,8 +128,8 @@ class ShortTermBuffer:
                 json.dumps(list(self._sessions[session_id]), ensure_ascii=False),
                 encoding="utf-8",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("Failed to update memory recall_count metadata: %s", exc)
 
     def add(self, session_id: str, content: str) -> None:
         if session_id not in self._sessions:
@@ -438,8 +441,8 @@ class MemoryStore:
                 )
             if update_ids and hasattr(self.collection, "update"):
                 self.collection.update(ids=update_ids, metadatas=new_metas)
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("Failed to update memory recall_count metadata: %s", exc)
 
         items: List[MemoryItem] = []
         for cand in ranked:

@@ -1,14 +1,19 @@
 from __future__ import annotations
 import asyncio
+import base64
 import inspect
+import io
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set
+
+from PIL import Image
 
 from .background_browser import BackgroundBrowser
 from .log_emitter import LogEmitter
@@ -27,10 +32,10 @@ from .models import (
     ToolResult,
 )
 from .permissions import PermissionStore, scope_for_action
-from .providers import PlannerProvider, _capture_screenshot_b64, _get_active_window_rect, _get_hwnd_for_title, detect_task_mode, classify_task_complexity, infer_isolated_app_name, is_vision_model
+from .providers import PlannerProvider, _capture_screenshot_b64, _captured_dimensions, _get_active_window_rect, _get_hwnd_for_title, detect_task_mode, classify_task_complexity, infer_isolated_app_name, is_vision_model
 from .safety import SafetyManager
 from .text_editor import TextEditorTool
-from .tools import ToolExecutor
+from .tools import ToolExecutor, _flash_pointer
 from .plugins import PluginRegistry
 from .skills import skill_manager
 
@@ -55,6 +60,100 @@ _SCREENSHOT_ACTIONS = {
     ActionType.left_click_drag,
     ActionType.key_combo,
 }
+
+_DESKTOP_POST_ACTION_TYPES = {
+    ActionType.mouse_click,
+    ActionType.keyboard_type,
+    ActionType.scroll,
+    ActionType.double_click,
+    ActionType.right_click,
+    ActionType.middle_click,
+    ActionType.mouse_move,
+    ActionType.left_click_drag,
+    ActionType.key_combo,
+    ActionType.hold_key,
+    ActionType.type_with_delay,
+    ActionType.focus_window,
+    ActionType.wait_for_window,
+    ActionType.force_close_window,
+}
+
+_POINT_TAG_RE = re.compile(r"\[POINT:(?P<body>[^\]]+)\]", re.IGNORECASE)
+
+
+def _visual_hash_from_b64(image_b64: Optional[str]) -> Optional[tuple[int, ...]]:
+    if not image_b64:
+        return None
+    try:
+        raw = base64.b64decode(image_b64)
+        with Image.open(io.BytesIO(raw)) as image:
+            thumb = image.convert("L").resize((12, 12), Image.Resampling.BILINEAR)
+            pixels = list(thumb.getdata())
+    except Exception:
+        return None
+    if not pixels:
+        return None
+    mean = sum(pixels) / len(pixels)
+    return tuple(1 if value >= mean else 0 for value in pixels)
+
+
+def _visual_hash_distance(before_b64: Optional[str], after_b64: Optional[str]) -> Optional[int]:
+    before = _visual_hash_from_b64(before_b64)
+    after = _visual_hash_from_b64(after_b64)
+    if before is None or after is None or len(before) != len(after):
+        return None
+    return sum(1 for left, right in zip(before, after) if left != right)
+
+
+def _post_action_no_effect_hint(before_b64: Optional[str], after_b64: Optional[str]) -> Optional[str]:
+    distance = _visual_hash_distance(before_b64, after_b64)
+    if distance is None or distance > 4:
+        return None
+    return (
+        "[no-effect hint] The screen looked unchanged after this action. "
+        "If you expected a click or typed text, re-check focus, target, or window state."
+    )
+
+
+def _computer_subaction_needs_capture(name: str) -> bool:
+    return (name or "").strip().lower() not in {"", "screenshot", "cursor_position", "wait"}
+
+
+def _should_capture_post_action(action: Action, result: ToolResult, is_desktop: bool) -> bool:
+    if not is_desktop or not result.ok:
+        return False
+    if action.type in _DESKTOP_POST_ACTION_TYPES:
+        return True
+    if action.type == ActionType.computer:
+        return _computer_subaction_needs_capture(action.args.get("action", ""))
+    if action.type in {ActionType.bash, ActionType.run_command}:
+        return "Launched (fire-and-forget):" in (result.output or "")
+    return False
+
+
+def _extract_point_tag(text: str) -> tuple[str, Optional[Dict[str, Any]]]:
+    match = _POINT_TAG_RE.search(text or "")
+    if not match:
+        return (text or "").strip(), None
+    body = match.group("body").strip()
+    cleaned = _POINT_TAG_RE.sub("", text or "", count=1).strip()
+    if body.lower() == "none":
+        return cleaned, None
+    coord_part, sep, label = body.partition(":")
+    if not sep:
+        return cleaned, None
+    x_text, comma, y_text = coord_part.partition(",")
+    if not comma:
+        return cleaned, None
+    try:
+        point = {
+            "x": int(x_text.strip()),
+            "y": int(y_text.strip()),
+            "label": label.strip(),
+        }
+    except ValueError:
+        return cleaned, None
+    return cleaned, point
 
 class SubTaskWorker:
     """Handles the execution of a single sub-task."""
@@ -574,7 +673,9 @@ class AgentService:
                     "You are a helpful assistant explaining what is on the user's screen. "
                     "Look at the screenshot and answer the user's question clearly and concisely. "
                     "You are in READ-ONLY mode: describe, explain, and advise — never say you will "
-                    "click, type, open, or change anything. If the screenshot is missing or unclear, say so."
+                    "click, type, open, or change anything. If the screenshot is missing or unclear, say so. "
+                    "If pointing would help, append exactly one tag at the end of your answer in the form "
+                    "[POINT:x,y:label] using screenshot coordinates, or [POINT:none] if pointing would not help."
                 )
                 explain_answer_parts: List[str] = []
                 try:
@@ -592,6 +693,15 @@ class AgentService:
                     return
                 explain_answer = "".join(explain_answer_parts).strip() or \
                     "I couldn't read the screen clearly enough to explain it."
+                explain_answer, explain_point = _extract_point_tag(explain_answer)
+                if explain_point:
+                    try:
+                        cap_w, cap_h = _captured_dimensions(screen_width, screen_height)
+                        real_x = max(0, min(screen_width - 1, round(explain_point["x"] * screen_width / max(1, cap_w))))
+                        real_y = max(0, min(screen_height - 1, round(explain_point["y"] * screen_height / max(1, cap_h))))
+                        await asyncio.to_thread(_flash_pointer, real_x, real_y)
+                    except Exception as point_err:
+                        _log.debug("explain mode: pointer overlay skipped: %s", point_err)
                 self._finalize(task_id, "done", explain_answer)
                 await self._emit(task_id, "done", {
                     "complete": True,
@@ -715,7 +825,7 @@ class AgentService:
 
                     history: List[str] = []
                     final_reason = ""
-                    # C8: Run all subtasks in parallel with asyncio.gather (no dependency tracking yet)
+
                     async def _run_subtask(idx: int, sub_task: SubTask) -> bool:
                         worker = SubTaskWorker(
                             worker_id=f"worker-{idx + 1}",
@@ -729,10 +839,88 @@ class AgentService:
                         )
                         return await worker.run(provider, history)
 
-                    subtask_results = await asyncio.gather(
-                        *(_run_subtask(idx, sub_task) for idx, sub_task in enumerate(plan.sub_tasks)),
-                        return_exceptions=False,
-                    )
+                    def _write_scopes_conflict(left: SubTask, right: SubTask) -> bool:
+                        left_scope = [str(path).strip().lower() for path in (left.write_scope or []) if str(path).strip()]
+                        right_scope = [str(path).strip().lower() for path in (right.write_scope or []) if str(path).strip()]
+                        if not left_scope or not right_scope:
+                            return True
+                        for lhs in left_scope:
+                            for rhs in right_scope:
+                                if lhs == rhs or lhs.startswith(rhs.rstrip("/\\") + "/") or rhs.startswith(lhs.rstrip("/\\") + "/"):
+                                    return True
+                        return False
+
+                    async def _execute_subtasks() -> List[bool]:
+                        if not plan.sub_tasks:
+                            return []
+
+                        max_workers = max(1, int(plan.max_parallel_workers or 1))
+                        pending: List[tuple[int, SubTask]] = list(enumerate(plan.sub_tasks))
+                        done_by_id: Dict[str, bool] = {}
+                        results: List[Optional[bool]] = [None] * len(plan.sub_tasks)
+                        allow_parallel = str(plan.execution_mode or "serial").lower() == "parallel"
+
+                        while pending:
+                            ready: List[tuple[int, SubTask]] = []
+                            still_pending: List[tuple[int, SubTask]] = []
+                            progressed = False
+
+                            for idx, sub_task in pending:
+                                deps = list(sub_task.depends_on or [])
+                                if any(done_by_id.get(dep) is False for dep in deps):
+                                    done_by_id[sub_task.id] = False
+                                    results[idx] = False
+                                    progressed = True
+                                    continue
+                                if all(done_by_id.get(dep) is True for dep in deps):
+                                    ready.append((idx, sub_task))
+                                else:
+                                    still_pending.append((idx, sub_task))
+
+                            pending = still_pending
+                            if not ready:
+                                if not pending:
+                                    break
+                                ready = [pending.pop(0)]
+
+                            batch: List[tuple[int, SubTask]] = []
+                            if allow_parallel:
+                                for item in ready:
+                                    if len(batch) >= max_workers:
+                                        pending.insert(0, item)
+                                        continue
+                                    if any(_write_scopes_conflict(item[1], chosen[1]) for chosen in batch):
+                                        pending.append(item)
+                                        continue
+                                    batch.append(item)
+                                if not batch:
+                                    batch = [ready[0]]
+                                    pending.extend(ready[1:])
+                            else:
+                                batch = [ready[0]]
+                                pending = ready[1:] + pending
+
+                            batch_results = await asyncio.gather(
+                                *(_run_subtask(idx, sub_task) for idx, sub_task in batch),
+                                return_exceptions=False,
+                            )
+                            progressed = True
+                            for (idx, sub_task), ok in zip(batch, batch_results):
+                                done_by_id[sub_task.id] = bool(ok)
+                                results[idx] = bool(ok)
+                                if not ok and not allow_parallel:
+                                    for blocked_idx, blocked_task in pending:
+                                        results[blocked_idx] = False
+                                        done_by_id[blocked_task.id] = False
+                                    pending = []
+                                    break
+
+                            if not progressed:
+                                break
+
+                        return [bool(result) for result in results if result is not None]
+
+                    subtask_results = await _execute_subtasks()
                     all_success = all(subtask_results)
                     final_entries = [entry for entry in history if entry.startswith("[FINAL] ")]
                     if final_entries:
@@ -818,7 +1006,7 @@ class AgentService:
                         "2. Use bash to open applications (e.g. `start notepad`, `start calc`, `start ms-paint:`). Do NOT try to double-click desktop icons.\n"
                         "3. After opening an app, IMMEDIATELY call focus_window with the app name (e.g. focus_window {\"title\": \"Notepad\"}) to bring it to the foreground. This is MANDATORY before typing.\n"
                         "4. After focus_window succeeds, type your text with keyboard_type.\n"
-                        "5. After every mouse_click or keyboard_type, take a screenshot to verify the result.\n"
+                        "5. A fresh screenshot is captured automatically after every desktop interaction. Use explicit screenshot only when you want an extra check.\n"
                         "6. Use key_combo for shortcuts (e.g. ctrl+s to save, ctrl+w to close a tab).\n"
                         "7. SAVING FILES: When a Save-As dialog opens, type the FULL path (e.g. C:\\Users\\<username>\\Desktop\\filename.txt) to save to a specific folder. Do NOT type just the filename — it will save to the wrong folder.\n"
                         "   To get the username, run: bash {\"command\": \"echo %USERNAME%\"} before saving.\n"
@@ -840,7 +1028,7 @@ class AgentService:
                     xml_system = (
                         "You are AI Computer — a desktop automation agent controlling a real Windows PC.\n"
                         "FORMAT: <thought>reasoning</thought> then <action type=\"tool\">{args}</action>\n\n"
-                        "WORKFLOW: screenshot → bash to open app → focus_window to bring it forward → keyboard_type text → screenshot to verify → finish\n"
+                        "WORKFLOW: screenshot → bash to open app → focus_window to bring it forward → keyboard_type text → inspect the automatic post-action screenshot → finish\n"
                         "SAFETY: NEVER close Chrome, Edge, Cursor, or unrelated windows. Verify the target window title before typing. For Notepad, use a fresh blank document when possible. Finish as soon as the requested result is visible.\n\n"
                         f"Available tools:\n{tool_guidance}\n\n"
                         "After each <observation>, decide next step. Always take a screenshot after opening an app or after clicking."
@@ -1276,6 +1464,7 @@ class AgentService:
                         "args_summary": _arg_summary,
                     })
 
+                    pre_action_screenshot = screenshot_b64
                     try:
                         async def _stream_chunk(c: Dict[str, Any]):
                             if isinstance(c, str):
@@ -1330,11 +1519,20 @@ class AgentService:
                             _write_cache[_write_path] = _write_content
 
                     # ── Auto-screenshot after computer actions so model sees result ──
-                    _needs_screenshot = act.type in _SCREENSHOT_ACTIONS or (
-                        _is_computer_desktop and act.type == AT.bash and res.ok
+                    post_action_note = ""
+                    explicit_screenshot = (
+                        act.type == AT.screenshot
+                        or (act.type == AT.computer and (act.args.get("action", "").strip().lower() == "screenshot"))
                     )
-                    if _is_computer_desktop and _needs_screenshot:
-                        await asyncio.sleep(0.4)  # brief settle time for UI to render
+                    if _is_computer_desktop and explicit_screenshot and res.base64_image:
+                        screenshot_b64 = res.base64_image
+                        await self._emit(task_id, "screenshot", {
+                            "data": res.base64_image,
+                            "isolated": bool(is_isolated and tools.resolve_isolated_hwnd()),
+                            "worker_id": "planner",
+                        })
+                    elif _should_capture_post_action(act, res, _is_computer_desktop):
+                        await asyncio.sleep(0.35)
                         isolated_hwnd = tools.resolve_isolated_hwnd() if is_isolated else None
                         if isolated_hwnd:
                             from .providers import _capture_hwnd_screenshot_b64
@@ -1343,12 +1541,32 @@ class AgentService:
                             post_shot = _capture_screenshot_b64(screen_width, screen_height)
                         if post_shot:
                             await self._emit(task_id, "screenshot", {"data": post_shot, "isolated": bool(isolated_hwnd), "worker_id": "planner"})
-                            del screenshot_b64
                             screenshot_b64 = post_shot
+                            no_effect_hint = _post_action_no_effect_hint(pre_action_screenshot, post_shot)
+                            if no_effect_hint:
+                                post_action_note = no_effect_hint
+                                await self._emit(task_id, "status", {
+                                    "message": "Desktop action produced no visible change. Re-checking focus and target on the next step.",
+                                })
+
+                    if _is_computer_desktop and is_isolated:
+                        hung_info = tools.current_target_hung_info()
+                        if hung_info:
+                            title_hint = (hung_info.get("title") or isolated_app or "target app").replace('"', "'")
+                            hung_note = (
+                                f"[hung-app hint] The target window '{title_hint}' appears not responding. "
+                                f"Consider force_close_window {{\"title\": \"{title_hint}\", \"force\": true}} and then relaunch it."
+                            )
+                            post_action_note = f"{post_action_note}\n{hung_note}".strip() if post_action_note else hung_note
+                            await self._emit(task_id, "status", {
+                                "message": f"Target app '{title_hint}' appears hung. Consider closing and relaunching it.",
+                            })
 
                     # ── Append result to conversation ──
                     obs_limit = 3000 if is_coding_mode else 1000
                     obs_text = res.output[:obs_limit] + ("\n...(truncated)" if len(res.output) > obs_limit else "")
+                    if post_action_note:
+                        obs_text = f"{obs_text}\n\n{post_action_note}"
                     if use_native_tools and tool_call_id:
                         messages.append({"role": "assistant", "content": thought_text, "tool_calls": [{"id": tool_call_id, "type": "function", "function": {"name": action_type, "arguments": json.dumps(args)}}]})
                         messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": obs_text})
@@ -1546,6 +1764,9 @@ def _summarize_args(action_type: str, args: dict) -> str:
     if not isinstance(args, dict):
         return str(args)[:80]
     if action_type in ("run_command", "bash"): return (args.get("command") or "")[:80]
+    if action_type == "delegate_coding": return (args.get("task") or "")[:80]
+    if action_type == "wait_for_window": return (args.get("title") or "wait for isolated window")[:80]
+    if action_type == "force_close_window": return (args.get("title") or f"pid {args.get('pid', '?')}")[:80]
     if action_type == "text_editor": return f"{args.get('command','')} {args.get('path','')}".strip()
     if action_type in ("read_file", "write_file", "move_file"): return args.get("path") or args.get("src") or ""
     # Generic clean fallback — surface a meaningful value, never a Python dict repr.

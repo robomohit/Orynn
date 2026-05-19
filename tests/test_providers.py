@@ -196,3 +196,18 @@ def test_allowed_models_permits_matching_model(monkeypatch):
     p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
     result = p._openrouter_models_to_try("google/gemma-4-31b-it:free")
     assert result == ["google/gemma-4-31b-it:free"]
+
+
+def test_allowed_models_supports_glob_patterns(monkeypatch):
+    monkeypatch.setenv("ALLOWED_MODELS", "google/gemma-*:free,meta-llama/*")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from importlib import reload
+    import app.providers as _prov
+
+    reload(_prov)
+    p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
+    result = p._openrouter_models_to_try("google/gemma-4-31b-it:free")
+    assert "google/gemma-4-31b-it:free" in result
+    assert "google/gemma-4-26b-a4b-it:free" in result
+    assert "meta-llama/llama-3.3-70b-instruct:free" in result
+    assert "nvidia/nemotron-3-super-120b-a12b:free" not in result

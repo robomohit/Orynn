@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
+import fnmatch
 import io
 import json
 import logging
@@ -315,16 +317,19 @@ def get_scale_factor(width: int, height: int) -> float:
 def _capture_screenshot_b64(width: int, height: int) -> str:
     import mss
 
-    # Cap at 1280x800
-    w = min(width, 1280)
-    h = min(height, 800)
+    target_w, target_h = _pick_capture_cap(width, height)
     with mss.mss() as sct:
-        monitor = {"left": 0, "top": 0, "width": w, "height": h}
+        monitor = {
+            "left": 0,
+            "top": 0,
+            "width": max(1, int(width)),
+            "height": max(1, int(height)),
+        }
         shot = sct.grab(monitor)
         image = Image.frombytes("RGB", shot.size, shot.rgb)
         try:
-            if image.size[0] > w or image.size[1] > h:
-                image.thumbnail((w, h), Image.Resampling.LANCZOS)
+            if image.size[0] > target_w or image.size[1] > target_h:
+                image.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
             buf = io.BytesIO()
             image.save(buf, format="JPEG", quality=75)
             b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -344,8 +349,8 @@ def _get_active_window_rect(sw: int, sh: int) -> Optional[Dict[str, Any]]:
         left, top, right, bottom = rect
         title = win32gui.GetWindowText(hwnd)[:60]
         # Normalise against the actual captured dimensions (capped at 1280×800)
-        cap_w = min(sw, 1280)
-        cap_h = min(sh, 800)
+        cap_w = max(1, sw)
+        cap_h = max(1, sh)
         x = max(0, left)
         y = max(0, top)
         w = min(right - left, cap_w - x)
@@ -432,11 +437,57 @@ def _image_data_url(image_data: Optional[str], default_mime: str = "image/jpeg")
 
 
 def _get_allowed_models() -> Optional[frozenset]:
-    """Parse ALLOWED_MODELS env var (comma-separated). Returns None when all models are permitted."""
+    """Parse ALLOWED_MODELS env var (comma-separated).
+
+    Entries may be exact ids or shell-style globs such as `google/*:free`.
+    Returns None when all models are permitted.
+    """
     raw = os.environ.get("ALLOWED_MODELS", "").strip()
     if not raw:
         return None
     return frozenset(m.strip() for m in raw.split(",") if m.strip())
+
+
+def _is_model_allowed(model: str, allowed: Optional[frozenset]) -> bool:
+    if allowed is None:
+        return True
+    candidate = (model or "").strip()
+    return any(fnmatch.fnmatchcase(candidate, pattern) for pattern in allowed)
+
+
+_SCREENSHOT_CAPS: tuple[tuple[int, int], ...] = (
+    (1024, 768),
+    (1280, 800),
+    (1366, 768),
+)
+
+
+def _pick_capture_cap(width: int, height: int) -> tuple[int, int]:
+    width = max(1, int(width or 1))
+    height = max(1, int(height or 1))
+    aspect = width / height
+    return min(_SCREENSHOT_CAPS, key=lambda cap: abs((cap[0] / cap[1]) - aspect))
+
+
+def _captured_dimensions(width: int, height: int) -> tuple[int, int]:
+    width = max(1, int(width or 1))
+    height = max(1, int(height or 1))
+    cap_w, cap_h = _pick_capture_cap(width, height)
+    scale = min(1.0, cap_w / width, cap_h / height)
+    return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
+
+
+def _run_with_timeout(fn: Any, timeout_seconds: float, *, label: str) -> Any:
+    """Run a blocking callable in a worker thread with a hard timeout."""
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="aicapture")
+    future = executor.submit(fn)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError as exc:
+        future.cancel()
+        raise RuntimeError(f"{label} timed out") from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _capture_hwnd_image(hwnd: int) -> Image.Image:
@@ -472,11 +523,23 @@ def _capture_hwnd_image(hwnd: int) -> Image.Image:
         mem_dc.SelectObject(bitmap)
 
         pw_render_fullcontent = 0x00000002
-        result = ctypes.windll.user32.PrintWindow(hwnd, mem_dc.GetSafeHdc(), pw_render_fullcontent)
+        result = _run_with_timeout(
+            lambda: ctypes.windll.user32.PrintWindow(hwnd, mem_dc.GetSafeHdc(), pw_render_fullcontent),
+            5.0,
+            label="PrintWindow(fullcontent)",
+        )
         if result != 1:
-            result = ctypes.windll.user32.PrintWindow(hwnd, mem_dc.GetSafeHdc(), 0)
+            result = _run_with_timeout(
+                lambda: ctypes.windll.user32.PrintWindow(hwnd, mem_dc.GetSafeHdc(), 0),
+                5.0,
+                label="PrintWindow",
+            )
         if result != 1:
-            mem_dc.BitBlt((0, 0), (width, height), src_dc, (0, 0), win32con.SRCCOPY)
+            _run_with_timeout(
+                lambda: mem_dc.BitBlt((0, 0), (width, height), src_dc, (0, 0), win32con.SRCCOPY),
+                5.0,
+                label="BitBlt",
+            )
 
         bmp_info = bitmap.GetInfo()
         bmp_bytes = bitmap.GetBitmapBits(True)
@@ -493,8 +556,9 @@ def _capture_hwnd_image(hwnd: int) -> Image.Image:
         image = raw_image.copy()
         raw_image.close()
         del bmp_bytes  # release the large Win32 bitmap buffer ASAP
-        if image.size[0] > 1280 or image.size[1] > 800:
-            image.thumbnail((1280, 800), Image.Resampling.LANCZOS)
+        target_w, target_h = _pick_capture_cap(width, height)
+        if image.size[0] > target_w or image.size[1] > target_h:
+            image.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
         return image
     finally:
         if bitmap is not None:
@@ -1000,7 +1064,7 @@ class PlannerProvider:
                     deduped_tier.append(candidate)
             allowed_tier = _get_allowed_models()
             if allowed_tier is not None:
-                deduped_tier = [m for m in deduped_tier if m in allowed_tier]
+                deduped_tier = [m for m in deduped_tier if _is_model_allowed(m, allowed_tier)]
                 if not deduped_tier:
                     raise ValueError(
                         f"No models in the {self.model_tier} tier are permitted by "
@@ -1047,7 +1111,7 @@ class PlannerProvider:
 
         allowed = _get_allowed_models()
         if allowed is not None:
-            deduped = [m for m in deduped if m in allowed]
+            deduped = [m for m in deduped if _is_model_allowed(m, allowed)]
             if not deduped:
                 raise ValueError(
                     f"No models in fallback chain are permitted by ALLOWED_MODELS={os.environ.get('ALLOWED_MODELS')!r}"

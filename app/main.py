@@ -80,6 +80,13 @@ async def _lifespan(application):
 app = FastAPI(title="AI Computer", lifespan=_lifespan)
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# Serve bundled static assets (vendored JS/CSS, e.g. static/vendor/mermaid.min.js)
+# so the UI stays fully offline — no CDN dependency.
+from fastapi.staticfiles import StaticFiles
+if os.path.isdir("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
 bearer = HTTPBearer(auto_error=False)
 _tasks: Dict[str, TaskRecord] = {}
 _telegram_task: Optional[asyncio.Task] = None

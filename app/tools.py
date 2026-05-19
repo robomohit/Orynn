@@ -188,6 +188,7 @@ class ToolExecutor:
         self._background_mode = True
         self._isolated_hwnd = None
         self._isolated_app = None
+        self._started_pids: set[int] = set()
 
     @property
     def allowed_roots(self) -> tuple[Path, ...]:
@@ -239,6 +240,89 @@ class ToolExecutor:
         win32gui.EnumWindows(callback, windows)
         return windows[0] if windows else None
 
+    def _iter_matching_windows(self, title_substr: str) -> list[dict[str, Any]]:
+        if win32gui is None:
+            return []
+        needle = (title_substr or "").strip().lower()
+        matches: list[dict[str, Any]] = []
+
+        def _callback(hwnd, windows):
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return
+                title = win32gui.GetWindowText(hwnd) or ""
+                if needle and needle not in title.lower():
+                    return
+                left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+                width = max(0, right - left)
+                height = max(0, bottom - top)
+                if width <= 0 or height <= 0:
+                    return
+                pid = None
+                if win32process is not None:
+                    try:
+                        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                    except Exception:
+                        pid = None
+                windows.append({
+                    "hwnd": hwnd,
+                    "title": title,
+                    "pid": pid,
+                    "rect": (left, top, right, bottom),
+                    "area": width * height,
+                })
+            except Exception:
+                return
+
+        win32gui.EnumWindows(_callback, matches)
+        matches.sort(key=lambda item: item["area"], reverse=True)
+        return matches
+
+    def _remember_started_pid(self, pid: Optional[int]) -> None:
+        try:
+            if pid is not None and int(pid) > 0:
+                self._started_pids.add(int(pid))
+        except Exception:
+            return
+
+    def _looks_like_gui_launch(self, command: str) -> bool:
+        stripped = (command or "").strip().lower()
+        return bool(re.match(
+            r'^(start\s+\S|explorer\s|cmd\s*/c\s+start|powershell(?:\.exe)?\s+-command\s+"?start(?:-process)?)',
+            stripped,
+        ))
+
+    def _guess_launch_target_title(self, command: str) -> str:
+        if self._isolated_app:
+            return self._isolated_app
+        stripped = (command or "").strip()
+        patterns = [
+            r'^(?:cmd\s*/c\s+)?start\s+(?:"[^"]*"\s+)?(?P<target>\S+)',
+            r'^explorer\s+(?P<target>\S+)',
+            r'^powershell(?:\.exe)?\s+-command\s+"?start(?:-process)?\s+(?P<target>\S+)',
+        ]
+        target = ""
+        for pattern in patterns:
+            match = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                target = (match.group("target") or "").strip().strip('"').strip("'")
+                break
+        if not target or re.match(r"^[a-z]+://", target, flags=re.IGNORECASE):
+            return ""
+        base = Path(target.rstrip(":")).stem or target.rstrip(":")
+        alias = {
+            "notepad": "Notepad",
+            "calc": "Calculator",
+            "calculator": "Calculator",
+            "mspaint": "Paint",
+            "ms-paint": "Paint",
+            "paint": "Paint",
+            "code": "Visual Studio Code",
+            "cursor": "Cursor",
+            "explorer": "File Explorer",
+        }
+        return alias.get(base.lower(), base)
+
     def _assert_hwnd_responsive(self, hwnd: int) -> Optional[str]:
         """Return an error string if the window is gone or hung, else None."""
         try:
@@ -250,6 +334,26 @@ class ToolExecutor:
         if _is_hung_app_window(hwnd):
             return "Target window is not responding (hung)."
         return None
+
+    def current_target_hung_info(self) -> Optional[Dict[str, Any]]:
+        hwnd = self.resolve_isolated_hwnd()
+        if not hwnd:
+            return None
+        if not _is_hung_app_window(hwnd):
+            return None
+        title = ""
+        pid = None
+        if win32gui is not None:
+            try:
+                title = win32gui.GetWindowText(hwnd) or ""
+            except Exception:
+                title = ""
+        if win32process is not None:
+            try:
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            except Exception:
+                pid = None
+        return {"hwnd": hwnd, "title": title or (self._isolated_app or ""), "pid": pid}
 
     def _safe_path(self, value: str) -> Path:
         """Resolve a path within the preferred project folder or the user's home directory."""
@@ -328,11 +432,12 @@ class ToolExecutor:
 
             if not (0 <= x <= sw and 0 <= y <= sh):
                 return ToolResult(ok=False, output=f"Coordinates {x},{y} are out of bounds ({sw}x{sh})")
-            
-            import pyautogui
-            screen_w, screen_h = pyautogui.size()
-            abs_x = int(x * screen_w / sw)
-            abs_y = int(y * screen_h / sh)
+
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            window_w = max(1, right - left)
+            window_h = max(1, bottom - top)
+            abs_x = left + int(x * window_w / max(sw, 1))
+            abs_y = top + int(y * window_h / max(sh, 1))
             
             # Sub-pixel precise conversion for DPI-aware windows
             client_pt = win32gui.ScreenToClient(hwnd, (abs_x, abs_y))
@@ -695,9 +800,73 @@ class ToolExecutor:
             import time; time.sleep(0.3)
             win32gui.SetForegroundWindow(hwnd)
             actual_title = win32gui.GetWindowText(hwnd)
+            self.set_isolated_hwnd(hwnd, actual_title)
+            if win32process is not None:
+                try:
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                    self._remember_started_pid(pid)
+                except Exception:
+                    pass
             return ToolResult(ok=True, output=f"Focused window: '{actual_title}'")
         except Exception as e:
             return ToolResult(ok=False, output=f"focus_window failed: {e}")
+
+    def wait_for_window(self, title: str = "", timeout: float = 10.0, paint_seconds: float = 0.35):
+        if win32gui is None:
+            return ToolResult(ok=False, output="wait_for_window is only available on Windows.")
+        needle = (title or self._isolated_app or "").strip()
+        if not needle:
+            return ToolResult(ok=False, output="wait_for_window needs a title substring or an isolated target app.")
+
+        deadline = time.time() + max(0.1, float(timeout))
+        while time.time() < deadline:
+            matches = self._iter_matching_windows(needle)
+            if matches:
+                match = matches[0]
+                hwnd = int(match["hwnd"])
+                actual_title = match["title"] or needle
+                pid = match.get("pid")
+                self.set_isolated_hwnd(hwnd, actual_title)
+                self._remember_started_pid(pid)
+                time.sleep(max(0.0, float(paint_seconds)))
+                return ToolResult(
+                    ok=True,
+                    output=f"Window ready: '{actual_title}' (pid {pid or '?'})",
+                    data={"hwnd": hwnd, "pid": pid, "title": actual_title},
+                )
+            time.sleep(0.1)
+        return ToolResult(ok=False, output=f"Timed out waiting for a visible window matching '{needle}'.")
+
+    def _auto_wait_after_launch(self, command: str):
+        title_hint = self._guess_launch_target_title(command)
+        if not title_hint:
+            return None
+        wait_result = self.wait_for_window(title_hint, timeout=10.0)
+        if wait_result.ok and wait_result.data:
+            self.set_isolated_hwnd(wait_result.data.get("hwnd"), wait_result.data.get("title", title_hint))
+            self._remember_started_pid(wait_result.data.get("pid"))
+        return wait_result
+
+    def _launch_gui_command(self, command: str, cwd: Path) -> ToolResult:
+        try:
+            subprocess.Popen(
+                command,
+                shell=True,
+                cwd=cwd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
+        except Exception as e:
+            return ToolResult(ok=False, output=f"Launch failed: {e}")
+
+        launch_output = f"Launched (fire-and-forget): {command}\nCWD:\n{cwd}"
+        wait_result = self._auto_wait_after_launch(command)
+        if wait_result is None:
+            return ToolResult(ok=True, output=launch_output)
+        if wait_result.ok:
+            return ToolResult(ok=True, output=f"{launch_output}\n{wait_result.output}", data=wait_result.data)
+        return ToolResult(ok=False, output=f"{launch_output}\n{wait_result.output}")
 
     def run_command(self, command: str):
         try:
@@ -707,6 +876,8 @@ class ToolExecutor:
                 target = self._safe_path(mkdir_p.group(1).strip())
                 target.mkdir(parents=True, exist_ok=True)
                 return ToolResult(ok=True, output=f"Created directory: {target}")
+            if self._looks_like_gui_launch(command):
+                return self._launch_gui_command(command, self.workspace)
             res = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=120, cwd=self.workspace)
             return ToolResult(ok=res.returncode == 0, output=f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}")
         except subprocess.TimeoutExpired:
@@ -765,23 +936,8 @@ class ToolExecutor:
         # On Windows, `start <app>` / `explorer` / `cmd /c start` launch a GUI process
         # and the parent cmd.exe may never exit, causing subprocess.run to hang.
         # For these, use Popen without waiting.
-        import re as _re
-        _stripped_lower = stripped.lower()
-        _is_gui_launch = bool(_re.match(
-            r'^(start\s+\S|explorer\s|cmd\s*/c\s+start|powershell\s+-command\s+"?start)',
-            _stripped_lower
-        ))
-
-        if _is_gui_launch:
-            try:
-                subprocess.Popen(
-                    command, shell=True, cwd=self._bash_cwd,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-                )
-                return ToolResult(ok=True, output=f"Launched (fire-and-forget): {command}\nCWD:\n{self._bash_cwd}")
-            except Exception as e:
-                return ToolResult(ok=False, output=f"Launch failed: {e}")
+        if self._looks_like_gui_launch(command):
+            return self._launch_gui_command(command, self._bash_cwd)
 
         try:
             res = subprocess.run(
@@ -1084,6 +1240,7 @@ class ToolExecutor:
                 cwd=str(self.workspace),
                 errors="replace",
             )
+            self._remember_started_pid(proc.pid)
         except Exception as e:
             return ToolResult(ok=False, output=f"run_and_watch failed to spawn: {e}")
 
@@ -1215,6 +1372,64 @@ class ToolExecutor:
             return ToolResult(ok=True, output="Relevant past sessions:\n" + "\n".join(lines))
         except Exception as e:
             return ToolResult(ok=False, output=f"memory_recall error: {e}")
+
+    def delegate_coding(
+        self,
+        task: str,
+        repo_path: str = "",
+        files: Optional[list[str]] = None,
+        constraints: str = "",
+        backend: str = "",
+    ) -> ToolResult:
+        """Delegate a coding-heavy subtask to a connected coding backend."""
+        task = str(task or "").strip()
+        if not task:
+            return ToolResult(ok=False, output="delegate_coding: task must not be empty")
+
+        from .coding_backends import CodingBrief, registry
+
+        selected = registry.get(backend or None)
+        if selected is None:
+            return ToolResult(
+                ok=False,
+                output="delegate_coding: no coding backend is available. Continue locally.",
+            )
+
+        availability = selected.detect()
+        if not availability.get("available"):
+            detail = availability.get("detail") or "backend unavailable"
+            return ToolResult(
+                ok=False,
+                output=f"delegate_coding: backend '{selected.name}' is unavailable ({detail}). Continue locally.",
+                data={
+                    "backend": selected.name,
+                    "available": False,
+                    "detail": detail,
+                },
+            )
+
+        repo_root = repo_path or str(self.workspace)
+        brief = CodingBrief(
+            task=task,
+            repo_path=repo_root,
+            files=[str(item) for item in (files or []) if str(item).strip()],
+            constraints=str(constraints or "").strip(),
+        )
+        result = selected.submit(brief)
+        payload = result.to_dict()
+        payload["backend"] = selected.name
+        if result.ok:
+            summary = result.summary or "Delegated coding task completed."
+            return ToolResult(
+                ok=True,
+                output=f"Delegated to {selected.name}: {summary}",
+                data=payload,
+            )
+        return ToolResult(
+            ok=False,
+            output=f"delegate_coding: {result.error or 'backend failed to complete the task'}",
+            data=payload,
+        )
 
     def pixel_color_at(self, x: int, y: int):
         """Read the RGB hex of a single desktop pixel."""
@@ -1550,11 +1765,58 @@ class ToolExecutor:
                 proc.kill()
             else:
                 proc.terminate()
+            self._started_pids.discard(int(pid))
             return ToolResult(ok=True, output=f"Terminated process {pid} ({proc.name()})")
         except psutil.NoSuchProcess:
             return ToolResult(ok=False, output=f"No process with PID {pid}")
         except ImportError:
             return ToolResult(ok=False, output="psutil not installed.")
+        except Exception as e:
+            return ToolResult(ok=False, output=str(e))
+
+    def force_close_window(self, title: str = "", pid: Optional[int] = None, force: bool = True):
+        try:
+            import psutil
+        except ImportError:
+            return ToolResult(ok=False, output="psutil not installed.")
+
+        resolved_pid = int(pid) if pid is not None else None
+        resolved_title = (title or self._isolated_app or "").strip()
+        hwnd = None
+        if resolved_pid is None:
+            hwnd = self._get_hwnd_for_title(resolved_title)
+            if not hwnd:
+                return ToolResult(ok=False, output=f"No window with title containing '{resolved_title}' found.")
+            if win32process is not None:
+                try:
+                    _, resolved_pid = win32process.GetWindowThreadProcessId(hwnd)
+                except Exception:
+                    resolved_pid = None
+            if resolved_pid is None:
+                return ToolResult(ok=False, output=f"Found '{resolved_title}' but could not resolve its process id.")
+
+        try:
+            proc = psutil.Process(int(resolved_pid))
+            proc_name = proc.name()
+            if force:
+                proc.kill()
+            else:
+                proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                pass
+            self._started_pids.discard(int(resolved_pid))
+            if hwnd and self._isolated_hwnd == hwnd:
+                self.set_isolated_hwnd(None, self._isolated_app)
+            label = resolved_title or proc_name
+            return ToolResult(
+                ok=True,
+                output=f"Closed '{label}' via process {resolved_pid} ({proc_name})",
+                data={"pid": int(resolved_pid), "title": resolved_title or proc_name, "force": force},
+            )
+        except psutil.NoSuchProcess:
+            return ToolResult(ok=False, output=f"No process with PID {resolved_pid}")
         except Exception as e:
             return ToolResult(ok=False, output=str(e))
 
@@ -1573,6 +1835,7 @@ class ToolExecutor:
     _REQUIRED_ARGS: dict = {
         "run_command":    ["command"],
         "bash":           ["command"],
+        "wait_for_window": ["title"],
         "read_file":      ["path"],
         "write_file":     ["path", "content"],
         "move_file":      ["source", "destination"],
@@ -1602,6 +1865,7 @@ class ToolExecutor:
         "web_fetch":      ["url"],
         "web_search":     ["query"],
         "kill_process":   ["pid"],
+        "force_close_window": [],
         "list_mcp_tools": ["server_name"],
         "mcp_tool":       ["server_name", "tool_name"],
         "git":            ["command"],
@@ -1710,6 +1974,11 @@ class ToolExecutor:
             ActionType.screenshot: lambda a: self.screenshot(),
             ActionType.cursor_position: lambda a: self.cursor_position(),
             ActionType.focus_window: lambda a: self.focus_window(a.args.get("title", "")),
+            ActionType.wait_for_window: lambda a: self.wait_for_window(
+                a.args.get("title", ""),
+                a.args.get("timeout", 10.0),
+                a.args.get("paint_seconds", 0.35),
+            ),
             ActionType.wait_action: lambda a: self.wait_action(a.args.get("seconds", 1.0)),
             ActionType.ocr_image: lambda a: self.ocr_image(),
             ActionType.run_command: lambda a: self.run_command(a.args["command"]),
@@ -1747,6 +2016,11 @@ class ToolExecutor:
             ActionType.web_search: lambda a: self.web_search(a.args["query"], a.args.get("max_results", 5)),
             ActionType.list_processes: lambda a: self.list_processes(),
             ActionType.kill_process: lambda a: self.kill_process(a.args["pid"], a.args.get("force", False)),
+            ActionType.force_close_window: lambda a: self.force_close_window(
+                a.args.get("title", ""),
+                a.args.get("pid"),
+                a.args.get("force", True),
+            ),
             ActionType.virtual_input: lambda a: self.computer_action(
                 a.args.get("action", "type"),
                 **{k: v for k, v in a.args.items() if k != "action"},
@@ -1759,6 +2033,13 @@ class ToolExecutor:
             ActionType.run_tests: lambda a: self.run_tests(a.args.get("command", ""), a.args.get("path", ".")),
             ActionType.lint_code: lambda a: self.lint_code(a.args["path"]),
             ActionType.find_symbol: lambda a: self.find_symbol(a.args["symbol"], a.args.get("path", ".")),
+            ActionType.delegate_coding: lambda a: self.delegate_coding(
+                a.args.get("task", ""),
+                a.args.get("repo_path", ""),
+                a.args.get("files", []),
+                a.args.get("constraints", ""),
+                a.args.get("backend", ""),
+            ),
             # New built-ins
             ActionType.pixel_color_at: lambda a: self.pixel_color_at(a.args["x"], a.args["y"]),
             ActionType.diff_files: lambda a: self.diff_files(a.args["path_a"], a.args["path_b"]),
@@ -1785,6 +2066,7 @@ class ToolExecutor:
                         result = await asyncio.to_thread(handler, **action.args)
                     return ToolResult(ok=True, output=str(result))
                 except Exception as e:
+                    _log.exception("Plugin handler %s failed", action.type.value)
                     return ToolResult(ok=False, output=f"Plugin error: {str(e)}")
 
         return ToolResult(ok=False, output=f"Unknown action type: {action.type}")
