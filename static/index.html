@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;450;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="/static/vendor/mermaid.min.js"></script>
 <style>
   /* ================================================================
      AI COMPUTER · CODEX-GRADE STREAM
@@ -2109,6 +2109,29 @@
   }
   .cmdk-item.on .cmdk-icon { border-color: color-mix(in oklab, var(--accent) 50%, var(--line-2)); color: var(--accent); }
   .cmdk-empty { padding: 24px; text-align: center; color: var(--muted); font-size: var(--fs-sm); }
+  .shortcut-list { display: grid; gap: 8px; padding: 12px 6px 4px; }
+  .shortcut-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--line-2);
+    background: var(--bg-3);
+  }
+  .shortcut-row span { font-size: var(--fs-sm); color: var(--ink-2); }
+  .shortcut-row kbd {
+    min-width: 76px;
+    text-align: center;
+    border: 1px solid var(--line-2);
+    background: var(--bg-1);
+    border-radius: var(--r-xs);
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
 
 
   .composer-wrap {
@@ -2635,6 +2658,76 @@
   .composer-wrap { padding: 18px 20px 22px; border-top-color: transparent; }
   .composer { width: min(720px, 100%); border-radius: 14px; padding: 12px 14px 10px; }
   .composer textarea { min-height: 56px; font-size: 15px; }
+
+  /* ===== Floating voice widget — liquid-glass cowork orb ===== */
+  #vorb-root { position: fixed; right: 22px; bottom: 22px; z-index: 9000; }
+  #vorb-root * { box-sizing: border-box; }
+  .vorb {
+    width: 60px; height: 60px; border-radius: 50%; padding: 0;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative;
+    background: linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.04));
+    backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255,255,255,.2);
+    box-shadow: 0 8px 32px rgba(0,0,0,.4), inset 0 1px 1px rgba(255,255,255,.28);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .vorb:hover { transform: scale(1.07); }
+  .vorb::before {
+    content: ''; position: absolute; inset: -3px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle at 32% 26%, var(--accent-soft), transparent 66%);
+    animation: vorb-breathe 4s ease-in-out infinite;
+  }
+  @keyframes vorb-breathe { 0%,100%{transform:scale(.95);opacity:.35} 50%{transform:scale(1.08);opacity:.62} }
+  .vorb svg { width: 24px; height: 24px; color: var(--ink); position: relative; z-index: 1; }
+  .vorb.listening { box-shadow: 0 8px 32px rgba(0,0,0,.42), 0 0 0 3px var(--accent-soft); }
+  .vorb.busy::after {
+    content: ''; position: absolute; width: 9px; height: 9px; right: 5px; top: 5px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: dot-pulse 1.3s ease-in-out infinite; z-index: 2;
+  }
+  .vpanel {
+    width: 340px; max-height: 460px; border-radius: 20px;
+    display: none; flex-direction: column; overflow: hidden;
+    background: linear-gradient(160deg, rgba(30,30,36,.80), rgba(18,18,22,.88));
+    backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255,255,255,.15);
+    box-shadow: 0 24px 60px rgba(0,0,0,.52), inset 0 1px 1px rgba(255,255,255,.16);
+  }
+  #vorb-root.open .vpanel { display: flex; animation: vpanel-in .22s ease; }
+  #vorb-root.open .vorb { display: none; }
+  @keyframes vpanel-in { from{opacity:0;transform:translateY(14px) scale(.96)} to{opacity:1;transform:none} }
+  .vpanel-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .vpanel-head .vp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-3); flex: none; }
+  .vpanel-head.busy .vp-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: dot-pulse 1.3s ease-in-out infinite; }
+  .vpanel-head .vp-title { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1; }
+  .vpanel-head .vp-x { cursor: pointer; color: var(--ink-2); font-size: 20px; line-height: 1; padding: 0 7px 3px; border-radius: 6px; user-select: none; }
+  .vpanel-head .vp-x:hover { background: rgba(255,255,255,.1); color: var(--ink); }
+  .vpanel-activity { padding: 9px 14px; font-size: 12px; color: var(--ink-2); border-bottom: 1px solid rgba(255,255,255,.06); min-height: 36px; display: flex; align-items: center; }
+  .vpanel-log { flex: 1; min-height: 90px; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .vlog-msg { font-size: 12.5px; line-height: 1.5; padding: 7px 10px; border-radius: 11px; max-width: 90%; word-wrap: break-word; }
+  .vlog-msg.user { align-self: flex-end; background: var(--accent-soft); color: var(--ink); }
+  .vlog-msg.agent { align-self: flex-start; background: rgba(255,255,255,.07); color: var(--ink); }
+  .vpanel-mic-wrap { display: flex; justify-content: center; padding: 8px 0 4px; }
+  .vmic {
+    width: 52px; height: 52px; border-radius: 50%; cursor: pointer; border: none; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000));
+    box-shadow: 0 4px 16px var(--accent-soft); transition: transform .15s ease;
+  }
+  .vmic:hover { transform: scale(1.08); }
+  .vmic svg { width: 22px; height: 22px; color: #fff; }
+  .vmic.listening { animation: vmic-pulse 1.2s ease-in-out infinite; }
+  @keyframes vmic-pulse { 0%,100%{box-shadow:0 4px 16px var(--accent-soft)} 50%{box-shadow:0 4px 26px var(--accent),0 0 0 9px var(--accent-soft)} }
+  .vpanel-input { display: flex; gap: 6px; padding: 8px 12px 12px; }
+  .vpanel-input input {
+    flex: 1; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px; padding: 8px 10px; color: var(--ink); font-size: 12.5px; font-family: inherit; outline: none;
+  }
+  .vpanel-input input:focus { border-color: var(--accent); }
+  .vpanel-input button {
+    background: rgba(255,255,255,.1); border: none; border-radius: 10px; padding: 0 13px;
+    color: var(--ink); cursor: pointer; font-size: 14px;
+  }
+  .vpanel-input button:hover { background: var(--accent); color: #fff; }
 </style>
 </head>
 <body>
@@ -2734,6 +2827,12 @@
         <div class="skills-section" id="mcp-section">
           <div class="history-header"><span>Active MCP Servers</span><span id="mcp-count">0</span></div>
           <div class="skills-grid" id="mcp-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+        <div class="skills-section" id="coding-backends-section">
+          <div class="history-header"><span>Coding Backends</span><span id="coding-backend-count">0</span></div>
+          <div class="skills-grid" id="coding-backends-grid">
             <!-- Rendered via JS -->
           </div>
         </div>
@@ -2857,6 +2956,31 @@
   </footer>
 </div>
 
+<!-- Floating voice widget — liquid-glass cowork orb -->
+<div id="vorb-root" aria-live="polite">
+  <button class="vorb" id="vorb-toggle" type="button" aria-label="Open voice assistant" title="Voice assistant">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+  </button>
+  <div class="vpanel" id="vpanel" role="dialog" aria-label="Voice assistant">
+    <div class="vpanel-head" id="vpanel-head">
+      <span class="vp-dot"></span>
+      <span class="vp-title">AI Computer</span>
+      <span class="vp-x" id="vpanel-close" role="button" tabindex="0" aria-label="Minimize" title="Minimize">&minus;</span>
+    </div>
+    <div class="vpanel-activity" id="vpanel-activity">Ready when you are.</div>
+    <div class="vpanel-log" id="vpanel-log"></div>
+    <div class="vpanel-mic-wrap">
+      <button class="vmic" id="vmic" type="button" aria-label="Tap to speak" title="Tap to speak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+      </button>
+    </div>
+    <div class="vpanel-input">
+      <input type="text" id="vpanel-text" placeholder="Type or tap the mic&hellip;" autocomplete="off">
+      <button id="vpanel-send" type="button" aria-label="Send">&crarr;</button>
+    </div>
+  </div>
+</div>
+
 <div class="cmdk-overlay" id="cmdk" role="dialog" aria-label="Command palette">
   <div class="cmdk-panel">
     <div class="cmdk-input-wrap">
@@ -2865,6 +2989,23 @@
       <kbd>esc</kbd>
     </div>
     <div class="cmdk-list" id="cmdk-list"></div>
+  </div>
+</div>
+
+<div class="cmdk-overlay" id="shortcut-help" role="dialog" aria-label="Keyboard shortcuts">
+  <div class="cmdk-panel">
+    <div class="cmdk-input-wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 18h.01"/><path d="M9.09 9a3 3 0 1 1 5.82 1c0 2-3 3-3 3"/></svg>
+      <input value="Keyboard shortcuts" aria-label="Keyboard shortcuts" readonly>
+      <kbd>?</kbd>
+    </div>
+    <div class="shortcut-list">
+      <div class="shortcut-row"><span>Send task</span><kbd>Enter</kbd></div>
+      <div class="shortcut-row"><span>New line</span><kbd>Shift+Enter</kbd></div>
+      <div class="shortcut-row"><span>Command palette</span><kbd>Ctrl+K</kbd></div>
+      <div class="shortcut-row"><span>Pause / resume</span><kbd>Space</kbd></div>
+      <div class="shortcut-row"><span>Close modal</span><kbd>Esc</kbd></div>
+    </div>
   </div>
 </div>
 
@@ -3121,7 +3262,10 @@
     const openBtn = document.getElementById('open-settings');
     const closeBtn = document.getElementById('settings-close');
     if (!overlay || !openBtn) return;
-    const open = () => overlay.classList.add('show');
+    const open = () => {
+      overlay.classList.add('show');
+      loadCodingBackends();
+    };
     const close = () => overlay.classList.remove('show');
     openBtn.onclick = open;
     if (closeBtn) closeBtn.onclick = close;
@@ -5040,6 +5184,7 @@
       }).catch(() => {});
       loadSkills();
       loadMCP();
+      loadCodingBackends();
     } catch (_) {}
   };
 
@@ -5103,6 +5248,7 @@
   };
 
   let allMCPServers = [];
+  let codingBackendState = { backends: [], default: '' };
 
   const loadMCP = async () => {
     try {
@@ -5111,6 +5257,18 @@
       allMCPServers = d.servers || [];
       renderMCP();
     } catch (e) { console.error("Failed to load MCP servers", e); }
+  };
+
+  const loadCodingBackends = async () => {
+    try {
+      const r = await fetch('/api/coding-backends');
+      const d = await r.json();
+      codingBackendState = {
+        backends: d.backends || [],
+        default: d.default || '',
+      };
+      renderCodingBackends();
+    } catch (e) { console.error("Failed to load coding backends", e); }
   };
 
   const renderMCP = () => {
@@ -5142,6 +5300,43 @@
     });
     const countEl = $('mcp-count');
     if (countEl) countEl.textContent = allMCPServers.length;
+  };
+
+  const renderCodingBackends = () => {
+    const grid = $('coding-backends-grid');
+    if (!grid) return;
+    const backends = codingBackendState.backends || [];
+    grid.innerHTML = '';
+    backends.forEach((backend) => {
+      const item = document.createElement('div');
+      item.className = 'skill-item';
+      item.style.cursor = 'default';
+
+      const info = document.createElement('div');
+      info.className = 'skill-info';
+      const name = document.createElement('div');
+      name.className = 'skill-name';
+      const isDefault = backend.name && backend.name === codingBackendState.default;
+      name.textContent = `${backend.name || 'Backend'}${isDefault ? ' (default)' : ''}`;
+      const desc = document.createElement('div');
+      desc.className = 'skill-desc';
+      const bits = [];
+      if (backend.type) bits.push(backend.type);
+      if (backend.model) bits.push(backend.model);
+      if (backend.version) bits.push(backend.version);
+      bits.push(backend.available ? 'available' : (backend.detail || 'unavailable'));
+      desc.textContent = bits.filter(Boolean).join(' · ');
+      info.append(name, desc);
+
+      const toggle = document.createElement('div');
+      toggle.className = 'skill-toggle';
+      toggle.style.cssText = 'background:transparent; color:var(--muted); width:auto; min-width:fit-content; font-size:11px; display:flex; align-items:center; justify-content:flex-end; margin-left:12px;';
+      toggle.textContent = backend.available ? 'ready' : 'offline';
+      item.append(info, toggle);
+      grid.appendChild(item);
+    });
+    const countEl = $('coding-backend-count');
+    if (countEl) countEl.textContent = backends.length;
   };
 
   window.openMCPModal = (idx) => {
@@ -5385,6 +5580,14 @@
     setTimeout(() => cmdkInput.focus(), 10);
   };
   const closeCmdk = () => { cmdk.classList.remove('show'); };
+  const shortcutHelp = $('shortcut-help');
+  const openShortcutHelp = () => { if (shortcutHelp) shortcutHelp.classList.add('show'); };
+  const closeShortcutHelp = () => { if (shortcutHelp) shortcutHelp.classList.remove('show'); };
+  const isTextEntryTarget = (target) => {
+    if (!target) return false;
+    const tag = (target.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || !!target.isContentEditable;
+  };
 
   cmdkInput.addEventListener('input', (e) => filterCmdk(e.target.value));
   cmdkInput.addEventListener('keydown', (e) => {
@@ -5394,14 +5597,22 @@
     else if (e.key === 'Escape') { e.preventDefault(); closeCmdk(); }
   });
   cmdk.addEventListener('click', (e) => { if (e.target === cmdk) closeCmdk(); });
+  if (shortcutHelp) shortcutHelp.addEventListener('click', (e) => { if (e.target === shortcutHelp) closeShortcutHelp(); });
 
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       if (cmdk.classList.contains('show')) closeCmdk(); else openCmdk();
+    } else if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (isTextEntryTarget(e.target)) return;
+      e.preventDefault();
+      openShortcutHelp();
     } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
       e.preventDefault();
       const el = $('prompt'); if (el) el.focus();
+    } else if (e.key === 'Escape' && shortcutHelp && shortcutHelp.classList.contains('show')) {
+      e.preventDefault();
+      closeShortcutHelp();
     }
   });
   const cmdkBtn = $('tb-cmdk'); if (cmdkBtn) cmdkBtn.addEventListener('click', openCmdk);
@@ -5434,6 +5645,125 @@
       cancelTask();
     }
   });
+
+  /* ---------------- floating liquid-glass voice widget ----------------
+     Voice-first cowork orb: collapsed glass orb, expands to a chat panel.
+     100% additive — funnels into the existing composer pipeline, mirrors
+     agent state via a light poll, hooks speakAgentReply for replies. */
+  (function vorbWidget() {
+    const root = $('vorb-root');
+    if (!root) return;
+    const toggle = $('vorb-toggle');
+    const closeBtn = $('vpanel-close');
+    const head = $('vpanel-head');
+    const activity = $('vpanel-activity');
+    const logEl = $('vpanel-log');
+    const textIn = $('vpanel-text');
+    const sendBtn = $('vpanel-send');
+    const micBtn = $('vmic');
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    const openPanel = () => { root.classList.add('open'); if (textIn) textIn.focus(); };
+    const closePanel = () => { root.classList.remove('open'); };
+    toggle.onclick = openPanel;
+    closeBtn.onclick = closePanel;
+    closeBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closePanel(); } });
+
+    const addLog = (text, who) => {
+      const d = document.createElement('div');
+      d.className = 'vlog-msg ' + (who === 'user' ? 'user' : 'agent');
+      d.textContent = text;
+      logEl.appendChild(d);
+      logEl.scrollTop = logEl.scrollHeight;
+      while (logEl.children.length > 30) logEl.removeChild(logEl.firstChild);
+    };
+
+    const submitGoal = (text) => {
+      text = (text || '').trim();
+      if (!text) return;
+      const mainInput = $('input');
+      if (!mainInput) return;
+      if (task && sse) { addLog('A task is already running — let it finish first.', 'agent'); return; }
+      mainInput.value = text;
+      mainInput.dispatchEvent(new Event('input'));
+      addLog(text, 'user');
+      const sb = $('send');
+      if (sb) sb.click();
+      if (textIn) textIn.value = '';
+    };
+
+    sendBtn.onclick = () => submitGoal(textIn.value);
+    textIn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitGoal(textIn.value); }
+    });
+
+    // voice — speak, then auto-submit on final transcript
+    if (!SR) {
+      micBtn.style.display = 'none';
+    } else {
+      let rec = null, listening = false, finalText = '';
+      micBtn.onclick = () => {
+        if (listening && rec) { try { rec.stop(); } catch (_) {} return; }
+        rec = new SR();
+        rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = false;
+        finalText = '';
+        rec.onstart = () => { listening = true; micBtn.classList.add('listening'); toggle.classList.add('listening'); activity.textContent = 'Listening…'; };
+        rec.onresult = (e) => {
+          let t = '';
+          for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+          finalText = t;
+          if (textIn) textIn.value = t;
+        };
+        rec.onerror = () => {};
+        rec.onend = () => {
+          listening = false;
+          micBtn.classList.remove('listening');
+          toggle.classList.remove('listening');
+          if (finalText.trim()) submitGoal(finalText);
+          else activity.textContent = 'Didn’t catch that — try again.';
+        };
+        try { rec.start(); } catch (_) { listening = false; micBtn.classList.remove('listening'); }
+      };
+    }
+
+    // mirror agent state — light 700ms poll, zero coupling to existing code
+    let lastStatus = '', lastLive = '';
+    setInterval(() => {
+      const st = (typeof currentStatus !== 'undefined' && currentStatus) || 'ready';
+      const live = (typeof liveStatusMessage !== 'undefined' && liveStatusMessage) || '';
+      const busy = st === 'running';
+      toggle.classList.toggle('busy', busy);
+      head.classList.toggle('busy', busy);
+      if (st !== lastStatus || live !== lastLive) {
+        lastStatus = st; lastLive = live;
+        const labels = {
+          ready: 'Ready when you are.', running: live || 'Working on it…',
+          complete: 'Done.', failed: 'That task failed.', error: 'Something went wrong.',
+          paused: 'Paused.', cancelled: 'Cancelled.'
+        };
+        activity.textContent = labels[st] || st;
+      }
+    }, 700);
+
+    // capture agent replies into the panel log (speakAgentReply fires for
+    // every 'assistant' message; wrapping it keeps read-aloud intact)
+    const _speak = speakAgentReply;
+    speakAgentReply = function (text) {
+      try {
+        let clean = String(text || '').trim();
+        // Some completions arrive as a raw JSON blob like {"reason":"..."} —
+        // surface the human-readable field instead of the JSON.
+        if (clean.startsWith('{') && clean.endsWith('}')) {
+          try {
+            const o = JSON.parse(clean);
+            clean = o.reason || o.answer || o.text || o.message || clean;
+          } catch (_) {}
+        }
+        if (clean) addLog(clean.slice(0, 600), 'agent');
+      } catch (_) {}
+      return _speak.apply(this, arguments);
+    };
+  })();
 
   init();
 </script>
