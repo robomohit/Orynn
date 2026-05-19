@@ -749,9 +749,43 @@ def classify_task_complexity(goal: str) -> str:
 
 DEFAULT_OPENROUTER_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
 
+# Speed tiers — each is an ordered free-model fallback chain. A user picks a
+# tier ("tier:quick" / "tier:balanced") instead of a raw model; the chain
+# survives the constant free-tier flakiness (most free models error at any
+# given moment). Latencies measured 2026-05-18 against OpenRouter free tier.
+MODEL_TIERS: Dict[str, List[str]] = {
+    # Quick — fast, lighter. Fine for simple/short tasks; weaker at hard coding.
+    "quick": [
+        "liquid/lfm-2.5-1.2b-instruct:free",       # ~1s — genuinely fast, small
+        "openai/gpt-oss-20b:free",                 # ~11s — capable fallback
+        "nvidia/nemotron-nano-9b-v2:free",         # nano fallback
+    ],
+    # Balanced — best free quality; ~8-21s. The sensible default.
+    "balanced": [
+        "minimax/minimax-m2.5:free",               # ~9s — capable, mid speed
+        "openai/gpt-oss-120b:free",                # ~21s — strongest free
+        "nvidia/nemotron-3-super-120b-a12b:free",  # heavy fallback
+    ],
+}
+
+
+def resolve_model_tier(model: str) -> Optional[str]:
+    """If `model` names a speed tier ('tier:quick', 'balanced', ...), return the
+    canonical tier key; otherwise None (it's a concrete model id)."""
+    key = (model or "").strip().lower()
+    if key.startswith("tier:"):
+        key = key[5:]
+    return key if key in MODEL_TIERS else None
+
 
 class PlannerProvider:
     def __init__(self, model: str = DEFAULT_OPENROUTER_MODEL):
+        # A speed-tier selection ("tier:quick"/"tier:balanced") resolves to its
+        # primary model for all the per-model code paths; the full chain is
+        # used by _openrouter_models_to_try via self.model_tier.
+        self.model_tier: Optional[str] = resolve_model_tier(model)
+        if self.model_tier:
+            model = MODEL_TIERS[self.model_tier][0]
         self.model = model
         self._anthropic_key: Optional[str] = os.environ.get("ANTHROPIC_API_KEY")
         self._openai_key: Optional[str] = os.environ.get("OPENAI_API_KEY")
@@ -778,15 +812,32 @@ class PlannerProvider:
 
     def _is_openai(self) -> bool:
         m = self.model.lower()
-        return not m.startswith("openrouter/") and ("gpt" in m or "o1" in m or "o3" in m)
+        # A model id with a "vendor/" prefix is an OpenRouter id (e.g.
+        # "openai/gpt-oss-120b:free"), NOT the direct OpenAI API.
+        if m.startswith("openrouter/") or "/" in m:
+            return False
+        return "gpt" in m or "o1" in m or "o3" in m
 
     def _is_google(self) -> bool:
         m = self.model.lower()
-        return not m.startswith("openrouter/") and (m.startswith("gemini") or m.startswith("google/"))
+        # Only bare "gemini-*" ids hit the direct Google API. A "google/..."
+        # id (e.g. "google/gemma-4-31b-it:free") is an OpenRouter model.
+        if "/" in m:
+            return False
+        return m.startswith("gemini")
 
     def _is_groq(self) -> bool:
         m = self.model.lower()
-        return not m.startswith("openrouter/") and (m.startswith("groq/") or "llama" in m or "mixtral" in m or "gemma" in m)
+        if m.startswith("openrouter/"):
+            return False
+        if m.startswith("groq/"):
+            return True
+        # A "vendor/model" id (e.g. "google/gemma-4-31b-it:free") is an
+        # OpenRouter id — don't let the "gemma"/"llama" substring misroute it
+        # to the Groq API. Only bare model names can be Groq-hosted.
+        if "/" in m:
+            return False
+        return "llama" in m or "mixtral" in m or "gemma" in m
 
     def _chat_anthropic(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
         if not self._anthropic_key:
@@ -932,14 +983,39 @@ class PlannerProvider:
 
     def _openrouter_models_to_try(self, requested_model: str, screenshot_b64: Optional[str] = None) -> List[str]:
         """Return an ordered OpenRouter model fallback chain for this request."""
+        # Speed tier: use the tier's whole chain. The chain already survives
+        # free-tier flakiness, so no per-model fallback logic is needed.
+        if self.model_tier and self.model_tier in MODEL_TIERS:
+            chain = list(MODEL_TIERS[self.model_tier])
+            # A screenshot needs a vision model — prepend one if the tier's
+            # primary is text-only.
+            if screenshot_b64 and chain and not is_vision_model(chain[0]):
+                # Prepend free vision models so a screenshot can actually be
+                # seen. Two of them — the 31B is rate-limited often, so the
+                # 26B is a same-family backup before the text-only tier kicks in.
+                chain = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free"] + chain
+            deduped_tier: List[str] = []
+            for candidate in chain:
+                if candidate not in deduped_tier:
+                    deduped_tier.append(candidate)
+            allowed_tier = _get_allowed_models()
+            if allowed_tier is not None:
+                deduped_tier = [m for m in deduped_tier if m in allowed_tier]
+                if not deduped_tier:
+                    raise ValueError(
+                        f"No models in the {self.model_tier} tier are permitted by "
+                        f"ALLOWED_MODELS={os.environ.get('ALLOWED_MODELS')!r}"
+                    )
+            return deduped_tier
+
         model = requested_model
-        is_vision_model = any(
+        is_vision = any(
             x in model.lower()
             for x in ["vision", "vl", "gemini", "claude", "gpt-4o", "gpt-4-turbo", "pixtral", "llava", "gemma"]
         )
 
         # If a screenshot is present and the chosen model is text-only, upgrade to a vision-capable model.
-        if screenshot_b64 and not is_vision_model:
+        if screenshot_b64 and not is_vision:
             model = "google/gemma-4-31b-it:free"
 
         models_to_try: List[str] = [model]
@@ -1207,7 +1283,10 @@ class PlannerProvider:
                             if resp.status_code >= 400 and resp.status_code not in (402, 429):
                                 _body = await resp.aread()
                                 _detail = _body.decode("utf-8", errors="ignore").strip()[:600]
-                                raise RuntimeError(f"OpenRouter {resp.status_code} ({current_model}): {_detail or 'empty response body'}")
+                                # Record the error and fall through to the next model
+                                # in the fallback chain instead of aborting the task.
+                                last_err = RuntimeError(f"OpenRouter {resp.status_code} ({current_model}): {_detail or 'empty response body'}")
+                                break  # move to next model fallback
                             resp.raise_for_status()
                             async for chunk in resp.aiter_lines():
                                 if chunk.startswith("data: "):
@@ -1339,7 +1418,10 @@ class PlannerProvider:
                             if resp.status_code >= 400 and resp.status_code not in (402, 429):
                                 _body = await resp.aread()
                                 _detail = _body.decode("utf-8", errors="ignore").strip()[:600]
-                                raise RuntimeError(f"OpenRouter {resp.status_code} ({current_model}): {_detail or 'empty response body'}")
+                                # Record the error and fall through to the next model
+                                # in the fallback chain instead of aborting the task.
+                                last_err = RuntimeError(f"OpenRouter {resp.status_code} ({current_model}): {_detail or 'empty response body'}")
+                                break  # move to next model fallback
                             resp.raise_for_status()
                             async for chunk in resp.aiter_lines():
                                 if chunk.startswith("data: "):

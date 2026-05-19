@@ -548,21 +548,23 @@ class AgentService:
                 # Explain mode is inherently a vision task — a text-only model
                 # can't see the screenshot. Fail helpfully instead of letting
                 # the model vaguely answer "I don't see an image".
-                if not is_vision_model(model):
-                    _model_short = model.split("/")[-1]
-                    _vision_msg = (
-                        f"Explain mode needs a vision-capable model, but the current model "
-                        f"({_model_short}) can't see images. Switch to a vision model "
-                        f"(a Gemini, Claude, GPT-4o, Gemma, or Llava model) in Settings, then try again."
+                # Use provider.model — the RESOLVED model (a speed tier like
+                # "tier:balanced" has already been expanded to a real model id).
+                if not is_vision_model(provider.model):
+                    # Explain mode is inherently a vision task. Rather than fail
+                    # when a text-only model (or a speed tier whose primary is
+                    # text-only) is selected, transparently upgrade to a free
+                    # vision-capable model so the feature just works.
+                    _fallback_vision = "google/gemma-4-31b-it:free"
+                    _log.info(
+                        "explain mode: %s is text-only, upgrading to %s",
+                        provider.model, _fallback_vision,
                     )
-                    self._finalize(task_id, "done", _vision_msg)
-                    await self._emit(task_id, "done", {
-                        "complete": True,
-                        "reason": _vision_msg,
-                        "is_reply": True,
-                        "finished_at": datetime.now(timezone.utc).isoformat(),
+                    provider.model = _fallback_vision
+                    await self._emit(task_id, "status", {
+                        "message": "Using a vision model to read your screen…",
+                        "elapsed_seconds": 0,
                     })
-                    return
                 explain_shot = None
                 try:
                     explain_shot = _capture_screenshot_b64(screen_width, screen_height)

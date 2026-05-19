@@ -3668,6 +3668,9 @@
   const selectPreferredModelForMode = (mode) => {
     const select = $('model-id');
     if (!select || !select.options.length || !select.value) return;
+    // A speed tier is an explicit user choice — never override it with a
+    // mode-preferred raw model.
+    if (select.value.startsWith('tier:')) return;
     const preferred = mode === 'coding'
       ? ['openrouter/qwen/qwen3-coder:free', 'openrouter/nvidia/nemotron-3-super-120b-a12b:free']
       : ['openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'openrouter/google/gemma-4-31b-it:free'];
@@ -4833,6 +4836,17 @@
       const sbm = $('sb-model-val'); if (sbm) sbm.textContent = option.textContent;
       return;
     }
+    // Speed tiers first — the recommended way to choose. Each is a curated
+    // free-model fallback chain. Raw models stay below for power users.
+    [
+      { value: 'tier:balanced', label: '⚖  Balanced — best free quality' },
+      { value: 'tier:quick', label: '⚡  Quick — fast, lighter' },
+    ].forEach((tier) => {
+      const option = document.createElement('option');
+      option.value = tier.value;
+      option.textContent = tier.label;
+      select.appendChild(option);
+    });
     list.forEach((model) => {
       const option = document.createElement('option');
       option.value = model;
@@ -4841,7 +4855,7 @@
       option.textContent = label;
       select.appendChild(option);
     });
-    if (!select.value && select.options.length) select.selectedIndex = 0;
+    if (!select.value && select.options.length) select.value = 'tier:balanced';
     selectPreferredModelForMode($('mode-id')?.value || 'auto');
     const sbm = $('sb-model-val'); if (sbm) sbm.textContent = select.options[select.selectedIndex]?.textContent || '—';
     select.onchange = () => { const sbm = $('sb-model-val'); if (sbm) sbm.textContent = select.options[select.selectedIndex]?.textContent || '—'; };
