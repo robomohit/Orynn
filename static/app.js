@@ -2561,45 +2561,43 @@
       catch (_) {}
       try { window.close(); } catch (_) {}
     };
-    const head = $('vpanel-head');
-    const activity = $('vpanel-activity-text') || $('vpanel-activity');
-    const logEl = $('vpanel-log');
-    const emptyState = $('vlog-empty');
+    const activity = $('vpanel-activity-text');
     const textIn = $('vpanel-text');
     const sendBtn = $('vpanel-send');
     const micBtn = $('vmic');
-    const micHint = $('vmic-hint');
-    const subEl = $('vpanel-sub');
+    const reply = $('vreply');
+    const replyText = $('vreply-text');
+    const replyClose = $('vreply-close');
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    const openPanel = () => { root.classList.add('open'); if (textIn) textIn.focus(); };
-    const closePanel = () => { root.classList.remove('open'); };
-    toggle.onclick = openPanel;
-    closeBtn.onclick = closePanel;
-    closeBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closePanel(); } });
-
-    const addLog = (text, who) => {
-      if (emptyState && emptyState.parentNode === logEl) logEl.removeChild(emptyState);
-      const d = document.createElement('div');
-      d.className = 'vlog-msg ' + (who === 'user' ? 'user' : 'agent');
-      d.textContent = text;
-      logEl.appendChild(d);
-      logEl.scrollTop = logEl.scrollHeight;
-      while (logEl.children.length > 30) logEl.removeChild(logEl.firstChild);
+    const showReply = (text) => {
+      if (!reply || !replyText) return;
+      replyText.textContent = text;
+      reply.hidden = false;
     };
+    const hideReply = () => { if (reply) reply.hidden = true; };
+    if (replyClose) replyClose.onclick = hideReply;
+
+    const openPanel = () => { root.classList.add('open'); if (textIn) textIn.focus(); };
+    const closePanel = () => { root.classList.remove('open'); hideReply(); };
+    if (toggle) toggle.onclick = openPanel;
+    if (closeBtn) {
+      closeBtn.onclick = closePanel;
+      closeBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closePanel(); } });
+    }
 
     const submitGoal = (text) => {
       text = (text || '').trim();
       if (!text) return;
       const mainInput = $('input');
       if (!mainInput) return;
-      if (task && sse) { addLog('A task is already running — let it finish first.', 'agent'); return; }
+      if (task && sse) { showReply('A task is already running — let it finish first.'); return; }
       mainInput.value = text;
       mainInput.dispatchEvent(new Event('input'));
-      addLog(text, 'user');
       const sb = $('send');
       if (sb) sb.click();
       if (textIn) textIn.value = '';
+      hideReply();
     };
 
     sendBtn.onclick = () => submitGoal(textIn.value);
@@ -2607,7 +2605,7 @@
       if (e.key === 'Enter') { e.preventDefault(); submitGoal(textIn.value); }
     });
 
-    // voice — speak, then auto-submit on final transcript
+    // voice — tap to start; auto-submits on final transcript
     if (!SR) {
       micBtn.style.display = 'none';
     } else {
@@ -2619,12 +2617,8 @@
         finalText = '';
         rec.onstart = () => {
           listening = true;
-          micBtn.classList.add('listening');
-          toggle.classList.add('listening');
           root.classList.add('listening');
-          activity.textContent = 'Listening…';
-          if (micHint) micHint.textContent = 'Listening — tap to stop';
-          if (subEl) subEl.textContent = 'listening';
+          if (activity) activity.textContent = 'Listening…';
         };
         rec.onresult = (e) => {
           let t = '';
@@ -2635,15 +2629,11 @@
         rec.onerror = () => {};
         rec.onend = () => {
           listening = false;
-          micBtn.classList.remove('listening');
-          toggle.classList.remove('listening');
           root.classList.remove('listening');
-          if (micHint) micHint.textContent = 'Tap to speak';
-          if (subEl) subEl.textContent = 'voice assistant';
           if (finalText.trim()) submitGoal(finalText);
-          else activity.textContent = 'Didn’t catch that — try again.';
+          else if (activity) activity.textContent = 'Didn’t catch that — try again.';
         };
-        try { rec.start(); } catch (_) { listening = false; micBtn.classList.remove('listening'); }
+        try { rec.start(); } catch (_) { listening = false; root.classList.remove('listening'); }
       };
     }
 
@@ -2653,25 +2643,22 @@
       const st = (typeof currentStatus !== 'undefined' && currentStatus) || 'ready';
       const live = (typeof liveStatusMessage !== 'undefined' && liveStatusMessage) || '';
       const busy = st === 'running';
-      toggle.classList.toggle('busy', busy);
-      head.classList.toggle('busy', busy);
       root.classList.toggle('busy', busy);
       if (st !== lastStatus || live !== lastLive) {
         lastStatus = st; lastLive = live;
-        const labels = {
-          ready: 'Ready when you are.', running: live || 'Working on it…',
-          complete: 'Done.', failed: 'That task failed.', error: 'Something went wrong.',
-          paused: 'Paused.', cancelled: 'Cancelled.'
-        };
-        activity.textContent = labels[st] || st;
-        if (subEl && !root.classList.contains('listening')) {
-          const subs = { ready: 'voice assistant', running: 'working', complete: 'done', failed: 'failed', error: 'error', paused: 'paused', cancelled: 'cancelled' };
-          subEl.textContent = subs[st] || st;
+        if (activity) {
+          const labels = {
+            ready: '', running: live || 'Working on it…',
+            complete: 'Done.', failed: 'That task failed.', error: 'Something went wrong.',
+            paused: 'Paused.', cancelled: 'Cancelled.'
+          };
+          // empty string for 'ready' so the input placeholder shows through
+          activity.textContent = labels[st] !== undefined ? labels[st] : st;
         }
       }
     }, 700);
 
-    // capture agent replies into the panel log (speakAgentReply fires for
+    // capture agent replies into the reply bubble (speakAgentReply fires for
     // every 'assistant' message; wrapping it keeps read-aloud intact)
     const _speak = speakAgentReply;
     speakAgentReply = function (text) {
@@ -2685,7 +2672,7 @@
             clean = o.reason || o.answer || o.text || o.message || clean;
           } catch (_) {}
         }
-        if (clean) addLog(clean.slice(0, 600), 'agent');
+        if (clean) showReply(clean.slice(0, 600));
       } catch (_) {}
       return _speak.apply(this, arguments);
     };

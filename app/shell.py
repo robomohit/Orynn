@@ -146,8 +146,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--port", type=int, default=int(os.environ.get("AI_COMPUTER_PORT", "8765")))
     parser.add_argument("--no-server", action="store_true",
                         help="Don't start uvicorn; assume the server is already running.")
-    parser.add_argument("--width", type=int, default=380)
-    parser.add_argument("--height", type=int, default=540)
+    parser.add_argument("--width", type=int, default=520)
+    parser.add_argument("--height", type=int, default=320)
     args = parser.parse_args(argv)
     return run(port=args.port, manage_server=not args.no_server,
                width=args.width, height=args.height)
