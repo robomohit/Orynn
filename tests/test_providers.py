@@ -211,3 +211,119 @@ def test_allowed_models_supports_glob_patterns(monkeypatch):
     assert "google/gemma-4-26b-a4b-it:free" in result
     assert "meta-llama/llama-3.3-70b-instruct:free" in result
     assert "nvidia/nemotron-3-super-120b-a12b:free" not in result
+
+
+# ── Chain-retry (AI-16) ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_chain_retry_all_429_raises_friendly_message(monkeypatch):
+    """When every chain attempt exhausts all models with 429, a friendly
+    RuntimeError is raised (never a raw httpx error) and the retry status
+    event is emitted before each backoff sleep."""
+    import asyncio as _asyncio
+    import httpx as _httpx
+    from app.providers import PlannerProvider, _CHAIN_RETRY_MAX, _CHAIN_RETRY_BACKOFFS
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    provider = PlannerProvider(model="openrouter/test-model")
+
+    call_count = 0
+
+    async def _always_429(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise _httpx.HTTPStatusError(
+            "429", request=MagicMock(), response=MagicMock(status_code=429)
+        )
+        yield  # makes this an async generator
+
+    monkeypatch.setattr(provider, "_stream_chat_with_tools_single", _always_429)
+
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(n: float) -> None:
+        sleep_calls.append(n)
+
+    monkeypatch.setattr(_asyncio, "sleep", fake_sleep)
+
+    collected: list[dict] = []
+    with pytest.raises(RuntimeError, match="All free models are currently busy"):
+        async for event in provider.stream_chat_with_tools(
+            "sys", [{"role": "user", "content": "hi"}], []
+        ):
+            collected.append(event)
+
+    # Total attempts == max retries + 1
+    assert call_count == _CHAIN_RETRY_MAX + 1
+    # Friendly retry events emitted before each backoff
+    retry_events = [e for e in collected if e.get("retrying")]
+    assert len(retry_events) == _CHAIN_RETRY_MAX
+    assert all("All free models are busy" in e["message"] for e in retry_events)
+    # Sleep durations match the configured backoffs
+    assert sleep_calls == list(_CHAIN_RETRY_BACKOFFS)
+
+
+@pytest.mark.asyncio
+async def test_chain_retry_succeeds_on_second_attempt(monkeypatch):
+    """First chain attempt 429s; second attempt succeeds — task completes normally."""
+    import asyncio as _asyncio
+    import httpx as _httpx
+    from app.providers import PlannerProvider
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    provider = PlannerProvider(model="openrouter/test-model")
+
+    call_count = 0
+
+    async def _flaky(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise _httpx.HTTPStatusError(
+                "429", request=MagicMock(), response=MagicMock(status_code=429)
+            )
+        yield {"type": "text_only", "content": "success"}
+
+    monkeypatch.setattr(provider, "_stream_chat_with_tools_single", _flaky)
+    monkeypatch.setattr(_asyncio, "sleep", AsyncMock())
+
+    events = [
+        e async for e in provider.stream_chat_with_tools(
+            "sys", [{"role": "user", "content": "hi"}], []
+        )
+    ]
+
+    assert call_count == 2
+    assert any(e.get("content") == "success" for e in events)
+    assert any(e.get("retrying") for e in events)
+
+
+@pytest.mark.asyncio
+async def test_chain_retry_skips_non_rate_limit_errors(monkeypatch):
+    """A non-rate-limit HTTP error (e.g. 400) propagates immediately — no retry."""
+    import httpx as _httpx
+    from app.providers import PlannerProvider
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    provider = PlannerProvider(model="openrouter/test-model")
+
+    call_count = 0
+
+    async def _bad_request(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise _httpx.HTTPStatusError(
+            "400", request=MagicMock(), response=MagicMock(status_code=400)
+        )
+        yield
+
+    monkeypatch.setattr(provider, "_stream_chat_with_tools_single", _bad_request)
+
+    with pytest.raises(_httpx.HTTPStatusError):
+        async for _ in provider.stream_chat_with_tools(
+            "sys", [{"role": "user", "content": "hi"}], []
+        ):
+            pass
+
+    # Only one attempt — no chain retry for non-rate-limit errors
+    assert call_count == 1

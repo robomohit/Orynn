@@ -813,6 +813,12 @@ def classify_task_complexity(goal: str) -> str:
 
 DEFAULT_OPENROUTER_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
 
+# Chain-level retry: when ALL models in the fallback chain are exhausted (e.g.
+# all 429'd), retry the whole chain this many times with exponential backoff
+# before surfacing a human-readable error.  Caps total wait at ~40s.
+_CHAIN_RETRY_MAX = 2
+_CHAIN_RETRY_BACKOFFS = [10, 30]  # seconds between chain retry attempts
+
 # Speed tiers — each is an ordered free-model fallback chain. A user picks a
 # tier ("tier:quick" / "tier:balanced") instead of a raw model; the chain
 # survives the constant free-tier flakiness (most free models error at any
@@ -988,62 +994,75 @@ class PlannerProvider:
         )
 
         last_err = None
-        for current_model in models_to_try:
-            if current_model != models_to_try[0]:
-                _log.info("Fallback activated: using %s", current_model)
-            is_vision_model = any(
-                x in current_model.lower()
-                for x in ["vision", "vl", "gemini", "claude", "gpt-4o", "gpt-4-turbo", "pixtral", "llava", "gemma"]
-            )
-            content: List[Any] = [{"type": "text", "text": prompt}]
-            if screenshot_b64 and is_vision_model:
-                image_url = _image_data_url(screenshot_b64)
-                if image_url:
-                    content.insert(0, {"type": "image_url", "image_url": {"url": image_url}})
-                
-            messages = [
-                {"role": "system", "content": system},
-                {"role": "user", "content": content},
-            ]
-            payload = {"model": current_model, "messages": messages}
-            
-            is_last_model = (current_model == models_to_try[-1])
-            for attempt in range(3 if is_last_model else 1):
-                try:
-                    resp = self._http_client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {self._openrouter_key}"},
-                        json=payload,
-                    )
-                    if resp.status_code != 200:
-                        print(f"OPENROUTER ERROR ({current_model}):", resp.text)
-                    resp.raise_for_status()
-                    resp_json = resp.json()
-                    if "error" in resp_json:
-                        err_msg = resp_json["error"].get("message", str(resp_json["error"]))
-                        print(f"OPENROUTER SOFT ERROR ({current_model}): {err_msg}")
-                        # Rate/quota error on non-final model → skip to next model immediately
-                        if not is_last_model:
-                            break
-                        if attempt < 2:
+        for _chain_attempt in range(_CHAIN_RETRY_MAX + 1):
+            last_err = None
+            for current_model in models_to_try:
+                if current_model != models_to_try[0]:
+                    _log.info("Fallback activated: using %s", current_model)
+                is_vision_model = any(
+                    x in current_model.lower()
+                    for x in ["vision", "vl", "gemini", "claude", "gpt-4o", "gpt-4-turbo", "pixtral", "llava", "gemma"]
+                )
+                content: List[Any] = [{"type": "text", "text": prompt}]
+                if screenshot_b64 and is_vision_model:
+                    image_url = _image_data_url(screenshot_b64)
+                    if image_url:
+                        content.insert(0, {"type": "image_url", "image_url": {"url": image_url}})
+
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": content},
+                ]
+                payload = {"model": current_model, "messages": messages}
+
+                is_last_model = (current_model == models_to_try[-1])
+                for attempt in range(3 if is_last_model else 1):
+                    try:
+                        resp = self._http_client.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers={"Authorization": f"Bearer {self._openrouter_key}"},
+                            json=payload,
+                        )
+                        if resp.status_code != 200:
+                            print(f"OPENROUTER ERROR ({current_model}):", resp.text)
+                        resp.raise_for_status()
+                        resp_json = resp.json()
+                        if "error" in resp_json:
+                            err_msg = resp_json["error"].get("message", str(resp_json["error"]))
+                            print(f"OPENROUTER SOFT ERROR ({current_model}): {err_msg}")
+                            # Rate/quota error on non-final model → skip to next model immediately
+                            if not is_last_model:
+                                break
+                            if attempt < 2:
+                                time.sleep(2 ** (attempt + 1))
+                                continue
+                            raise RuntimeError(f"OpenRouter error: {err_msg}")
+                        if "choices" not in resp_json:
+                            raise RuntimeError(f"Unexpected OpenRouter response: {str(resp_json)[:200]}")
+                        return _extract_chat_message_text(resp_json)
+                    except httpx.HTTPStatusError as e:
+                        last_err = e
+                        if e.response.status_code in (402, 429) or e.response.status_code >= 500:
+                            if not is_last_model:
+                                break  # fail fast to next model
                             time.sleep(2 ** (attempt + 1))
                             continue
-                        raise RuntimeError(f"OpenRouter error: {err_msg}")
-                    if "choices" not in resp_json:
-                        raise RuntimeError(f"Unexpected OpenRouter response: {str(resp_json)[:200]}")
-                    return _extract_chat_message_text(resp_json)
-                except httpx.HTTPStatusError as e:
-                    last_err = e
-                    if e.response.status_code in (402, 429) or e.response.status_code >= 500:
-                        if not is_last_model:
-                            break  # fail fast to next model
-                        time.sleep(2 ** (attempt + 1))
-                        continue
-                    break
-            
-            # If we reach here, this model failed all retries or hit a hard error.
-            # The loop will continue to the next model in models_to_try.
-        raise last_err or RuntimeError("All API retries exhausted")
+                        break
+
+                # If we reach here, this model failed all retries or hit a hard error.
+                # The loop will continue to the next model in models_to_try.
+            if last_err is None:
+                break  # chain succeeded
+            if _chain_attempt < _CHAIN_RETRY_MAX:
+                _wait = _CHAIN_RETRY_BACKOFFS[_chain_attempt]
+                _log.info(
+                    "All free models are busy — retrying in %ds… (chain attempt %d/%d)",
+                    _wait, _chain_attempt + 1, _CHAIN_RETRY_MAX,
+                )
+                time.sleep(_wait)
+        raise last_err or RuntimeError(
+            "All free models are currently busy. Please try again in a moment."
+        )
 
     def _openrouter_models_to_try(self, requested_model: str, screenshot_b64: Optional[str] = None) -> List[str]:
         """Return an ordered OpenRouter model fallback chain for this request."""
@@ -1377,9 +1396,56 @@ class PlannerProvider:
         if last_err:
             raise last_err
 
-    async def stream_chat_with_tools(self, system: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]], screenshot_b64: Optional[str] = None):
+    async def stream_chat_with_tools(
+        self,
+        system: str,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        screenshot_b64: Optional[str] = None,
+    ):
+        """Public entry point: wraps _stream_chat_with_tools_single with chain retry.
+
+        When all models in the fallback chain are rate-limited, retries the whole
+        chain up to _CHAIN_RETRY_MAX times with exponential backoff, emitting a
+        friendly provider_info event before each wait.  Non-rate-limit errors
+        propagate immediately without retry.
+        """
+        import httpx as _httpx
+
+        last_err: Optional[Exception] = None
+        for _chain_attempt in range(_CHAIN_RETRY_MAX + 1):
+            last_err = None
+            try:
+                async for event in self._stream_chat_with_tools_single(
+                    system, messages, tools, screenshot_b64
+                ):
+                    yield event
+                return  # chain succeeded
+            except Exception as e:
+                last_err = e
+                _is_rate_limit = (
+                    isinstance(e, _httpx.HTTPStatusError)
+                    and e.response.status_code in (402, 429)
+                ) or isinstance(e, RuntimeError) and (
+                    "429" in str(e) or "rate" in str(e).lower() or "busy" in str(e).lower()
+                )
+                if not _is_rate_limit:
+                    raise  # non-rate-limit errors don't benefit from chain retry
+            if _chain_attempt < _CHAIN_RETRY_MAX:
+                _wait = _CHAIN_RETRY_BACKOFFS[_chain_attempt]
+                yield {
+                    "type": "provider_info",
+                    "retrying": True,
+                    "message": f"All free models are busy — retrying in {_wait}s…",
+                }
+                await asyncio.sleep(_wait)
+        raise RuntimeError(
+            "All free models are currently busy. Please try again in a moment."
+        )
+
+    async def _stream_chat_with_tools_single(self, system: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]], screenshot_b64: Optional[str] = None):
         """Async generator that streams tool calls via native function calling.
-        
+
         Yields dicts with structure:
             {"type": "thought", "content": "..."} — assistant reasoning text
             {"type": "tool_call", "name": "...", "args": {...}} — structured tool call
