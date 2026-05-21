@@ -104,3 +104,12 @@ def test_registry_tolerates_corrupt_config(tmp_path):
     reg = BackendRegistry(config_path=cfg)
     # Falls back to the default claude-code backend instead of crashing.
     assert "claude-code" in reg.backends
+
+
+def test_registry_raises_on_unknown_backend_type(tmp_path):
+    cfg = tmp_path / "backends.json"
+    cfg.write_text(json.dumps({
+        "backends": {"my-backend": {"type": "claude_code_typo", "command": "claude"}},
+    }), encoding="utf-8")
+    with pytest.raises(ValueError, match="Unknown backend type"):
+        BackendRegistry(config_path=cfg)

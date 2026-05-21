@@ -203,7 +203,12 @@ class BackendRegistry:
             if not isinstance(spec, dict):
                 continue
             btype = spec.get("type", "claude")
-            cls = _BACKEND_TYPES.get(btype, ClaudeCodeBackend)
+            cls = _BACKEND_TYPES.get(btype)
+            if cls is None:
+                raise ValueError(
+                    f"Unknown backend type {btype!r} for backend {name!r}; "
+                    f"known types: {list(_BACKEND_TYPES)}"
+                )
             self.backends[name] = cls(
                 name=name,
                 command=spec.get("command", "claude"),
