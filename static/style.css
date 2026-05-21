@@ -1727,6 +1727,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .turn-step-output-wrap { position: relative; margin-top: 4px; }
   .turn-step-output {
     font-size: 11px;
     font-family: var(--font-mono);
@@ -1736,10 +1737,18 @@
     max-height: 260px;
     overflow: auto;
     color: var(--text-2);
-    margin-top: 4px;
+    margin-top: 0;
     white-space: pre-wrap;
     word-break: break-all;
   }
+  .ts-copy-btn {
+    position: absolute; top: 5px; right: 5px;
+    background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
+    color: var(--text-3); font-size: 10px; padding: 2px 6px; cursor: pointer;
+    opacity: 0; transition: opacity .15s; line-height: 1.4;
+  }
+  .turn-step-output-wrap:hover .ts-copy-btn { opacity: 1; }
+  .ts-copy-btn:hover { background: var(--bg-hover); color: var(--text-1); }
 
   /* reasoning note */
   .reasoning-note { }

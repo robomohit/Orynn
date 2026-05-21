@@ -306,10 +306,24 @@
       }
       const rawOutput = s.outputEl ? s.outputEl.textContent.trim() : '';
       if (rawOutput) {
+        const wrap = document.createElement('div');
+        wrap.className = 'turn-step-output-wrap';
         const out = document.createElement('pre');
         out.className = 'turn-step-output';
         out.textContent = rawOutput.length > 2000 ? rawOutput.slice(0, 2000) + '\n…' : rawOutput;
-        content.appendChild(out);
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'ts-copy-btn';
+        copyBtn.type = 'button';
+        copyBtn.title = 'Copy output';
+        copyBtn.textContent = 'Copy';
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(out.textContent).catch(() => {});
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+        };
+        wrap.appendChild(out);
+        wrap.appendChild(copyBtn);
+        content.appendChild(wrap);
       }
       row.appendChild(icon);
       row.appendChild(content);

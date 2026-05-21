@@ -176,6 +176,22 @@ def test_liquid_glass_sidekick_widget_mode_present():
     assert "body.widget-shell #vorb-root" in css
 
 
+def test_turn_step_output_copy_button_present():
+    css = (_STATIC / "style.css").read_text(encoding="utf-8")
+    js = (_STATIC / "app.js").read_text(encoding="utf-8")
+
+    # CSS: copy button wrapper and hover-reveal classes
+    assert ".turn-step-output-wrap" in css
+    assert ".ts-copy-btn" in css
+    assert ".turn-step-output-wrap:hover .ts-copy-btn" in css
+
+    # JS: copy button construction and clipboard write
+    assert "turn-step-output-wrap" in js
+    assert "ts-copy-btn" in js
+    assert "navigator.clipboard.writeText" in js
+    assert "copyBtn.textContent = 'Copied!'" in js
+
+
 def test_desktop_launcher_has_frameless_widget_mode():
     launcher = (STATIC_HTML.parents[0].parent / "run_desktop.py").read_text(encoding="utf-8")
 
