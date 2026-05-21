@@ -2767,8 +2767,8 @@
   .vorb-core svg { width: 21px; height: 21px; }
   .vorb-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; z-index: 1; }
   .vorb-kicker {
-    font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--sk-faint);
+    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--sk-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .vorb-state {
     font-size: 13px; font-weight: 600; color: var(--sk-ink); letter-spacing: -.01em;
