@@ -216,16 +216,22 @@ def test_free_model_premium_controls_present():
 
 
 def test_desktop_launcher_has_frameless_widget_mode():
-    launcher = (STATIC_HTML.parents[0].parent / "run_desktop.py").read_text(encoding="utf-8")
+    root = STATIC_HTML.parents[0].parent
+    launcher = (root / "run_desktop.py").read_text(encoding="utf-8")
+    qt_shell = (root / "app" / "qt_shell.py").read_text(encoding="utf-8")
 
+    # run_desktop.py --widget delegates to the Qt shell
     assert '"--widget"' in launcher
-    assert "AI Computer Sidekick" in launcher
-    assert "http://127.0.0.1:{PORT}/?widget=1" in launcher
-    assert "frameless=True" in launcher
-    assert "on_top=True" in launcher
-    # WebView2 frameless transparency is unreliable on Windows — the shell
-    # uses an opaque dark window that hugs the capsule instead.
-    assert "transparent=False" in launcher
+    assert "qt_shell" in launcher
+
+    # the Qt shell is a frameless, translucent, always-on-top capsule with
+    # real per-pixel transparency + Windows Acrylic (WebView2 can't do this)
+    assert "AI Computer Sidekick" in qt_shell
+    assert "/?widget=1" in qt_shell
+    assert "FramelessWindowHint" in qt_shell
+    assert "WindowStaysOnTopHint" in qt_shell
+    assert "WA_TranslucentBackground" in qt_shell
+    assert "_apply_acrylic" in qt_shell
 
 
 def test_live_reasoning_not_filtered_by_step_announcement(monkeypatch):

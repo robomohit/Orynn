@@ -2604,9 +2604,33 @@
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (closeShell) closeShell.onclick = () => {
+      try { if (window.__qtShell && window.__qtShell.closeWindow) { window.__qtShell.closeWindow(); return; } } catch (_) {}
       try { if (window.pywebview && window.pywebview.api && window.pywebview.api.close_window) window.pywebview.api.close_window(); } catch (_) {}
       try { window.close(); } catch (_) {}
     };
+
+    // --- Qt shell: drag the native window by the capsule logo ---
+    const wireQtDrag = () => {
+      const grip = root.querySelector('.vcap-logo');
+      if (!grip || !window.__qtShell || !window.__qtShell.moveBy) return;
+      grip.style.cursor = 'grab';
+      grip.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        let px = e.screenX, py = e.screenY;
+        const mv = (ev) => {
+          try { window.__qtShell.moveBy(ev.screenX - px, ev.screenY - py); } catch (_) {}
+          px = ev.screenX; py = ev.screenY;
+        };
+        const up = () => {
+          document.removeEventListener('pointermove', mv);
+          document.removeEventListener('pointerup', up);
+        };
+        document.addEventListener('pointermove', mv);
+        document.addEventListener('pointerup', up);
+      });
+    };
+    if (window.__qtShell) wireQtDrag();
+    else window.addEventListener('qt-shell-ready', wireQtDrag);
 
     const setStatus = (t) => { if (statusEl) statusEl.textContent = t || ''; };
 

@@ -28,7 +28,6 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    bridge = DesktopBridge()
 
     # 1. Start the backend server in a background thread
     t = threading.Thread(target=run_server, daemon=True)
@@ -37,42 +36,31 @@ if __name__ == "__main__":
     # 2. Wait a moment for the server to initialize
     time.sleep(2)
 
-    # 3. Create the native window
-    icon_path = os.path.join(os.path.dirname(__file__), "ai_computer_app_icon_1777005021291.png")
-
     if args.widget:
-        # The window hugs the capsule. WebView2 frameless transparency is
-        # unreliable on Windows, so we use an opaque dark window (matching the
-        # capsule glass) and resize it to the capsule via the JS bridge — no
-        # empty "cube" of window background around the pill.
-        window = webview.create_window(
-            "AI Computer Sidekick",
-            f"http://127.0.0.1:{PORT}/?widget=1",
-            js_api=bridge,
-            width=600,
-            height=96,
-            min_size=(380, 72),
-            frameless=True,
-            resizable=False,
-            on_top=True,
-            transparent=False,
-            easy_drag=True,
-            background_color="#0C0F15",
-        )
-    else:
-        window = webview.create_window(
-            "AI Computer - Codex Dashboard",
-            f"http://127.0.0.1:{PORT}",
-            js_api=bridge,
-            width=1400,
-            height=900,
-            min_size=(1024, 768),
-            background_color="#0a0a0a",
-        )
+        # ── Floating Sidekick capsule ──
+        # Rendered by the Qt/QtWebEngine shell: a frameless, translucent,
+        # always-on-top window with real per-pixel transparency + Windows
+        # Acrylic, so the glass capsule genuinely blurs the desktop behind
+        # it. (WebView2/pywebview cannot do reliable window transparency.)
+        from app.qt_shell import main as qt_widget_main
+        print("[Desktop] AI Computer Sidekick (Qt shell) is launching...")
+        sys.exit(qt_widget_main(PORT))
+
+    # ── Full dashboard (pywebview) ──
+    bridge = DesktopBridge()
+    icon_path = os.path.join(os.path.dirname(__file__), "ai_computer_app_icon_1777005021291.png")
+    window = webview.create_window(
+        "AI Computer - Codex Dashboard",
+        f"http://127.0.0.1:{PORT}",
+        js_api=bridge,
+        width=1400,
+        height=900,
+        min_size=(1024, 768),
+        background_color="#0a0a0a",
+    )
 
     def bind_bridge(main_window, desktop_bridge):
         desktop_bridge.bind_window(main_window)
 
-    # 4. Launch the application
     print("[Desktop] AI Computer is launching...")
     webview.start(bind_bridge, args=(window, bridge), icon=icon_path if os.path.exists(icon_path) else None)
