@@ -2742,8 +2742,8 @@
     --cap-accent-soft: rgba(91,224,208,.18);
     --cap-accent-glow: rgba(91,224,208,.46);
     --cap-on-accent: #052621;
-    --cap-fill: linear-gradient(152deg, rgba(38,44,54,.60), rgba(18,21,28,.74));
-    --cap-rim: rgba(255,255,255,.16);
+    --cap-fill: linear-gradient(152deg, rgba(34,40,50,.32), rgba(13,16,23,.44));
+    --cap-rim: rgba(255,255,255,.18);
     --cap-rim-hi: rgba(255,255,255,.40);
     --cap-ink: #f3f4f6;
     --cap-dim: #aeb4bf;
@@ -2758,7 +2758,7 @@
     --cap-accent-soft: rgba(13,148,136,.13);
     --cap-accent-glow: rgba(13,148,136,.34);
     --cap-on-accent: #ffffff;
-    --cap-fill: linear-gradient(152deg, rgba(255,255,255,.74), rgba(244,246,248,.82));
+    --cap-fill: linear-gradient(152deg, rgba(255,255,255,.46), rgba(240,243,246,.56));
     --cap-rim: rgba(40,46,58,.12);
     --cap-rim-hi: rgba(255,255,255,1);
     --cap-ink: #181b22;
@@ -2776,7 +2776,7 @@
     display: flex; flex-direction: column;
     border-radius: 33px;
     background: var(--cap-fill);
-    backdrop-filter: blur(42px) saturate(185%); -webkit-backdrop-filter: blur(42px) saturate(185%);
+    backdrop-filter: blur(50px) saturate(200%); -webkit-backdrop-filter: blur(50px) saturate(200%);
     border: 1px solid var(--cap-rim);
     box-shadow: var(--cap-shadow), inset 0 1.5px 0 var(--cap-rim-hi);
     transition: box-shadow .3s ease, border-color .3s ease;

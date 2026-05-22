@@ -699,7 +699,15 @@ class AgentService:
         if project_rules:
             skill_instructions += f"\n\n### PROJECT RULES\n{project_rules}\n"
 
-        await self._emit(task_id, "status", {"message": f"Initializing {mode} mode...", "elapsed_seconds": 0})
+        # Conversational acknowledgement — the agent "accepts" the task in plain
+        # language before it starts working, instead of a cold "Initializing…".
+        _ack_goal = (goal or "").strip().replace("\n", " ")
+        if len(_ack_goal) > 96:
+            _ack_goal = _ack_goal[:94].rstrip() + "…"
+        await self._emit(task_id, "status", {
+            "message": f"Got it — on it now: {_ack_goal}" if _ack_goal else "Got it — starting now…",
+            "elapsed_seconds": 0,
+        })
 
         try:
             if plan_first:
@@ -1279,7 +1287,7 @@ class AgentService:
                         # ── TRY NATIVE TOOL CALLING FIRST ──
                         if use_native_tools:
                             try:
-                                await self._emit(task_id, "status", {"message": f"Thinking: sending request to {model} (step {step+1})..."})
+                                await self._emit(task_id, "status", {"message": f"Thinking through step {step+1}…"})
                                 native_stream = self._stream_with_idle_timeout(
                                     provider.stream_chat_with_tools(
                                         system,
@@ -1318,7 +1326,7 @@ class AgentService:
                                     if not _got_first_token:
                                         _got_first_token = True
                                         _ttft_task.cancel()
-                                        await self._emit(task_id, "status", {"message": f"Thinking: model responded, parsing step {step+1}..."})
+                                        await self._emit(task_id, "status", {"message": f"Working on step {step+1}…"})
                                     if event["type"] == "thought":
                                         thought_text += event["content"]
                                         _now = asyncio.get_running_loop().time()
@@ -1364,7 +1372,7 @@ class AgentService:
                             action_args_json = ""
                             delegate_info = None
 
-                            await self._emit(task_id, "status", {"message": f"Thinking: sending request to {model} (step {step+1})..."})
+                            await self._emit(task_id, "status", {"message": f"Thinking through step {step+1}…"})
                             stream_gen = self._stream_with_idle_timeout(
                                 provider.stream_chat(
                                     xml_system,
@@ -1379,7 +1387,7 @@ class AgentService:
                             async for chunk in stream_gen:
                                 if not _got_first_chunk:
                                     _got_first_chunk = True
-                                    await self._emit(task_id, "status", {"message": f"Thinking: model responded, parsing step {step+1}..."})
+                                    await self._emit(task_id, "status", {"message": f"Working on step {step+1}…"})
                                 buffer += chunk
                                 if not in_action:
                                     # Stream text before <action> tag regardless of <thought> wrapping
