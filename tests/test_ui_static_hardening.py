@@ -224,10 +224,11 @@ def test_desktop_launcher_has_frameless_widget_mode():
     assert '"--widget"' in launcher
     assert "qt_shell" in launcher
 
-    # the Qt shell is a frameless, translucent, always-on-top capsule with
-    # real per-pixel transparency + Windows Acrylic (WebView2 can't do this)
+    # the Qt shell is a frameless, translucent, always-on-top capsule built
+    # from NATIVE Qt widgets (QtWebEngine can't render transparent on Windows)
+    # — it funnels tasks to the local server over HTTP.
     assert "AI Computer Sidekick" in qt_shell
-    assert "/?widget=1" in qt_shell
+    assert "/api/tasks" in qt_shell
     assert "FramelessWindowHint" in qt_shell
     assert "WindowStaysOnTopHint" in qt_shell
     assert "WA_TranslucentBackground" in qt_shell
