@@ -41,19 +41,23 @@ if __name__ == "__main__":
     icon_path = os.path.join(os.path.dirname(__file__), "ai_computer_app_icon_1777005021291.png")
 
     if args.widget:
+        # The window hugs the capsule. WebView2 frameless transparency is
+        # unreliable on Windows, so we use an opaque dark window (matching the
+        # capsule glass) and resize it to the capsule via the JS bridge — no
+        # empty "cube" of window background around the pill.
         window = webview.create_window(
             "AI Computer Sidekick",
             f"http://127.0.0.1:{PORT}/?widget=1",
             js_api=bridge,
             width=600,
-            height=320,
-            min_size=(420, 200),
+            height=96,
+            min_size=(380, 72),
             frameless=True,
-            resizable=True,
+            resizable=False,
             on_top=True,
-            transparent=True,
+            transparent=False,
             easy_drag=True,
-            background_color="#000000",
+            background_color="#0C0F15",
         )
     else:
         window = webview.create_window(

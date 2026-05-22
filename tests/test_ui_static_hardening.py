@@ -222,8 +222,10 @@ def test_desktop_launcher_has_frameless_widget_mode():
     assert "AI Computer Sidekick" in launcher
     assert "http://127.0.0.1:{PORT}/?widget=1" in launcher
     assert "frameless=True" in launcher
-    assert "transparent=True" in launcher
     assert "on_top=True" in launcher
+    # WebView2 frameless transparency is unreliable on Windows — the shell
+    # uses an opaque dark window that hugs the capsule instead.
+    assert "transparent=False" in launcher
 
 
 def test_live_reasoning_not_filtered_by_step_announcement(monkeypatch):

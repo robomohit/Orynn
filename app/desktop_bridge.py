@@ -128,6 +128,23 @@ class DesktopBridge:
             self._main_window.destroy()
             return {"ok": True}
 
+    # Window width for the Sidekick capsule shell. The shell window hugs the
+    # capsule, so JS calls set_capsule_height() to grow/shrink the window as
+    # the capsule's reply region expands.
+    CAPSULE_WIDTH = 600
+
+    def set_capsule_height(self, height: int) -> dict[str, Any]:
+        """Resize the (frameless) Sidekick window to hug the capsule content."""
+        with self._lock:
+            if not self._main_window:
+                return {"ok": False, "error": "desktop window unavailable"}
+            try:
+                h = max(72, min(760, int(height)))
+                self._main_window.resize(self.CAPSULE_WIDTH, h)
+                return {"ok": True, "height": h}
+            except Exception as exc:  # pragma: no cover - defensive
+                return {"ok": False, "error": str(exc)}
+
     def set_desktop_companion(self, active: bool, mode: str = "", task_title: str = "") -> dict[str, Any]:
         """Enable companion mode only for full desktop control runs."""
         with self._lock:

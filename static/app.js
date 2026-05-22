@@ -2609,8 +2609,33 @@
     };
 
     const setStatus = (t) => { if (statusEl) statusEl.textContent = t || ''; };
-    const showReply = (t) => { if (reply && replyText) { replyText.textContent = t; reply.hidden = false; } };
-    const hideReply = () => { if (reply) reply.hidden = true; };
+
+    // In the desktop shell the OS window hugs the capsule — resize it to the
+    // capsule's actual height so there is no empty window "cube" around it.
+    const syncShellHeight = () => {
+      if (!widgetShell) return;
+      try {
+        const cap = document.querySelector('.vcap');
+        if (!cap) return;
+        const h = Math.ceil(cap.getBoundingClientRect().height) + 22;  // top+bottom inset
+        const api = window.pywebview && window.pywebview.api;
+        if (api && api.set_capsule_height) api.set_capsule_height(h);
+      } catch (_) {}
+    };
+    const showReply = (t) => {
+      if (reply && replyText) { replyText.textContent = t; reply.hidden = false; }
+      requestAnimationFrame(syncShellHeight);
+    };
+    const hideReply = () => { if (reply) reply.hidden = true; requestAnimationFrame(syncShellHeight); };
+    // keep the window glued to the capsule whenever it changes size
+    if (widgetShell) {
+      window.addEventListener('pywebviewready', () => setTimeout(syncShellHeight, 60));
+      setTimeout(syncShellHeight, 400);
+      try {
+        const cap = document.querySelector('.vcap');
+        if (cap && window.ResizeObserver) new ResizeObserver(syncShellHeight).observe(cap);
+      } catch (_) {}
+    }
 
     // --- funnel into the existing composer pipeline ---
     const submitGoal = (text) => {
