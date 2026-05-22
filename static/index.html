@@ -242,59 +242,32 @@
   </footer>
 </div>
 
-<!-- Floating AI Computer widget — Liquid-Glass Sidekick v2 -->
+<!-- Floating AI Computer — liquid-glass command capsule -->
 <div id="vorb-root" aria-live="polite">
-  <!-- Collapsed: pill-shaped liquid-glass toggle card -->
-  <button class="vorb" id="vorb-toggle" type="button" aria-label="Open AI Computer Sidekick" title="AI Computer Sidekick">
-    <span class="vorb-shine" aria-hidden="true"></span>
-    <span class="vorb-core" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="17" x2="12" y2="20"/><circle cx="12" cy="10.5" r="2"/></svg>
-    </span>
-    <span class="vorb-copy">
-      <span class="vorb-kicker">AI Computer</span>
-      <span class="vorb-state" id="vorb-state">Ready</span>
-    </span>
-    <span class="vorb-meter" aria-hidden="true"><i></i><i></i><i></i></span>
-  </button>
-
-  <!-- Expanded: the Sidekick panel -->
-  <div class="vpanel" id="vpanel" role="dialog" aria-label="AI Computer Sidekick">
-    <span class="vpanel-aurora" aria-hidden="true"></span>
-    <div class="vpanel-head" id="vpanel-head">
-      <span class="vp-sigil" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="17" x2="12" y2="20"/><circle cx="12" cy="10.5" r="2"/></svg>
+  <div class="vcap" id="vpanel" role="dialog" aria-label="AI Computer">
+    <span class="vcap-sheen" aria-hidden="true"></span>
+    <div class="vcap-row" id="vcap-row">
+      <span class="vcap-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2.4"/><line x1="8" y1="20.5" x2="16" y2="20.5"/><line x1="12" y1="17" x2="12" y2="20.5"/><circle cx="12" cy="10.5" r="2.1"/></svg>
       </span>
-      <span class="vp-headtext">
-        <span class="vp-title">AI Computer</span>
-        <span class="vp-sub" id="vpanel-sub">sidekick</span>
-      </span>
-      <button class="vp-iconbtn vpanel-dismiss" id="vpanel-close" type="button" aria-label="Minimize" title="Minimize">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      <div class="vcap-field">
+        <input type="text" id="vpanel-text" class="vcap-input" placeholder="Start a task&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <span class="vcap-status" id="vpanel-activity-text" aria-live="polite"></span>
+      </div>
+      <canvas class="vcap-wave" id="vcap-wave" width="148" height="34" aria-hidden="true"></canvas>
+      <button class="vcap-btn vcap-mic" id="vmic" type="button" aria-label="Tap to speak" title="Tap to speak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
       </button>
-      <button class="vp-iconbtn vp-close-shell" id="vpanel-close-shell" type="button" aria-label="Close" title="Close">
+      <button class="vcap-btn vcap-send" id="vpanel-send" type="button" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+      </button>
+      <button class="vcap-btn vcap-close" id="vpanel-close-shell" type="button" aria-label="Close" title="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
       </button>
     </div>
-    <div class="vpanel-activity">
-      <span class="vp-dot" aria-hidden="true"></span>
-      <span class="vp-activity-text" id="vpanel-activity-text">Ready when you are.</span>
-    </div>
-    <div class="vpanel-steps" id="vpanel-steps" aria-live="polite"></div>
-    <div class="vpanel-log" id="vpanel-log">
-      <div class="vlog-empty" id="vlog-empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6 10.3 11 6 9.3l4.3-1.7z"/></svg>
-        <span>Tell me what to do — type below or tap the mic.</span>
-      </div>
-    </div>
-    <div class="vpanel-compose">
-      <button class="vmic" id="vmic" type="button" aria-label="Tap to speak" title="Tap to speak">
-        <span class="vmic-ring" aria-hidden="true"></span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-      </button>
-      <input type="text" id="vpanel-text" class="vpanel-input" placeholder="Start a task&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false">
-      <button class="vpanel-send" id="vpanel-send" type="button" aria-label="Send">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
-      </button>
+    <div class="vcap-reply" id="vcap-reply" hidden>
+      <span class="vcap-reply-dot" aria-hidden="true"></span>
+      <span class="vcap-reply-text" id="vcap-reply-text"></span>
     </div>
   </div>
 </div>

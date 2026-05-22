@@ -2574,93 +2574,63 @@
     }
   });
 
-  /* ---------------- Liquid-Glass Sidekick widget ----------------
-     Collapsed = a pill-shaped glass toggle card; expands into the
-     Sidekick panel with a live step feed. 100% additive — funnels
-     into the existing composer pipeline, mirrors agent state via a
-     light poll, hooks speakAgentReply, renders the step feed, and
-     supports drag-to-reposition + a global keyboard shortcut. */
-  (function sidekickWidget() {
+  /* ---------------- Liquid-Glass command capsule ----------------
+     One ambient pill. Funnels into the existing composer pipeline,
+     mirrors agent state, renders a dot-matrix waveform, and shows
+     the agent's reply inside the capsule. */
+  (function capsuleWidget() {
     const root = $('vorb-root');
     if (!root) return;
 
-    // Widget-shell mode (?widget=1 / ?sidekick=1): the page is loaded
-    // inside the frameless pywebview window — it IS the floating widget.
     const params = new URLSearchParams(location.search);
     const widgetShell = params.get('widget') === '1' || params.get('sidekick') === '1';
     if (widgetShell) {
       document.documentElement.classList.add('widget-shell');
       document.body.classList.add('widget-shell');
-      root.classList.add('widget-shell', 'open');
+      root.classList.add('widget-shell');
+      // dark frosted glass reads best floating over an arbitrary desktop
+      document.documentElement.setAttribute('data-theme', 'dark');
     }
 
-    const toggle = $('vorb-toggle');
-    const closeBtn = $('vpanel-close');
-    const closeShell = $('vpanel-close-shell');
-    const activity = $('vpanel-activity-text');
-    const vorbState = $('vorb-state');
-    const subEl = $('vpanel-sub');
-    const stepsEl = $('vpanel-steps');
-    const logEl = $('vpanel-log');
-    const emptyState = $('vlog-empty');
-    const head = $('vpanel-head');
     const textIn = $('vpanel-text');
+    const statusEl = $('vpanel-activity-text');
     const sendBtn = $('vpanel-send');
     const micBtn = $('vmic');
+    const closeShell = $('vpanel-close-shell');
+    const reply = $('vcap-reply');
+    const replyText = $('vcap-reply-text');
+    const wave = $('vcap-wave');
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (closeShell) closeShell.onclick = () => {
-      // Ask the pywebview shell to close the window (no-op in a plain browser).
-      try { if (window.pywebview && window.pywebview.api && window.pywebview.api.close_window) window.pywebview.api.close_window(); }
-      catch (_) {}
+      try { if (window.pywebview && window.pywebview.api && window.pywebview.api.close_window) window.pywebview.api.close_window(); } catch (_) {}
       try { window.close(); } catch (_) {}
     };
 
-    // --- activity: sync the panel row + the collapsed-toggle state label ---
-    const setActivity = (text) => {
-      if (activity) activity.textContent = text || 'Ready when you are.';
-      if (vorbState) vorbState.textContent = String(text || 'Ready').slice(0, 18);
-    };
+    const setStatus = (t) => { if (statusEl) statusEl.textContent = t || ''; };
+    const showReply = (t) => { if (reply && replyText) { replyText.textContent = t; reply.hidden = false; } };
+    const hideReply = () => { if (reply) reply.hidden = true; };
 
-    const openPanel = () => { root.classList.add('open'); if (textIn) textIn.focus(); };
-    const closePanel = () => {
-      if (widgetShell) { setActivity('Docked and ready.'); return; }  // window stays
-      root.classList.remove('open');
-    };
-    if (closeBtn) closeBtn.onclick = closePanel;
-
-    // --- conversation log ---
-    const addLog = (text, who) => {
-      if (!logEl) return;
-      if (emptyState && emptyState.parentNode === logEl) logEl.removeChild(emptyState);
-      const d = document.createElement('div');
-      d.className = 'vlog-msg ' + (who === 'user' ? 'user' : 'agent');
-      d.textContent = text;
-      logEl.appendChild(d);
-      logEl.scrollTop = logEl.scrollHeight;
-      while (logEl.children.length > 24) logEl.removeChild(logEl.firstChild);
-    };
-
+    // --- funnel into the existing composer pipeline ---
     const submitGoal = (text) => {
       text = (text || '').trim();
       if (!text) return;
       const mainInput = $('input');
       if (!mainInput) return;
-      if (task && sse) { addLog('A task is already running — let it finish first.', 'agent'); return; }
+      if (task && sse) { showReply('A task is already running — let it finish first.'); return; }
       mainInput.value = text;
       mainInput.dispatchEvent(new Event('input'));
-      addLog(text, 'user');
       const sb = $('send');
       if (sb) sb.click();
       if (textIn) textIn.value = '';
+      hideReply();
     };
-
-    if (sendBtn) sendBtn.onclick = () => submitGoal(textIn.value);
+    if (sendBtn) sendBtn.onclick = () => submitGoal(textIn && textIn.value);
     if (textIn) textIn.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); submitGoal(textIn.value); }
     });
 
-    // --- voice: tap to start; auto-submits on the final transcript ---
+    // --- voice: tap to talk, auto-submit on the final transcript ---
     if (!SR) { if (micBtn) micBtn.style.display = 'none'; }
     else {
       let rec = null, listening = false, finalText = '';
@@ -2669,51 +2639,54 @@
         rec = new SR();
         rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = false;
         finalText = '';
-        rec.onstart = () => { listening = true; root.classList.add('listening'); setActivity('Listening…'); };
+        rec.onstart = () => { listening = true; root.classList.add('listening'); setStatus('Listening…'); kickWave(); };
         rec.onresult = (e) => {
-          let t = '';
-          for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+          let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
           finalText = t; if (textIn) textIn.value = t;
         };
         rec.onerror = () => {};
         rec.onend = () => {
           listening = false; root.classList.remove('listening');
           if (finalText.trim()) submitGoal(finalText);
-          else setActivity('Didn’t catch that — try again.');
+          else setStatus('Didn’t catch that — try again.');
         };
         try { rec.start(); } catch (_) { listening = false; root.classList.remove('listening'); }
       };
     }
 
-    // --- live step feed: mirror the last 5 feed step titles into the panel ---
-    const STEP_TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>';
-    let stepsFingerprint = '';
-    const syncSteps = () => {
-      if (!stepsEl) return;
-      const titles = [];
-      document.querySelectorAll(
-        '#feed .turn-summary-title, #feed .turn-summary-head, #feed .feed-card .card-title'
-      ).forEach((n) => {
-        const t = (n.textContent || '').replace(/\s+/g, ' ').trim();
-        if (t) titles.push(t);
-      });
-      const last5 = titles.slice(-5);
-      const fp = last5.join('|');
-      if (fp === stepsFingerprint) return;
-      stepsFingerprint = fp;
-      stepsEl.innerHTML = '';
-      last5.forEach((t, i) => {
-        const row = document.createElement('div');
-        row.className = 'vstep' + (i === last5.length - 1 ? ' is-last' : '');
-        const tick = document.createElement('span');
-        tick.className = 'vstep-tick'; tick.innerHTML = STEP_TICK;
-        const label = document.createElement('span');
-        label.className = 'vstep-label'; label.textContent = t.slice(0, 80);
-        row.appendChild(tick); row.appendChild(label);
-        stepsEl.appendChild(row);
-      });
-      stepsEl.scrollTop = stepsEl.scrollHeight;
-    };
+    // --- dot-matrix waveform (canvas) — animates only while active ---
+    let kickWave = () => {};
+    if (wave && wave.getContext) {
+      const ctx = wave.getContext('2d');
+      const COLS = 16, ROWS = 5, W = wave.width, H = wave.height;
+      const cw = W / COLS, dot = Math.min(cw, H / ROWS) * 0.42;
+      const phase = Array.from({ length: COLS }, (_, i) => i * 0.6);
+      let looping = false;
+      const draw = () => {
+        const active = root.classList.contains('busy') || root.classList.contains('listening');
+        const col = getComputedStyle(root).getPropertyValue('--cap-accent').trim() || '#5be0d0';
+        const now = performance.now() / 300;
+        ctx.clearRect(0, 0, W, H);
+        for (let c = 0; c < COLS; c++) {
+          const lit = active ? 1 + Math.round(((Math.sin(now + phase[c]) + 1) / 2) * (ROWS - 1)) : 1;
+          for (let r = 0; r < ROWS; r++) {
+            ctx.beginPath();
+            ctx.arc(c * cw + cw / 2, H - (r + 0.5) * (H / ROWS), dot, 0, Math.PI * 2);
+            ctx.fillStyle = col;
+            ctx.globalAlpha = r >= ROWS - lit ? (active ? 0.95 : 0.46) : 0.12;
+            ctx.fill();
+          }
+        }
+        ctx.globalAlpha = 1;
+      };
+      const frame = () => {
+        draw();
+        if (root.classList.contains('busy') || root.classList.contains('listening')) requestAnimationFrame(frame);
+        else looping = false;
+      };
+      kickWave = () => { if (!looping) { looping = true; requestAnimationFrame(frame); } };
+      draw();  // initial idle render
+    }
 
     // --- mirror agent state every 700ms ---
     let lastStatus = '', lastLive = '';
@@ -2721,23 +2694,16 @@
       const st = (typeof currentStatus !== 'undefined' && currentStatus) || 'ready';
       const live = (typeof liveStatusMessage !== 'undefined' && liveStatusMessage) || '';
       root.classList.toggle('busy', st === 'running');
+      kickWave();
       if (st !== lastStatus || live !== lastLive) {
         lastStatus = st; lastLive = live;
-        const labels = {
-          ready: 'Ready', running: live || 'Working on it…',
-          complete: 'Done', failed: 'Task failed', error: 'Error',
-          paused: 'Paused', cancelled: 'Cancelled'
-        };
-        setActivity(labels[st] !== undefined ? labels[st] : st);
-        if (subEl) {
-          const subs = { ready: 'sidekick', running: 'working', complete: 'done', failed: 'failed', error: 'error', paused: 'paused', cancelled: 'cancelled' };
-          subEl.textContent = subs[st] || 'sidekick';
-        }
+        const labels = { ready: '', running: live || 'Working on it…', complete: 'Done.',
+          failed: 'That task failed.', error: 'Something went wrong.', paused: 'Paused.', cancelled: 'Cancelled.' };
+        setStatus(labels[st] !== undefined ? labels[st] : st);
       }
-      syncSteps();
     }, 700);
 
-    // --- capture agent replies into the log (keeps read-aloud intact) ---
+    // --- capture agent replies into the capsule (keeps read-aloud intact) ---
     const _speak = speakAgentReply;
     speakAgentReply = function (text) {
       try {
@@ -2745,15 +2711,13 @@
         if (clean.startsWith('{') && clean.endsWith('}')) {
           try { const o = JSON.parse(clean); clean = o.reason || o.answer || o.text || o.message || clean; } catch (_) {}
         }
-        if (clean) addLog(clean.slice(0, 600), 'agent');
+        if (clean) showReply(clean.slice(0, 700));
       } catch (_) {}
       return _speak.apply(this, arguments);
     };
 
-    // --- drag-to-reposition (dashboard mode only) ---
-    // Position persists under a versioned key so stale coords are ignored.
+    // --- drag-to-reposition (dashboard mode only; grab the logo) ---
     const POS_KEY = 'ai-computer.vorb-position.v2';
-    let didDrag = false;
     if (!widgetShell) {
       try {
         const saved = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
@@ -2762,47 +2726,39 @@
           root.style.bottom = saved.bottom + 'px';
         }
       } catch (_) {}
-      let dragging = false, ox = 0, oy = 0, moved = 0;
+      let dragging = false, ox = 0, oy = 0;
       const onMove = (e) => {
         if (!dragging) return;
-        moved += Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy);
-        const cr = Math.max(6, Math.min(window.innerWidth - 70,
+        const cr = Math.max(8, Math.min(window.innerWidth - 130,
           parseFloat(root.style.right || '26') - (e.clientX - ox)));
-        const cb = Math.max(6, Math.min(window.innerHeight - 70,
-          parseFloat(root.style.bottom || '118') - (e.clientY - oy)));
+        const cb = Math.max(8, Math.min(window.innerHeight - 90,
+          parseFloat(root.style.bottom || '30') - (e.clientY - oy)));
         ox = e.clientX; oy = e.clientY;
         root.style.right = cr + 'px'; root.style.bottom = cb + 'px';
       };
       const onUp = () => {
         dragging = false;
-        didDrag = moved > 5;
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
         try { localStorage.setItem(POS_KEY, JSON.stringify({
-          right: parseFloat(root.style.right) || 26,
-          bottom: parseFloat(root.style.bottom) || 118
-        })); } catch (_) {}
-        setTimeout(() => { didDrag = false; }, 0);
+          right: parseFloat(root.style.right) || 26, bottom: parseFloat(root.style.bottom) || 30 })); } catch (_) {}
       };
-      const startDrag = (e) => {
-        dragging = true; moved = 0; ox = e.clientX; oy = e.clientY;
-        document.addEventListener('pointermove', onMove);
-        document.addEventListener('pointerup', onUp);
-      };
-      if (toggle) toggle.addEventListener('pointerdown', startDrag);
-      if (head) head.addEventListener('pointerdown', startDrag);
+      const grip = root.querySelector('.vcap-logo');
+      if (grip) {
+        grip.style.cursor = 'grab';
+        grip.addEventListener('pointerdown', (e) => {
+          dragging = true; ox = e.clientX; oy = e.clientY;
+          document.addEventListener('pointermove', onMove);
+          document.addEventListener('pointerup', onUp);
+        });
+      }
     }
 
-    // open the panel on toggle click — but not when the click ended a drag
-    if (toggle) toggle.addEventListener('click', () => { if (!didDrag) openPanel(); });
-
-    // --- global shortcut: Ctrl+Shift+Space toggles the Sidekick panel ---
+    // --- global shortcut: Ctrl+Shift+Space focuses the capsule input ---
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.shiftKey && e.code === 'Space') {
-        if (widgetShell) return;  // the window handles show/hide in shell mode
         e.preventDefault();
-        root.classList.toggle('open');
-        if (root.classList.contains('open') && textIn) textIn.focus();
+        if (textIn) textIn.focus();
       }
     });
   })();

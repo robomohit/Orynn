@@ -159,20 +159,24 @@ def test_phase_c2_step_timeline_present():
     assert "max-height: 260px" in css
 
 
-def test_liquid_glass_sidekick_widget_mode_present():
+def test_liquid_glass_capsule_widget_present():
+    """The floating widget is a single liquid-glass command capsule."""
     html = STATIC_HTML.read_text(encoding="utf-8")
     css = (_STATIC / "style.css").read_text(encoding="utf-8")
     js = (_STATIC / "app.js").read_text(encoding="utf-8")
 
-    assert "vorb-shine" in html
-    assert "vorb-meter" in html
-    assert 'id="vpanel-steps"' in html
-    assert "vpanel-compose" in html
+    # capsule HTML structure
+    assert 'class="vcap"' in html
+    assert 'id="vcap-wave"' in html          # dot-matrix waveform canvas
+    assert 'id="vpanel-text"' in html        # composer input (funnels to pipeline)
+    assert 'id="vcap-reply"' in html         # reply grows the capsule
+    # widget-shell mode + behaviours in JS
     assert "widgetShell" in js
     assert "params.get('widget') === '1'" in js
     assert "ai-computer.vorb-position.v2" in js
     assert "e.ctrlKey && e.shiftKey && e.code === 'Space'" in js
-    assert ".vpanel-aurora" in css
+    # capsule CSS + widget-shell overrides
+    assert ".vcap {" in css
     assert "body.widget-shell #vorb-root" in css
 
 

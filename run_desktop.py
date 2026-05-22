@@ -45,14 +45,14 @@ if __name__ == "__main__":
             "AI Computer Sidekick",
             f"http://127.0.0.1:{PORT}/?widget=1",
             js_api=bridge,
-            width=410,
-            height=560,
-            min_size=(340, 420),
+            width=600,
+            height=320,
+            min_size=(420, 200),
             frameless=True,
             resizable=True,
             on_top=True,
             transparent=True,
-            easy_drag=False,
+            easy_drag=True,
             background_color="#000000",
         )
     else:
