@@ -53,7 +53,7 @@
       </button>
     </div>
     <div class="history-search">
-      <input id="history-search" type="search" placeholder="Search history">
+      <input id="history-search" type="search" placeholder="Search history" aria-label="Search history">
     </div>
     <div class="history-header">
       <span>Sessions</span>
@@ -79,11 +79,11 @@
       </div>
       <div class="settings-body">
         <div class="settings-group">
-          <div class="selector-label">Model</div>
+          <label class="selector-label" for="model-id">Model</label>
           <select id="model-id"></select>
         </div>
         <div class="settings-group">
-          <div class="selector-label">Mode</div>
+          <label class="selector-label" for="mode-id">Mode</label>
           <select id="mode-id">
             <option value="auto">Auto detect</option>
             <option value="coding">Coding</option>
@@ -94,7 +94,7 @@
           </select>
         </div>
         <div class="selector-wrap" id="isolated-app-wrap" style="display:none">
-          <div class="selector-label">Target App (Locked)</div>
+          <label class="selector-label" for="isolated-app-id">Target App (Locked)</label>
           <input id="isolated-app-id" type="text" placeholder="e.g. Chrome, Notepad…">
           <p style="font-size:var(--fs-label);color:var(--muted-2);margin-top:6px;line-height:1.4">The agent will only see and control this app.</p>
         </div>
@@ -251,7 +251,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2.4"/><line x1="8" y1="20.5" x2="16" y2="20.5"/><line x1="12" y1="17" x2="12" y2="20.5"/><circle cx="12" cy="10.5" r="2.1"/></svg>
       </span>
       <div class="vcap-field">
-        <input type="text" id="vpanel-text" class="vcap-input" placeholder="Start a task&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <input type="text" id="vpanel-text" class="vcap-input" placeholder="Start a task&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Start a task">
         <span class="vcap-status" id="vpanel-activity-text" aria-live="polite"></span>
       </div>
       <canvas class="vcap-wave" id="vcap-wave" width="148" height="34" aria-hidden="true"></canvas>
@@ -276,7 +276,7 @@
   <div class="cmdk-panel">
     <div class="cmdk-input-wrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="cmdk-input" placeholder="Type a command or search…" autocomplete="off">
+      <input id="cmdk-input" placeholder="Type a command or search…" autocomplete="off" aria-label="Command palette input">
       <kbd>esc</kbd>
     </div>
     <div class="cmdk-list" id="cmdk-list"></div>

@@ -624,6 +624,7 @@
   .settings-group { display: grid; gap: 5px; }
 
   .selector-label {
+    display: block;
     font-size: var(--fs-label);
     font-weight: 600;
     letter-spacing: var(--track-cap);
