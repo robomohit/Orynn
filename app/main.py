@@ -155,25 +155,47 @@ async def push_capsule_widget(request: Request):
 
 @app.post("/api/capsule/test-widget")
 async def test_capsule_widget():
-    """Spawn a test Clutter Sweeper widget in all connected capsules."""
-    event = {
-        "type": "widget",
-        "widget_type": "clutter_sweeper",
-        "data": {
-            "folder": "Downloads",
-            "files": [
-                {"name": "report_final_v3.pdf", "size": "4.2 MB", "icon": "📄"},
-                {"name": "screenshot_2024.png", "size": "1.8 MB", "icon": "🖼️"},
-                {"name": "node_modules.zip", "size": "142 MB", "icon": "📦"},
-                {"name": "setup_installer.exe", "size": "28 MB", "icon": "⚙️"},
-                {"name": "meeting_notes.txt", "size": "12 KB", "icon": "📝"},
-            ],
-            "total_size": "176 MB",
-        }
-    }
+    """Scan the REAL Downloads folder and push results to capsules."""
+    from .clutter_scanner import scan_folder
+    real_data = await asyncio.to_thread(scan_folder)
+    event = {"type": "widget", "widget_type": "clutter_sweeper", "data": real_data}
     for q in _capsule_queues:
         await q.put(event)
-    return {"ok": True, "listeners": len(_capsule_queues)}
+    return {"ok": True, "listeners": len(_capsule_queues), "files_found": len(real_data.get("files", []))}
+
+
+@app.post("/api/capsule/organize")
+async def organize_capsule_files(request: Request):
+    """Organize files in a folder into category subfolders. REAL file moves."""
+    from .clutter_scanner import organize_files
+    body = await request.json()
+    folder_path = body.get("folder_path", "")
+    if not folder_path or not os.path.isdir(folder_path):
+        raise HTTPException(400, "Invalid folder_path")
+    result = await asyncio.to_thread(organize_files, folder_path)
+    return result
+
+
+@app.post("/api/capsule/delete")
+async def delete_capsule_files(request: Request):
+    """Delete specific files. REAL file deletion."""
+    from .clutter_scanner import delete_files
+    body = await request.json()
+    file_paths = body.get("file_paths", [])
+    if not file_paths:
+        raise HTTPException(400, "No file_paths provided")
+    result = await asyncio.to_thread(delete_files, file_paths)
+    return result
+
+
+@app.post("/api/capsule/scan")
+async def scan_capsule_folder(request: Request):
+    """Scan a folder and return real file listing."""
+    from .clutter_scanner import scan_folder
+    body = await request.json()
+    folder_path = body.get("folder_path", None)
+    result = await asyncio.to_thread(scan_folder, folder_path)
+    return result
 
 bearer = HTTPBearer(auto_error=False)
 _tasks: Dict[str, TaskRecord] = {}

@@ -1262,6 +1262,25 @@ class ToolExecutor:
                 proc.kill()
             except Exception:
                 pass
+
+        still_running = False
+        exit_code = None
+        try:
+            stdout, stderr = proc.communicate(timeout=watch_seconds)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                stdout, stderr = proc.communicate(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", ""
+            still_running = True
+            exit_code = -1
+        except Exception as e:
+            try:
+                proc.kill()
+            except Exception:
+                pass
             return ToolResult(ok=False, output=f"run_and_watch error: {e}")
 
         stdout = (stdout or "")[-8000:]
@@ -1302,6 +1321,67 @@ class ToolExecutor:
             "take another screenshot to verify a previous fix landed."
         )
         return ToolResult(ok=True, output=prompt, base64_image=shot.base64_image)
+
+    def analyze_folder(self, path: str = "", action: str = "scan"):
+        """Scan a real folder and push results as a Generative UI widget to the capsule.
+
+        This is the LLM-to-capsule bridge. The LLM calls this tool with a
+        dynamic path, and the result appears as an interactive widget on the
+        user's desktop.
+        """
+        from .clutter_scanner import scan_folder, organize_files
+        import httpx
+
+        # Resolve path — support ~, relative, and absolute
+        if not path or path.strip() in ("", "~", "."):
+            resolved = str(Path.home() / "Downloads")
+        elif path.startswith("~"):
+            resolved = str(Path.home() / path[2:].lstrip("/\\"))
+        elif not Path(path).is_absolute():
+            resolved = str(Path.home() / path)
+        else:
+            resolved = path
+
+        if not os.path.isdir(resolved):
+            return ToolResult(ok=False, output=f"Folder not found: {resolved}")
+
+        if action == "organize":
+            result = organize_files(resolved)
+            try:
+                httpx.post("http://127.0.0.1:8000/api/capsule/widget", json={
+                    "type": "widget",
+                    "widget_type": "status_card",
+                    "data": {
+                        "title": f"Organized {os.path.basename(resolved)}",
+                        "text": f"Moved {result['count']} files into category folders.\n"
+                                + (f"Errors: {len(result['errors'])}" if result['errors'] else "No errors."),
+                        "icon": "folder-open",
+                    }
+                }, timeout=5)
+            except Exception:
+                pass
+            return ToolResult(ok=True, output=f"Organized {result['count']} files in {resolved}")
+
+        # Default: scan
+        scan_data = scan_folder(resolved)
+
+        try:
+            httpx.post("http://127.0.0.1:8000/api/capsule/widget", json={
+                "type": "widget",
+                "widget_type": "clutter_sweeper",
+                "data": scan_data,
+            }, timeout=5)
+        except Exception:
+            pass
+
+        file_count = len(scan_data.get("files", []))
+        total = scan_data.get("total_size", "0 B")
+        folder_name = scan_data.get("folder", "folder")
+        return ToolResult(
+            ok=True,
+            output=f"Scanned {folder_name}: {file_count} files, {total} total. "
+                   f"Widget spawned in capsule showing the files sorted by size.",
+        )
 
     def todo_write(self, items):
         """Persist an explicit task plan for this task.
@@ -2026,6 +2106,7 @@ class ToolExecutor:
                 **{k: v for k, v in a.args.items() if k != "action"},
             ),
             # request_permission is normally intercepted by the agent, but stub
+            # request_permission is normally intercepted by the agent, but stub
             # it here so ActionType enum coverage is complete.
             ActionType.request_permission: lambda a: ToolResult(ok=True, output=f"Permission request for '{a.args.get('scope','')}' noted."),
             # Coding power tools
@@ -2048,6 +2129,7 @@ class ToolExecutor:
             ActionType.memory_recall: lambda a: self.memory_recall(a.args.get("query", "")),
             ActionType.run_and_watch: lambda a: self.run_and_watch(a.args["command"], a.args.get("watch_seconds", 10.0)),
             ActionType.ui_critique: lambda a: self.ui_critique(a.args.get("focus", "")),
+            ActionType.analyze_folder: lambda a: self.analyze_folder(a.args.get("path", ""), a.args.get("action", "scan")),
         }
         if action.type in handlers:
             try:

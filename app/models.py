@@ -93,6 +93,7 @@ class ActionType(str, Enum):
     memory_recall = "memory_recall"
     run_and_watch = "run_and_watch"
     ui_critique = "ui_critique"
+    analyze_folder = "analyze_folder"
 
 
 class Action(BaseModel):

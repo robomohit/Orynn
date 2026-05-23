@@ -1,9 +1,11 @@
 """Native Qt widgets for the floating capsule.
 
 Pure QWidget implementations — NO QWebEngineView, no HTML, no Tailwind.
-Every icon is SVG-rendered to QPixmap for crisp monochrome display.
+Every icon is SVG-rendered. Every button executes real actions.
 """
 from __future__ import annotations
+
+import threading
 
 from PySide6.QtCore import (
     Qt, QByteArray, QPropertyAnimation, QEasingCurve,
@@ -16,8 +18,16 @@ from PySide6.QtWidgets import (
     QFrame, QSizePolicy, QGraphicsOpacityEffect,
 )
 
+# ── Module-level API base (set by qt_shell at startup) ───────────────────────
+_API_BASE = "http://127.0.0.1:8000"
+
+
+def set_api_base(url: str):
+    global _API_BASE
+    _API_BASE = url
+
+
 # ── SVG icon library ─────────────────────────────────────────────────────────
-# All icons are Lucide-style 24×24 viewBox, thin monochrome strokes.
 _SVG_PATHS = {
     "sparkles": '<path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/>'
                 '<path d="M18 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/>',
@@ -47,12 +57,14 @@ _SVG_PATHS = {
     "check":    '<polyline points="20 6 9 17 4 12"/>',
     "trash":    '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>'
                 '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+    "folder-open": '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+    "loader":   '<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/>'
+                '<path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>',
 }
 
 
 def _render_icon(name: str, size: int = 18, color: str = "#B0B4BC",
                  stroke_w: float = 1.7) -> QPixmap:
-    """Render a named SVG icon to a crisp QPixmap."""
     body = _SVG_PATHS.get(name, "")
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
@@ -69,7 +81,6 @@ def _render_icon(name: str, size: int = 18, color: str = "#B0B4BC",
 
 
 def _icon_label(name: str, size: int = 16, color: str = "#B0B4BC") -> QLabel:
-    """Create a QLabel displaying a monochrome SVG icon."""
     lbl = QLabel()
     lbl.setPixmap(_render_icon(name, size, color))
     lbl.setFixedSize(size + 4, size + 4)
@@ -78,14 +89,12 @@ def _icon_label(name: str, size: int = 16, color: str = "#B0B4BC") -> QLabel:
     return lbl
 
 
-# ── Shared styles ────────────────────────────────────────────────────────────
 ACCENT = "#5BE0D0"
 _NO_BG = "background:transparent;border:none;"
 
 
 # ── Base card ────────────────────────────────────────────────────────────────
 class CapsuleCard(QWidget):
-    """Base class for every widget that spawns inside the capsule."""
     dismissed = Signal()
 
     def __init__(self, parent=None):
@@ -93,7 +102,6 @@ class CapsuleCard(QWidget):
         self._opacity_fx = QGraphicsOpacityEffect(self)
         self._opacity_fx.setOpacity(0.0)
         self.setGraphicsEffect(self._opacity_fx)
-        # Subtle elevated layer — NOT a heavy bordered box
         self.setStyleSheet(
             "CapsuleCard{"
             "  background: rgba(255, 255, 255, 0.04);"
@@ -106,19 +114,12 @@ class CapsuleCard(QWidget):
     def animate_in(self):
         self.setMaximumHeight(0)
         target = self.sizeHint().height() + 30
-
         fade = QPropertyAnimation(self._opacity_fx, b"opacity")
-        fade.setDuration(400)
-        fade.setStartValue(0.0)
-        fade.setEndValue(1.0)
+        fade.setDuration(400); fade.setStartValue(0.0); fade.setEndValue(1.0)
         fade.setEasingCurve(QEasingCurve.OutCubic)
-
         expand = QPropertyAnimation(self, b"maximumHeight")
-        expand.setDuration(480)
-        expand.setStartValue(0)
-        expand.setEndValue(target)
+        expand.setDuration(480); expand.setStartValue(0); expand.setEndValue(target)
         expand.setEasingCurve(QEasingCurve.OutCubic)
-
         self._anim_group = QParallelAnimationGroup(self)
         self._anim_group.addAnimation(fade)
         self._anim_group.addAnimation(expand)
@@ -126,79 +127,55 @@ class CapsuleCard(QWidget):
 
     def animate_out(self):
         fade = QPropertyAnimation(self._opacity_fx, b"opacity")
-        fade.setDuration(220)
-        fade.setStartValue(1.0)
-        fade.setEndValue(0.0)
+        fade.setDuration(220); fade.setStartValue(1.0); fade.setEndValue(0.0)
         fade.setEasingCurve(QEasingCurve.InCubic)
         fade.finished.connect(self._dismiss)
-        self._fade_out = fade
-        fade.start()
+        self._fade_out = fade; fade.start()
 
     def _dismiss(self):
-        self.dismissed.emit()
-        self.deleteLater()
+        self.dismissed.emit(); self.deleteLater()
 
 
 # ── Capability bar ───────────────────────────────────────────────────────────
 class CapabilityBar(QWidget):
-    """Row of SVG capability icons below the search bar."""
-
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(_NO_BG)
-        self.setFixedHeight(38)
+        self.setStyleSheet(_NO_BG); self.setFixedHeight(38)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(0)
         layout.addStretch()
-
-        caps = [
-            ("sparkles", "Auto detect"),
-            ("folder", "Files"),
-            ("monitor", "Screen"),
-            ("clipboard", "Clipboard"),
-            ("link", "Links"),
-            ("zap", "Actions"),
-        ]
-        for icon_name, tip in caps:
+        for icon_name, tip in [("sparkles","Auto"),("folder","Files"),
+                                ("monitor","Screen"),("clipboard","Clipboard"),
+                                ("link","Links"),("zap","Actions")]:
             btn = QPushButton()
             btn.setIcon(QIcon(_render_icon(icon_name, 16, "#8A8F98")))
-            btn.setIconSize(QSize(16, 16))
-            btn.setToolTip(tip)
-            btn.setFixedSize(36, 32)
-            btn.setCursor(Qt.PointingHandCursor)
+            btn.setIconSize(QSize(16, 16)); btn.setToolTip(tip)
+            btn.setFixedSize(36, 32); btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(
                 "QPushButton{background:transparent;border:none;border-radius:8px;}"
-                "QPushButton:hover{background:rgba(255,255,255,0.07);}"
-            )
+                "QPushButton:hover{background:rgba(255,255,255,0.07);}")
             layout.addWidget(btn)
-
-        # thin vertical separator before "Actions"
         layout.addStretch()
 
 
-# ── Dismiss button helper ────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def _make_dismiss_btn() -> QPushButton:
     btn = QPushButton()
     btn.setIcon(QIcon(_render_icon("x", 12, "#6B7280")))
-    btn.setIconSize(QSize(12, 12))
-    btn.setFixedSize(26, 26)
+    btn.setIconSize(QSize(12, 12)); btn.setFixedSize(26, 26)
     btn.setCursor(Qt.PointingHandCursor)
     btn.setStyleSheet(
         "QPushButton{background:rgba(255,255,255,0.05);border:none;border-radius:13px;}"
-        "QPushButton:hover{background:rgba(239,68,68,0.2);}"
-    )
+        "QPushButton:hover{background:rgba(239,68,68,0.2);}")
     return btn
 
-
 def _thin_divider() -> QFrame:
-    d = QFrame()
-    d.setFixedHeight(1)
+    d = QFrame(); d.setFixedHeight(1)
     d.setStyleSheet("background:rgba(255,255,255,0.06);border:none;")
     return d
 
 
-# ── File row ─────────────────────────────────────────────────────────────────
+# ── File icon map ────────────────────────────────────────────────────────────
 _FILE_ICON_MAP = {
     "pdf": "file-text", "doc": "file-text", "txt": "file-text", "md": "file-text",
     "png": "image", "jpg": "image", "jpeg": "image", "svg": "image", "gif": "image",
@@ -206,184 +183,201 @@ _FILE_ICON_MAP = {
     "exe": "settings", "msi": "settings", "bat": "settings",
 }
 
-
 def _guess_file_icon(filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     return _FILE_ICON_MAP.get(ext, "file")
 
 
 class _FileRow(QWidget):
-    """One row inside the clutter-sweeper list — clean, borderless."""
-
     def __init__(self, name: str, size: str, parent=None):
         super().__init__(parent)
         self.setFixedHeight(38)
         self.setStyleSheet(
             "QWidget{background:transparent;border:none;border-radius:8px;}"
-            "QWidget:hover{background:rgba(255,255,255,0.04);}"
-        )
+            "QWidget:hover{background:rgba(255,255,255,0.04);}")
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 0, 12, 0)
-        row.setSpacing(10)
-
-        icon_name = _guess_file_icon(name)
-        ic = _icon_label(icon_name, 15, "#7A7F88")
-        row.addWidget(ic)
-
-        nm = QLabel(name)
-        nm.setFont(QFont("Segoe UI Variable Text", 10))
-        nm.setStyleSheet(f"color:#E2E4E8;{_NO_BG}")
-        row.addWidget(nm, 1)
-
-        sz = QLabel(size)
-        sz.setFont(QFont("Segoe UI", 9))
-        sz.setStyleSheet(f"color:#6B7280;{_NO_BG}")
-        row.addWidget(sz)
+        row.setContentsMargins(8, 0, 12, 0); row.setSpacing(10)
+        row.addWidget(_icon_label(_guess_file_icon(name), 15, "#7A7F88"))
+        nm = QLabel(name); nm.setFont(QFont("Segoe UI Variable Text", 10))
+        nm.setStyleSheet(f"color:#E2E4E8;{_NO_BG}"); row.addWidget(nm, 1)
+        sz = QLabel(size); sz.setFont(QFont("Segoe UI", 9))
+        sz.setStyleSheet(f"color:#6B7280;{_NO_BG}"); row.addWidget(sz)
 
 
-# ── Clutter Sweeper widget ───────────────────────────────────────────────────
+# ── Clutter Sweeper — REAL, functional widget ────────────────────────────────
 class ClutterSweeperWidget(CapsuleCard):
-    """Shows files in a folder that can be organised / cleaned."""
+    """Shows REAL files from the OS. Buttons execute REAL actions."""
 
     def __init__(self, data: dict | None = None, parent=None):
         super().__init__(parent)
         data = data or {}
         folder = data.get("folder", "Downloads")
-        files = data.get("files", [
-            {"name": "report_final_v3.pdf", "size": "4.2 MB"},
-            {"name": "screenshot_2024.png", "size": "1.8 MB"},
-            {"name": "node_modules.zip", "size": "142 MB"},
-            {"name": "setup_installer.exe", "size": "28 MB"},
-            {"name": "meeting_notes.txt", "size": "12 KB"},
-        ])
-        total = data.get("total_size", "176 MB")
+        self._folder_path = data.get("folder_path", "")
+        self._files = data.get("files", [])
+        total = data.get("total_size", "0 B")
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(18, 16, 18, 16)
-        lay.setSpacing(0)
+        lay.setContentsMargins(18, 16, 18, 16); lay.setSpacing(0)
 
-        # ── header row ──
-        hdr = QHBoxLayout()
-        hdr.setSpacing(12)
+        # header
+        hdr = QHBoxLayout(); hdr.setSpacing(12)
         hdr.addWidget(_icon_label("broom", 20, ACCENT))
-
-        col = QVBoxLayout()
-        col.setSpacing(1)
-        title = QLabel("Clutter Sweeper")
+        col = QVBoxLayout(); col.setSpacing(1)
+        title = QLabel(f"Clutter in {folder}")
         title.setFont(QFont("Segoe UI Variable Display", 13, QFont.DemiBold))
-        title.setStyleSheet(f"color:#FFFFFF;{_NO_BG}")
-        col.addWidget(title)
-
-        sub = QLabel(f"{len(files)} items in ~/{folder}  ·  {total} reclaimable")
+        title.setStyleSheet(f"color:#FFFFFF;{_NO_BG}"); col.addWidget(title)
+        sub = QLabel(f"{len(self._files)} files  ·  {total} total")
         sub.setFont(QFont("Segoe UI", 9))
-        sub.setStyleSheet(f"color:#6B7280;{_NO_BG}")
-        col.addWidget(sub)
+        sub.setStyleSheet(f"color:#6B7280;{_NO_BG}"); col.addWidget(sub)
         hdr.addLayout(col, 1)
+        dismiss = _make_dismiss_btn(); dismiss.clicked.connect(self.animate_out)
+        hdr.addWidget(dismiss); lay.addLayout(hdr)
 
-        dismiss = _make_dismiss_btn()
-        dismiss.clicked.connect(self.animate_out)
-        hdr.addWidget(dismiss)
-        lay.addLayout(hdr)
+        lay.addSpacing(12); lay.addWidget(_thin_divider()); lay.addSpacing(8)
 
-        # ── spacer ──
-        lay.addSpacing(12)
-        lay.addWidget(_thin_divider())
-        lay.addSpacing(8)
-
-        # ── file list ──
-        for f in files[:6]:
+        # file list — real files from OS
+        shown = self._files[:8]
+        for f in shown:
             lay.addWidget(_FileRow(f["name"], f["size"]))
-
-        if len(files) > 6:
-            more = QLabel(f"+{len(files) - 6} more")
-            more.setFont(QFont("Segoe UI", 9))
-            more.setAlignment(Qt.AlignCenter)
-            more.setStyleSheet(f"color:#4B5563;{_NO_BG}")
-            more.setFixedHeight(24)
+        if len(self._files) > 8:
+            more = QLabel(f"+{len(self._files) - 8} more files")
+            more.setFont(QFont("Segoe UI", 9)); more.setAlignment(Qt.AlignCenter)
+            more.setStyleSheet(f"color:#4B5563;{_NO_BG}"); more.setFixedHeight(24)
             lay.addWidget(more)
 
-        # ── action buttons ──
-        lay.addSpacing(12)
-        btns = QHBoxLayout()
-        btns.setSpacing(8)
+        # status label (shows action results)
+        self._status = QLabel("")
+        self._status.setFont(QFont("Segoe UI", 9))
+        self._status.setStyleSheet(f"color:{ACCENT};{_NO_BG}")
+        self._status.setAlignment(Qt.AlignCenter)
+        self._status.hide()
+        lay.addWidget(self._status)
 
-        org = QPushButton("  Organize All")
-        org.setIcon(QIcon(_render_icon("check", 14, "#0A1A16", 2.2)))
-        org.setIconSize(QSize(14, 14))
-        org.setCursor(Qt.PointingHandCursor)
-        org.setFont(QFont("Segoe UI Variable Text", 10, QFont.DemiBold))
-        org.setFixedHeight(38)
-        org.setStyleSheet(
+        # action buttons — REAL actions
+        lay.addSpacing(12)
+        btns = QHBoxLayout(); btns.setSpacing(8)
+
+        self._org_btn = QPushButton("  Organize All")
+        self._org_btn.setIcon(QIcon(_render_icon("folder-open", 14, "#0A1A16", 2.2)))
+        self._org_btn.setIconSize(QSize(14, 14))
+        self._org_btn.setCursor(Qt.PointingHandCursor)
+        self._org_btn.setFont(QFont("Segoe UI Variable Text", 10, QFont.DemiBold))
+        self._org_btn.setFixedHeight(38)
+        self._org_btn.setStyleSheet(
             f"QPushButton{{background:{ACCENT};color:#0A1A16;border:none;"
             f"border-radius:10px;padding:0 18px;}}"
-            f"QPushButton:hover{{background:#6FEDE0;}}"
-        )
-        btns.addWidget(org, 1)
+            f"QPushButton:hover{{background:#6FEDE0;}}")
+        self._org_btn.clicked.connect(self._on_organize)
+        btns.addWidget(self._org_btn, 1)
 
-        rev = QPushButton("  Review")
-        rev.setIcon(QIcon(_render_icon("file-text", 14, "#B0B4BC")))
-        rev.setIconSize(QSize(14, 14))
-        rev.setCursor(Qt.PointingHandCursor)
-        rev.setFont(QFont("Segoe UI Variable Text", 10))
-        rev.setFixedHeight(38)
-        rev.setStyleSheet(
+        self._open_btn = QPushButton("  Open Folder")
+        self._open_btn.setIcon(QIcon(_render_icon("folder", 14, "#B0B4BC")))
+        self._open_btn.setIconSize(QSize(14, 14))
+        self._open_btn.setCursor(Qt.PointingHandCursor)
+        self._open_btn.setFont(QFont("Segoe UI Variable Text", 10))
+        self._open_btn.setFixedHeight(38)
+        self._open_btn.setStyleSheet(
             "QPushButton{background:rgba(255,255,255,0.06);color:#D1D5DB;"
             "border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0 18px;}"
-            "QPushButton:hover{background:rgba(255,255,255,0.10);color:#FFFFFF;}"
-        )
-        btns.addWidget(rev, 1)
+            "QPushButton:hover{background:rgba(255,255,255,0.10);color:#FFFFFF;}")
+        self._open_btn.clicked.connect(self._on_open_folder)
+        btns.addWidget(self._open_btn, 1)
 
-        del_btn = QPushButton()
-        del_btn.setIcon(QIcon(_render_icon("trash", 15, "#6B7280")))
-        del_btn.setIconSize(QSize(15, 15))
-        del_btn.setFixedSize(38, 38)
-        del_btn.setCursor(Qt.PointingHandCursor)
-        del_btn.setStyleSheet(
+        self._del_btn = QPushButton()
+        self._del_btn.setIcon(QIcon(_render_icon("trash", 15, "#6B7280")))
+        self._del_btn.setIconSize(QSize(15, 15)); self._del_btn.setFixedSize(38, 38)
+        self._del_btn.setCursor(Qt.PointingHandCursor)
+        self._del_btn.setToolTip("Delete all scanned files (careful!)")
+        self._del_btn.setStyleSheet(
             "QPushButton{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);"
             "border-radius:10px;}"
-            "QPushButton:hover{background:rgba(239,68,68,0.15);}"
-        )
-        btns.addWidget(del_btn)
-
+            "QPushButton:hover{background:rgba(239,68,68,0.15);}")
+        self._del_btn.clicked.connect(self._on_delete)
+        btns.addWidget(self._del_btn)
         lay.addLayout(btns)
+
+    # ── Real action handlers ──
+    def _set_status(self, msg: str, color: str = ACCENT):
+        self._status.setStyleSheet(f"color:{color};{_NO_BG}")
+        self._status.setText(msg); self._status.show()
+
+    def _on_organize(self):
+        if not self._folder_path:
+            self._set_status("No folder path — can't organize.", "#EF4444")
+            return
+        self._org_btn.setEnabled(False)
+        self._set_status("Organizing files...")
+        threading.Thread(target=self._do_organize, daemon=True).start()
+
+    def _do_organize(self):
+        try:
+            import httpx
+            r = httpx.post(f"{_API_BASE}/api/capsule/organize",
+                           json={"folder_path": self._folder_path}, timeout=30)
+            result = r.json()
+            count = result.get("count", 0)
+            errors = result.get("errors", [])
+            if errors:
+                QTimer.singleShot(0, lambda: self._set_status(
+                    f"Organized {count} files, {len(errors)} errors", "#F59E0B"))
+            else:
+                QTimer.singleShot(0, lambda: self._set_status(
+                    f"✓ Organized {count} files into folders", ACCENT))
+        except Exception as e:
+            QTimer.singleShot(0, lambda: self._set_status(f"Error: {e}", "#EF4444"))
+        QTimer.singleShot(0, lambda: self._org_btn.setEnabled(True))
+
+    def _on_open_folder(self):
+        if self._folder_path:
+            import subprocess
+            subprocess.Popen(["explorer", self._folder_path])
+
+    def _on_delete(self):
+        if not self._files:
+            return
+        paths = [f["path"] for f in self._files if "path" in f]
+        if not paths:
+            self._set_status("No file paths available.", "#EF4444")
+            return
+        self._del_btn.setEnabled(False)
+        self._set_status(f"Deleting {len(paths)} files...")
+        threading.Thread(target=self._do_delete, args=(paths,), daemon=True).start()
+
+    def _do_delete(self, paths: list[str]):
+        try:
+            import httpx
+            r = httpx.post(f"{_API_BASE}/api/capsule/delete",
+                           json={"file_paths": paths}, timeout=30)
+            result = r.json()
+            count = result.get("count", 0)
+            QTimer.singleShot(0, lambda: self._set_status(
+                f"✓ Deleted {count} files", ACCENT))
+        except Exception as e:
+            QTimer.singleShot(0, lambda: self._set_status(f"Error: {e}", "#EF4444"))
+        QTimer.singleShot(0, lambda: self._del_btn.setEnabled(True))
 
 
 # ── Status Card ──────────────────────────────────────────────────────────────
 class StatusCardWidget(CapsuleCard):
-    """Simple text card — used for AI replies, status, errors."""
-
     def __init__(self, data: dict | None = None, parent=None):
         super().__init__(parent)
         data = data or {}
-        text = data.get("text", "")
-        icon = data.get("icon", "sparkles")
+        text = data.get("text", ""); icon = data.get("icon", "sparkles")
         card_title = data.get("title", "AI Computer")
-
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(18, 16, 18, 16)
-        lay.setSpacing(0)
-
-        hdr = QHBoxLayout()
-        hdr.setSpacing(10)
+        lay.setContentsMargins(18, 16, 18, 16); lay.setSpacing(0)
+        hdr = QHBoxLayout(); hdr.setSpacing(10)
         hdr.addWidget(_icon_label(icon, 18, ACCENT))
         t = QLabel(card_title)
         t.setFont(QFont("Segoe UI Variable Display", 12, QFont.DemiBold))
-        t.setStyleSheet(f"color:#FFFFFF;{_NO_BG}")
-        hdr.addWidget(t, 1)
-        dismiss = _make_dismiss_btn()
-        dismiss.clicked.connect(self.animate_out)
-        hdr.addWidget(dismiss)
-        lay.addLayout(hdr)
-
+        t.setStyleSheet(f"color:#FFFFFF;{_NO_BG}"); hdr.addWidget(t, 1)
+        dismiss = _make_dismiss_btn(); dismiss.clicked.connect(self.animate_out)
+        hdr.addWidget(dismiss); lay.addLayout(hdr)
         if text:
-            lay.addSpacing(10)
-            lay.addWidget(_thin_divider())
-            lay.addSpacing(10)
-            body = QLabel(text)
-            body.setWordWrap(True)
+            lay.addSpacing(10); lay.addWidget(_thin_divider()); lay.addSpacing(10)
+            body = QLabel(text); body.setWordWrap(True)
             body.setFont(QFont("Segoe UI", 10))
-            body.setStyleSheet(f"color:#D1D5DB;{_NO_BG}line-height:1.5;")
-            body.setMaximumHeight(300)
+            body.setStyleSheet(f"color:#D1D5DB;{_NO_BG}"); body.setMaximumHeight(300)
             lay.addWidget(body)
 
 
@@ -393,10 +387,7 @@ WIDGET_REGISTRY: dict[str, type[CapsuleCard]] = {
     "status_card": StatusCardWidget,
 }
 
-
 def create_widget(widget_type: str, data: dict | None = None,
                   parent=None) -> CapsuleCard | None:
     cls = WIDGET_REGISTRY.get(widget_type)
-    if cls is None:
-        return None
-    return cls(data=data, parent=parent)
+    return cls(data=data, parent=parent) if cls else None

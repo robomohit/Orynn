@@ -58,10 +58,11 @@ TOOL_DESCRIPTIONS = {
     ActionType.memory_recall: "memory_recall: {\"query\": str} — search long-term memory for relevant past session summaries. Returns up to 5 semantically similar prior sessions. Use to recall what was done in previous related tasks.",
     ActionType.run_and_watch: "run_and_watch: {\"command\": str, \"watch_seconds\": float} — start a process, capture its stdout+stderr for watch_seconds (default 10), then kill it cleanly. Use to launch an app/server and observe its early output for crashes or errors. Returns labeled stdout/stderr plus exit_code and whether it was still running when killed.",
     ActionType.ui_critique: "ui_critique: {\"focus\": str} — take a desktop screenshot and ask the model to enumerate visible UI issues (clutter, alignment, redundancy, accessibility) with hypothesized fixes. Optional 'focus' narrows attention (e.g. 'sidebar', 'cards'). Use during UI cleanup workflows. Best in computer/auto modes where the screenshot flows back to the next turn.",
+    ActionType.analyze_folder: "analyze_folder: {\"path\": str, \"action\": str} — scan a local folder to find files and show them in a Generative UI widget on the user's desktop capsule. 'path' is the folder to scan (e.g. '~/Downloads', '~/Desktop', or any absolute path). 'action' is what to do: 'scan' (list files sorted by size), 'organize' (move files into category subfolders like Documents/, Images/, Archives/), or 'delete_large' (find files over 100MB). ALWAYS use this tool when the user asks to clean, organize, tidy, sweep, or analyze files in a folder. The results appear as an interactive widget the user can act on.",
 }
 
 TOOL_PACKS = {
-    "core": [ActionType.system_info, ActionType.finish, ActionType.request_permission, ActionType.todo_write, ActionType.memory_recall],
+    "core": [ActionType.system_info, ActionType.finish, ActionType.request_permission, ActionType.todo_write, ActionType.memory_recall, ActionType.analyze_folder],
     "filesystem": [ActionType.read_file, ActionType.write_file, ActionType.list_directory, ActionType.move_file, ActionType.file_glob, ActionType.file_grep],
     "terminal": [ActionType.run_command, ActionType.bash, ActionType.wait_for_window, ActionType.git, ActionType.run_tests, ActionType.lint_code, ActionType.find_symbol, ActionType.delegate_coding, ActionType.list_processes, ActionType.kill_process, ActionType.run_and_watch],
     "editing": [ActionType.text_view, ActionType.text_create, ActionType.text_str_replace, ActionType.text_insert, ActionType.text_undo_edit, ActionType.text_editor],

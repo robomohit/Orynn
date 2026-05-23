@@ -139,9 +139,11 @@ def main(port: int = 8000) -> int:
                                    QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
                                    QSizePolicy)
 
-    from .capsule_widgets import CapabilityBar, create_widget
+    from .capsule_widgets import CapabilityBar, create_widget, set_api_base
+    from .clutter_scanner import scan_folder
 
     BASE = f"http://127.0.0.1:{port}"
+    set_api_base(BASE)
     WIDTH = 620
     RADIUS = 26
     ACCENT = "#5BE0D0"
@@ -307,6 +309,7 @@ def main(port: int = 8000) -> int:
             self.setWindowFlags(Qt.FramelessWindowHint
                                 | Qt.WindowStaysOnTopHint | Qt.Tool)
             self.setAttribute(Qt.WA_TranslucentBackground, True)
+            self.setAttribute(Qt.WA_NoSystemBackground, True)
             self.setFixedWidth(WIDTH)
             self.setMinimumHeight(60)
             self._drag = None
@@ -442,21 +445,12 @@ def main(port: int = 8000) -> int:
             self._adjust()
 
         def _test_widget(self):
-            """Spawn a test Clutter Sweeper widget locally (no server needed)."""
+            """Scan REAL Downloads folder and show results."""
+            real_data = scan_folder()  # scans ~/Downloads
             self._spawn_widget({
                 "type": "widget",
                 "widget_type": "clutter_sweeper",
-                "data": {
-                    "folder": "Downloads",
-                    "files": [
-                        {"name": "report_final_v3.pdf", "size": "4.2 MB", "icon": "📄"},
-                        {"name": "screenshot_2024.png", "size": "1.8 MB", "icon": "🖼️"},
-                        {"name": "node_modules.zip", "size": "142 MB", "icon": "📦"},
-                        {"name": "setup_installer.exe", "size": "28 MB", "icon": "⚙️"},
-                        {"name": "meeting_notes.txt", "size": "12 KB", "icon": "📝"},
-                    ],
-                    "total_size": "176 MB",
-                }
+                "data": real_data,
             })
 
         def _spawn_widget(self, event: dict):
@@ -532,8 +526,8 @@ def main(port: int = 8000) -> int:
             path = QPainterPath()
             rect = self.rect().adjusted(0, 0, 0, 0)
             path.addRoundedRect(rect, RADIUS, RADIUS)
-            # translucent dark glass — lets acrylic blur show through
-            p.fillPath(path, QColor(14, 15, 20, 210))
+            # translucent dark glass — low alpha to let acrylic blur show
+            p.fillPath(path, QColor(14, 15, 20, 120))
             # very soft rim — barely visible, no harsh outline
             pen = QPen(QColor(255, 255, 255, 22))
             pen.setWidthF(0.5)
