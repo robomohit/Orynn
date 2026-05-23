@@ -215,6 +215,34 @@ def test_free_model_premium_controls_present():
     assert ".approval-plan-edit" in css
 
 
+def test_dynamic_widget_library_present():
+    html = STATIC_HTML.read_text(encoding="utf-8")
+    js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
+    css = (_STATIC / "style.css").read_text(encoding="utf-8")
+
+    for widget in (
+        "clutter_sweeper",
+        "smart_organizer",
+        "file_preview",
+        "resource_radar",
+        "quick_settings",
+        "network_guardian",
+        "action_approver",
+        "email_summary",
+        "source_grid",
+        "data_table",
+    ):
+        assert widget in js
+
+    assert "renderAgentWidget" in js
+    assert "playWidgetGallery" in js
+    assert 'button data-v="widgets"' in html
+    assert ".ai-widget-card" in css
+    assert ".source-grid" in css
+    assert ".widget-table" in css
+    assert "body:not(.widget-shell) #vorb-root" in css
+
+
 def test_desktop_launcher_has_frameless_widget_mode():
     root = STATIC_HTML.parents[0].parent
     launcher = (root / "run_desktop.py").read_text(encoding="utf-8")

@@ -1,7 +1,7 @@
   /* ---------------- tweak defaults (persisted via host protocol) ---------------- */
   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-    "theme": "light",
-    "accentHue": 220,
+    "theme": "dark",
+    "accentHue": 176,
     "glow": 0,
     "density": 1,
     "grain": "off",
@@ -81,6 +81,7 @@
     document.querySelectorAll('#t-demo button').forEach(btn => {
       btn.onclick = () => {
         if (btn.dataset.v === 'on') playDemoStream();
+        else if (btn.dataset.v === 'widgets') playWidgetGallery();
         else clearDemoStream();
       };
     });
@@ -549,7 +550,16 @@
     if (ttl > 0) setTimeout(() => el.remove(), ttl);
   };
 
-  const removeWelcome = () => { const w = $('welcome'); if (w) w.remove(); };
+  const markFeedActive = () => {
+    const feed = $('feed');
+    if (feed) feed.classList.add('has-events');
+  };
+
+  const removeWelcome = () => {
+    const w = $('welcome');
+    if (w) w.remove();
+    markFeedActive();
+  };
 
   const bindExamples = () => {
     document.querySelectorAll('.example-btn').forEach((btn) => {
@@ -1244,6 +1254,399 @@
     return card;
   };
 
+  const makeEl = (tag, className = '', text = '') => {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null && text !== '') el.textContent = text;
+    return el;
+  };
+
+  const setPct = (el, value) => {
+    const pct = Math.max(0, Math.min(100, Number(value) || 0));
+    el.style.setProperty('--pct', pct);
+    el.style.setProperty('--pct-text', `"${Math.round(pct)}%"`);
+  };
+
+  const widgetButton = (label, variant = '') => {
+    const btn = makeEl('button', `widget-btn ${variant}`.trim(), label);
+    btn.type = 'button';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      btn.classList.add('pressed');
+      setTimeout(() => btn.classList.remove('pressed'), 180);
+    });
+    return btn;
+  };
+
+  const renderMetricStrip = (root, metrics = []) => {
+    const strip = makeEl('div', 'widget-metrics');
+    metrics.forEach((m) => {
+      const item = makeEl('div', 'widget-metric');
+      item.appendChild(makeEl('span', 'widget-metric-label', m.label || 'Metric'));
+      item.appendChild(makeEl('strong', '', m.value || '0'));
+      if (m.detail) item.appendChild(makeEl('span', 'widget-metric-detail', m.detail));
+      strip.appendChild(item);
+    });
+    root.appendChild(strip);
+    return strip;
+  };
+
+  const renderWidgetList = (root, rows = [], opts = {}) => {
+    const list = makeEl('div', `widget-list ${opts.checks ? 'checks' : ''} ${opts.className || ''}`.trim());
+    rows.forEach((row) => {
+      const item = makeEl('div', `widget-row ${row.intent || ''}`.trim());
+      if (opts.checks) {
+        const check = makeEl('button', `widget-check ${row.checked === false ? '' : 'on'}`.trim(), row.checked === false ? '' : '✓');
+        check.type = 'button';
+        check.addEventListener('click', () => {
+          const on = check.classList.toggle('on');
+          check.textContent = on ? '✓' : '';
+        });
+        item.appendChild(check);
+      }
+      const copy = makeEl('div', 'widget-row-copy');
+      copy.appendChild(makeEl('strong', '', row.title || 'Item'));
+      if (row.subtitle) copy.appendChild(makeEl('span', '', row.subtitle));
+      item.appendChild(copy);
+      if (row.meta) item.appendChild(makeEl('span', 'widget-row-meta', row.meta));
+      if (row.action) item.appendChild(widgetButton(row.action, row.intent === 'danger' ? 'danger' : ''));
+      list.appendChild(item);
+    });
+    root.appendChild(list);
+    return list;
+  };
+
+  const widgetDefaults = {
+    clutter_sweeper: {
+      metrics: [
+        { label: 'Recoverable', value: '8.4 GB', detail: 'safe to review' },
+        { label: 'Duplicates', value: '126', detail: 'grouped' },
+        { label: 'Largest', value: '2.1 GB', detail: 'video cache' }
+      ],
+      rows: [
+        { title: 'Screen recordings cache', subtitle: 'C:\\Users\\mohit\\Videos\\Captures', meta: '2.1 GB', action: 'Wipe', intent: 'danger' },
+        { title: 'Duplicate installer bundle', subtitle: 'Downloads\\setup-copy.exe', meta: '940 MB', action: 'Wipe', intent: 'danger' },
+        { title: 'Old model temp files', subtitle: 'AppData\\Local\\Temp\\ai-cache', meta: '730 MB', action: 'Wipe', intent: 'danger' },
+        { title: 'Repeated screenshots', subtitle: 'Desktop\\captures\\*.png', meta: '418 MB', action: 'Wipe', intent: 'danger' }
+      ]
+    },
+    smart_organizer: {
+      messy: ['invoice_q4.pdf', 'cap-idle.png', 'meeting-notes.md', 'agent_trace.jsonl'],
+      folders: ['Documents / Finance', 'Pictures / UI References', 'Notes / Meetings', 'Logs / Agent Runs'],
+      moves: [
+        { title: 'invoice_q4.pdf', subtitle: 'Downloads -> Documents / Finance', meta: '96%' },
+        { title: 'cap-idle.png', subtitle: 'Desktop -> Pictures / UI References', meta: '91%' },
+        { title: 'agent_trace.jsonl', subtitle: 'Downloads -> Logs / Agent Runs', meta: '88%' }
+      ]
+    },
+    file_preview: {
+      name: 'Q3 Product Review.pdf',
+      meta: ['18 pages', 'Last edited today', '4 callouts'],
+      preview: 'Executive summary\n\nRevenue quality improved while support volume stayed flat. The biggest risk is onboarding friction in the first 10 minutes. Recommended next move: simplify the first-run workspace picker, then measure task completion rate by cohort.'
+    },
+    resource_radar: {
+      meters: [
+        { label: 'CPU', value: 38 },
+        { label: 'RAM', value: 67 },
+        { label: 'GPU', value: 24 }
+      ],
+      bars: [34, 44, 28, 61, 48, 76, 45, 58, 37, 64, 42, 52],
+      processes: [
+        { title: 'python.exe', subtitle: 'AI Computer server', meta: '418 MB', action: 'Keep' },
+        { title: 'msedgewebview2.exe', subtitle: 'background webview', meta: '311 MB', action: 'Kill', intent: 'danger' },
+        { title: 'Code.exe', subtitle: 'extension host', meta: '268 MB', action: 'Inspect' }
+      ]
+    },
+    quick_settings: {
+      toggles: [
+        { title: 'Focus', active: true },
+        { title: 'Dark', active: true },
+        { title: 'Mute', active: false },
+        { title: 'Power saver', active: false },
+        { title: 'VPN', active: true },
+        { title: 'Clipboard', active: true }
+      ]
+    },
+    network_guardian: {
+      rows: [
+        { title: 'OneDrive.exe', subtitle: 'Syncing screenshots', meta: '2.4 MB/s up', pct: 82, action: 'Throttle' },
+        { title: 'Chrome.exe', subtitle: 'Streaming media tab', meta: '5.8 MB/s down', pct: 68, action: 'Inspect' },
+        { title: 'Unknown helper', subtitle: 'Unsigned background process', meta: '640 KB/s up', pct: 42, action: 'Block', intent: 'danger' }
+      ]
+    },
+    action_approver: {
+      title: 'PowerShell deletion request',
+      reason: 'The agent wants to remove duplicate files from Downloads.',
+      code: 'Remove-Item -LiteralPath "C:\\Users\\mohit\\Downloads\\setup-copy.exe" -Force\nRemove-Item -LiteralPath "C:\\Users\\mohit\\AppData\\Local\\Temp\\ai-cache" -Recurse -Force',
+      risks: ['Deletes files', 'No recycle bin', '2 paths']
+    },
+    email_summary: {
+      title: 'Client escalation thread',
+      bullets: [
+        'Customer is blocked by login redirects after SSO migration.',
+        'They need a status update before 4 PM Mountain.',
+        'Engineering suspects stale callback URLs in the tenant config.'
+      ],
+      replies: ['Send calm status', 'Ask for logs', 'Schedule triage']
+    },
+    source_grid: {
+      sources: [
+        { title: 'Microsoft Learn', host: 'learn.microsoft.com', snippet: 'DWM system backdrop guidance for Windows 11 windows.' },
+        { title: 'FastAPI docs', host: 'fastapi.tiangolo.com', snippet: 'Lifespan and dependency patterns for app startup.' },
+        { title: 'Playwright', host: 'playwright.dev', snippet: 'Locator-first testing guidance for reliable UI checks.' },
+        { title: 'MDN Web APIs', host: 'developer.mozilla.org', snippet: 'SpeechRecognition compatibility and graceful fallback notes.' }
+      ]
+    },
+    data_table: {
+      columns: ['GPU', 'Price', 'VRAM', 'Store'],
+      rows: [
+        ['RTX 4070 Super', '$579', '12 GB', 'BestBuy'],
+        ['RX 7900 GRE', '$529', '16 GB', 'Newegg'],
+        ['RTX 4060 Ti', '$379', '16 GB', 'Amazon'],
+        ['Arc B580', '$249', '12 GB', 'Micro Center']
+      ]
+    }
+  };
+
+  const renderClutterSweeper = (root, data = {}) => {
+    const d = { ...widgetDefaults.clutter_sweeper, ...data };
+    renderMetricStrip(root, d.metrics);
+    renderWidgetList(root, d.rows, { checks: true });
+    const actions = makeEl('div', 'widget-actions');
+    actions.appendChild(widgetButton('Review selected'));
+    actions.appendChild(widgetButton('Wipe selected', 'danger'));
+    root.appendChild(actions);
+  };
+
+  const renderSmartOrganizer = (root, data = {}) => {
+    const d = { ...widgetDefaults.smart_organizer, ...data };
+    const cols = makeEl('div', 'widget-columns organizer-columns');
+    [['Messy', d.messy], ['Homes', d.folders]].forEach(([label, items]) => {
+      const col = makeEl('div', 'widget-column');
+      col.appendChild(makeEl('span', 'widget-column-label', label));
+      (items || []).forEach((item) => col.appendChild(makeEl('div', 'organizer-chip', item)));
+      cols.appendChild(col);
+    });
+    root.appendChild(cols);
+    renderWidgetList(root, d.moves || []);
+    const actions = makeEl('div', 'widget-actions');
+    actions.appendChild(widgetButton('Approve moves'));
+    root.appendChild(actions);
+  };
+
+  const renderFilePreviewer = (root, data = {}) => {
+    const d = { ...widgetDefaults.file_preview, ...data };
+    const top = makeEl('div', 'file-preview-top');
+    top.appendChild(makeEl('div', 'file-preview-icon', 'PDF'));
+    const copy = makeEl('div', 'file-preview-copy');
+    copy.appendChild(makeEl('strong', '', d.name));
+    const meta = makeEl('div', 'widget-chip-row');
+    (d.meta || []).forEach((m) => meta.appendChild(makeEl('span', 'widget-chip', m)));
+    copy.appendChild(meta);
+    top.appendChild(copy);
+    root.appendChild(top);
+    root.appendChild(makeEl('pre', 'file-preview-text', d.preview || ''));
+  };
+
+  const renderResourceRadar = (root, data = {}) => {
+    const d = { ...widgetDefaults.resource_radar, ...data };
+    const radar = makeEl('div', 'radar-grid');
+    (d.meters || []).forEach((m) => {
+      const meter = makeEl('div', 'radar-meter');
+      const ring = makeEl('div', 'radar-ring');
+      setPct(ring, m.value);
+      ring.appendChild(makeEl('span', '', `${Math.round(Number(m.value) || 0)}%`));
+      meter.appendChild(ring);
+      meter.appendChild(makeEl('span', 'radar-label', m.label || 'Usage'));
+      radar.appendChild(meter);
+    });
+    const spark = makeEl('div', 'radar-spark');
+    (d.bars || []).forEach((value) => {
+      const bar = makeEl('span');
+      bar.style.height = `${Math.max(8, Math.min(100, value))}%`;
+      spark.appendChild(bar);
+    });
+    radar.appendChild(spark);
+    root.appendChild(radar);
+    renderWidgetList(root, d.processes || []);
+  };
+
+  const renderQuickSettings = (root, data = {}) => {
+    const d = { ...widgetDefaults.quick_settings, ...data };
+    const grid = makeEl('div', 'widget-toggle-grid');
+    (d.toggles || []).forEach((t) => {
+      const btn = makeEl('button', `widget-toggle ${t.active ? 'on' : ''}`.trim());
+      btn.type = 'button';
+      btn.appendChild(makeEl('span', 'widget-toggle-dot'));
+      btn.appendChild(makeEl('strong', '', t.title || 'Toggle'));
+      btn.addEventListener('click', () => btn.classList.toggle('on'));
+      grid.appendChild(btn);
+    });
+    root.appendChild(grid);
+  };
+
+  const renderNetworkGuardian = (root, data = {}) => {
+    const d = { ...widgetDefaults.network_guardian, ...data };
+    const list = makeEl('div', 'network-list');
+    (d.rows || []).forEach((row) => {
+      const item = makeEl('div', `network-row ${row.intent || ''}`.trim());
+      const copy = makeEl('div', 'network-copy');
+      copy.appendChild(makeEl('strong', '', row.title || 'Process'));
+      copy.appendChild(makeEl('span', '', row.subtitle || 'Network activity'));
+      const bar = makeEl('div', 'network-bar');
+      setPct(bar, row.pct || 0);
+      copy.appendChild(bar);
+      item.appendChild(copy);
+      item.appendChild(makeEl('span', 'widget-row-meta', row.meta || '0 KB/s'));
+      item.appendChild(widgetButton(row.action || 'Inspect', row.intent === 'danger' ? 'danger' : ''));
+      list.appendChild(item);
+    });
+    root.appendChild(list);
+  };
+
+  const renderActionApprover = (root, data = {}) => {
+    const d = { ...widgetDefaults.action_approver, ...data };
+    const panel = makeEl('div', 'approver-panel');
+    panel.appendChild(makeEl('strong', '', d.title || 'Action needs approval'));
+    panel.appendChild(makeEl('p', '', d.reason || 'Review the requested action before it runs.'));
+    const risks = makeEl('div', 'widget-chip-row');
+    (d.risks || []).forEach((risk) => risks.appendChild(makeEl('span', 'widget-chip danger', risk)));
+    panel.appendChild(risks);
+    panel.appendChild(makeEl('pre', 'approver-code', d.code || ''));
+    const actions = makeEl('div', 'widget-actions');
+    actions.appendChild(widgetButton('Deny'));
+    actions.appendChild(widgetButton('Approve', 'danger'));
+    panel.appendChild(actions);
+    root.appendChild(panel);
+  };
+
+  const renderEmailSummary = (root, data = {}) => {
+    const d = { ...widgetDefaults.email_summary, ...data };
+    const box = makeEl('div', 'summary-widget');
+    box.appendChild(makeEl('strong', '', d.title || 'Context summary'));
+    const list = makeEl('ul', 'summary-bullets');
+    (d.bullets || []).forEach((b) => {
+      const li = makeEl('li', '', b);
+      list.appendChild(li);
+    });
+    box.appendChild(list);
+    const actions = makeEl('div', 'widget-actions');
+    (d.replies || []).forEach((reply) => actions.appendChild(widgetButton(reply)));
+    box.appendChild(actions);
+    root.appendChild(box);
+  };
+
+  const renderSourceGrid = (root, data = {}) => {
+    const d = { ...widgetDefaults.source_grid, ...data };
+    const grid = makeEl('div', 'source-grid');
+    (d.sources || []).forEach((source) => {
+      const card = makeEl('a', 'source-card');
+      if (source.url) card.href = source.url;
+      card.target = '_blank';
+      card.rel = 'noreferrer';
+      card.appendChild(makeEl('span', 'source-favicon', (source.host || source.title || '?').slice(0, 1).toUpperCase()));
+      card.appendChild(makeEl('strong', '', source.title || 'Source'));
+      card.appendChild(makeEl('span', 'source-host', source.host || 'web'));
+      card.appendChild(makeEl('p', '', source.snippet || ''));
+      grid.appendChild(card);
+    });
+    root.appendChild(grid);
+  };
+
+  const renderDataTable = (root, data = {}) => {
+    const d = { ...widgetDefaults.data_table, ...data };
+    const toolbar = makeEl('div', 'table-toolbar');
+    const search = makeEl('input', 'table-filter');
+    search.type = 'search';
+    search.placeholder = 'Filter rows';
+    toolbar.appendChild(search);
+    root.appendChild(toolbar);
+    const table = makeEl('table', 'widget-table');
+    const thead = makeEl('thead');
+    const header = makeEl('tr');
+    const tbody = makeEl('tbody');
+    let sortIndex = -1;
+    let sortDir = 1;
+    const rows = (d.rows || []).map((row) => row.slice());
+    (d.columns || []).forEach((col, idx) => {
+      const th = makeEl('th');
+      const btn = makeEl('button', '', col);
+      btn.type = 'button';
+      btn.addEventListener('click', () => {
+        sortDir = sortIndex === idx ? -sortDir : 1;
+        sortIndex = idx;
+        draw();
+      });
+      th.appendChild(btn);
+      header.appendChild(th);
+    });
+    thead.appendChild(header);
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    root.appendChild(table);
+    const draw = () => {
+      const q = search.value.trim().toLowerCase();
+      tbody.innerHTML = '';
+      rows
+        .filter((row) => !q || row.join(' ').toLowerCase().includes(q))
+        .sort((a, b) => sortIndex < 0 ? 0 : String(a[sortIndex]).localeCompare(String(b[sortIndex]), undefined, { numeric: true }) * sortDir)
+        .forEach((row) => {
+          const tr = makeEl('tr');
+          row.forEach((cell) => tr.appendChild(makeEl('td', '', cell)));
+          tbody.appendChild(tr);
+        });
+    };
+    search.addEventListener('input', draw);
+    draw();
+  };
+
+  const widgetRenderers = {
+    clutter_sweeper: renderClutterSweeper,
+    smart_organizer: renderSmartOrganizer,
+    file_preview: renderFilePreviewer,
+    resource_radar: renderResourceRadar,
+    quick_settings: renderQuickSettings,
+    network_guardian: renderNetworkGuardian,
+    action_approver: renderActionApprover,
+    email_summary: renderEmailSummary,
+    source_grid: renderSourceGrid,
+    data_table: renderDataTable
+  };
+
+  const widgetTitles = {
+    clutter_sweeper: 'Clutter sweeper',
+    smart_organizer: 'Smart organizer',
+    file_preview: 'File preview',
+    resource_radar: 'Resource radar',
+    quick_settings: 'Quick settings',
+    network_guardian: 'Network guardian',
+    action_approver: 'Action approver',
+    email_summary: 'Context summary',
+    source_grid: 'Source grid',
+    data_table: 'Interactive table'
+  };
+
+  const renderAgentWidget = (event = {}) => {
+    finalizeLiveStatus();
+    const rawType = event.widget || event.widget_type || event.kind || event.type || 'widget';
+    const widgetType = String(rawType).replace(/-/g, '_');
+    const data = event.data || event.payload || event;
+    const card = createFeedCard(`ai-widget-card widget-${widgetType}`);
+    const bits = createCardHead({
+      eyebrow: event.eyebrow || 'Widget',
+      title: event.title || widgetTitles[widgetType] || humanize(widgetType),
+      subtitle: event.subtitle || event.summary || '',
+      stateLabel: event.stateLabel || event.state || ''
+    });
+    card.appendChild(bits.head);
+    const surface = makeEl('div', 'widget-surface');
+    card.appendChild(surface);
+    const renderer = widgetRenderers[widgetType];
+    if (renderer) renderer(surface, data);
+    else renderMetricStrip(surface, [{ label: 'Payload', value: 'Ready', detail: 'generic widget' }]);
+    return card;
+  };
+
   const renderReflection = (reflection) => {
     finalizeLiveStatus();
     const success = reflection.success === true;
@@ -1365,6 +1768,7 @@
 
     if (!keepFeed) {
       $('feed').innerHTML = WELCOME_HTML;
+      $('feed').classList.remove('has-events');
       bindExamples();
     }
   };
@@ -1521,6 +1925,18 @@
 
     if (event.type === 'token_usage' || event.type === 'budget') {
       if (Number.isFinite(event.percent)) setBudget(event.percent);
+      return;
+    }
+
+    if (event.type === 'widget' || event.type === 'ui_widget') {
+      finalizeTurnSummary();
+      renderAgentWidget(event);
+      return;
+    }
+
+    if (widgetRenderers[event.type]) {
+      finalizeTurnSummary();
+      renderAgentWidget({ ...event, widget: event.type });
       return;
     }
 
@@ -2068,6 +2484,49 @@
     processTaskEvent({ type: 'done', complete: true });
   }
 
+  async function playWidgetGallery() {
+    clearDemoStream();
+    task = 'widgets-' + Math.random().toString(36).slice(2, 8);
+    currentViewedTask = task;
+    resetTaskView();
+    const goal = 'Show the full dynamic widget library for an AI desktop agent.';
+    appendMessage(goal, 'user');
+    setTaskTitle(goal, { status: 'running' });
+    setStatus('running');
+    activeHistoryItem = addActiveHistoryItem(goal);
+    startTime = Date.now();
+    timer = setInterval(updateClock, 1000);
+    updateClock();
+    setLiveStatus('Composing UI', 'Selecting the right widgets for the task context.', '1s');
+
+    const show = async (widget, title, subtitle, data = {}, state = 'Ready') => {
+      await delay(220);
+      processTaskEvent({ type: 'widget', widget, title, subtitle, data, state });
+    };
+
+    await show('source_grid', 'Research sources', 'Evidence cards the agent can cite and reopen.');
+    await show('data_table', 'GPU comparison', 'Sortable, filterable rows for live research results.');
+    await show('resource_radar', 'Resource radar', 'Live system pressure with process-level controls.');
+    await show('network_guardian', 'Network guardian', 'Traffic by process, with fast containment actions.');
+    await show('quick_settings', 'Focus setup', 'System toggles the agent can propose together.');
+    await show('clutter_sweeper', 'Clutter sweeper', 'Reviewable cleanup candidates before deletion.');
+    await show('smart_organizer', 'Smart organizer', 'AI-suggested file moves with confidence scores.');
+    await show('file_preview', 'Document preview', 'Inline file reading without leaving the stream.');
+    await show('email_summary', 'Context summary', 'Screen or email summaries with response chips.');
+    await show('action_approver', 'Action approver', 'Inline safety review for destructive commands.');
+
+    await delay(300);
+    processTaskEvent({
+      type: 'done',
+      complete: true,
+      reason: 'Widget gallery rendered. The dashboard now has reusable stream widgets for cleanup, organization, previews, system monitoring, settings, network activity, approvals, summaries, sources, and data tables.'
+    });
+  }
+
+  window.__aiComputerPlayWidgetGallery = playWidgetGallery;
+  window.__aiComputerPlayDemoStream = playDemoStream;
+  window.__aiComputerClearDemo = clearDemoStream;
+
   /* ---------------- init ---------------- */
   const init = async () => {
     applyTweaks();
@@ -2446,6 +2905,7 @@
       { group: 'Project Folder', label: 'Choose project folder', hint: projectFolderState.selectedPath || 'General mode', action: () => openProjectFolderModal() },
       { group: 'Project Folder', label: 'Clear project folder', hint: 'Desktop + Home', action: () => { setProjectFolder('', { persist: true }); toast('Project folder cleared.', 'info', 1800); } },
       { group: 'View', label: 'Focus prompt', hint: 'Ctrl L', action: () => { const el = $('input'); if (el) el.focus(); } },
+      { group: 'View', label: 'Show widget gallery', hint: 'demo', action: () => playWidgetGallery() },
       { group: 'View', label: 'Toggle history', hint: '', action: () => { const el = $('btn-history'); if (el) el.click(); } },
     );
     return cmds;
@@ -2653,6 +3113,7 @@
       } catch (_) {}
     };
     const showReply = (t) => {
+      if (!widgetShell) return;
       if (reply && replyText) { replyText.textContent = t; reply.hidden = false; }
       requestAnimationFrame(syncShellHeight);
     };
@@ -2673,7 +3134,11 @@
       if (!text) return;
       const mainInput = $('input');
       if (!mainInput) return;
-      if (task && sse) { showReply('A task is already running — let it finish first.'); return; }
+      if (task && sse) {
+        if (widgetShell) showReply('A task is already running — let it finish first.');
+        else toast('A task is already running.', 'warn', 2200);
+        return;
+      }
       mainInput.value = text;
       mainInput.dispatchEvent(new Event('input'));
       const sb = $('send');

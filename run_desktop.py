@@ -20,9 +20,9 @@ def run_server():
 def parse_args():
     parser = argparse.ArgumentParser(description="Launch AI Computer desktop shell.")
     parser.add_argument(
-        "--widget",
+        "--dashboard",
         action="store_true",
-        help="Launch the compact always-on-top sidekick instead of the full dashboard.",
+        help="Launch the full dashboard instead of the compact always-on-top sidekick.",
     )
     return parser.parse_args()
 
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     # 2. Wait a moment for the server to initialize
     time.sleep(2)
 
-    if args.widget:
+    if not args.dashboard:
         # ── Floating Sidekick capsule ──
         # Rendered by the Qt/QtWebEngine shell: a frameless, translucent,
         # always-on-top window with real per-pixel transparency + Windows

@@ -281,14 +281,15 @@ def main(port: int = 8000) -> int:
             row.addWidget(logo)
 
             self.input = QLineEdit()
-            self.input.setPlaceholderText("Start a task…")
-            input_font = QFont("Segoe UI Variable Display", 13)
+            self.input.setPlaceholderText("Ask AI Computer...")
+            input_font = QFont("Segoe UI Variable Display", 14)
+            input_font.setWeight(QFont.Medium)
             input_font.setLetterSpacing(QFont.PercentageSpacing, 98)  # tight tracking
             self.input.setFont(input_font)
             self.input.returnPressed.connect(self._submit)
             self.input.setStyleSheet(
-                "QLineEdit{background:transparent;border:none;color:#F2F3F5;"
-                "selection-background-color:%s;}" % ACCENT)
+                "QLineEdit{background:transparent;border:none;color:#FFFFFF;"
+                "selection-background-color:%s; padding: 4px;}" % ACCENT)
             row.addWidget(self.input, 1)
 
             self.status = QLabel("")
@@ -329,9 +330,11 @@ def main(port: int = 8000) -> int:
             self.reply.setWordWrap(True)
             self.reply.setFont(QFont("Segoe UI", 11))
             self.reply.setStyleSheet(
-                "QLabel{color:#E6E8EC;background:rgba(255,255,255,0.06);"
-                "border-radius:16px;padding:13px 15px;}")
-            self.reply.setMaximumHeight(190)
+                "QLabel{color:#FFFFFF; background:transparent; "
+                "border-top: 1px solid rgba(255, 255, 255, 0.15); "
+                "padding: 18px 5px 5px 5px; margin-top: 5px; line-height: 1.4;}")
+            self.reply.setMaximumHeight(350)
+            self.reply.setTextFormat(Qt.MarkdownText) # Support basic markdown
             self.reply.hide()
             outer.addWidget(self.reply)
 
@@ -392,19 +395,19 @@ def main(port: int = 8000) -> int:
             path = QPainterPath()
             rect = self.rect().adjusted(1, 1, -1, -1)
             path.addRoundedRect(rect, RADIUS, RADIUS)
-            # glass tint over the OS acrylic blur (low alpha so the
-            # wallpaper actually shows through the Acrylic backdrop)
-            p.fillPath(path, QColor(18, 21, 28, 36))
+            # deeper glass tint for higher contrast text
+            p.fillPath(path, QColor(10, 12, 16, 180))
             # crisp rim
-            pen = QPen(QColor(255, 255, 255, 38))
+            pen = QPen(QColor(255, 255, 255, 45))
             pen.setWidth(1)
             p.setPen(pen)
             p.drawPath(path)
-            # soft top highlight
-            hi = QPainterPath()
-            hi.addRoundedRect(rect.adjusted(1, 1, -1, -rect.height() // 2),
-                              RADIUS, RADIUS)
-            p.fillPath(hi, QColor(255, 255, 255, 10))
+            # subtle gradient highlight at the top
+            from PySide6.QtGui import QLinearGradient
+            grad = QLinearGradient(0, 0, 0, 40)
+            grad.setColorAt(0, QColor(255, 255, 255, 25))
+            grad.setColorAt(1, QColor(255, 255, 255, 0))
+            p.fillPath(path, grad)
             p.end()
 
         # --- frameless drag ---
@@ -426,21 +429,70 @@ def main(port: int = 8000) -> int:
             _round_window(hwnd, self.width(), self.height(), RADIUS)
             # spring entry — fade in with the OutBack curve so the capsule
             # feels physical instead of popping into existence
-            if not getattr(self, "_intro_done", False):
-                self._intro_done = True
-                self.setWindowOpacity(0.0)
-                self._intro = QPropertyAnimation(self, b"windowOpacity")
-                self._intro.setDuration(380)
-                self._intro.setStartValue(0.0)
-                self._intro.setEndValue(1.0)
-                self._intro.setEasingCurve(QEasingCurve.OutCubic)
-                self._intro.start()
+            self.setWindowOpacity(0.0)
+            self._intro = QPropertyAnimation(self, b"windowOpacity")
+            self._intro.setDuration(380)
+            self._intro.setStartValue(0.0)
+            self._intro.setEndValue(1.0)
+            self._intro.setEasingCurve(QEasingCurve.OutCubic)
+            self._intro.start()
+            
+            geo = app.primaryScreen().availableGeometry()
+            start_pos = QPoint(geo.center().x() - self.width() // 2, geo.top() + 50)
+            end_pos = QPoint(geo.center().x() - self.width() // 2, geo.top() + 70)
+            self._slide = QPropertyAnimation(self, b"pos")
+            self._slide.setDuration(380)
+            self._slide.setStartValue(start_pos)
+            self._slide.setEndValue(end_pos)
+            self._slide.setEasingCurve(QEasingCurve.OutBack)
+            self._slide.start()
+            self.input.setFocus()
+
+        def keyPressEvent(self, e) -> None:
+            if e.key() == Qt.Key_Escape:
+                if self.reply.isVisible():
+                    self.reply.hide()
+                    self._adjust()
+                else:
+                    self.input.clear()
+                    self.hide()
+            else:
+                super().keyPressEvent(e)
 
         def resizeEvent(self, e) -> None:  # noqa: N802
             super().resizeEvent(e)
             self._reshape()
 
+    class HotkeySignaler(QObject):
+        toggle = Signal()
+
     win = Capsule()
+    
+    signaler = HotkeySignaler()
+    def on_toggle():
+        if win.isVisible():
+            win.hide()
+        else:
+            win.show()
+            win.activateWindow()
+            win.raise_()
+            win.input.setFocus()
+            
+    signaler.toggle.connect(on_toggle)
+    
+    def hotkey_callback():
+        signaler.toggle.emit()
+        
+    try:
+        import keyboard
+        # Register the global hotkey
+        keyboard.add_hotkey('ctrl+shift+space', hotkey_callback)
+        print("[Desktop] Global hotkey Ctrl+Shift+Space registered.")
+    except ImportError:
+        print("[Desktop] Install 'keyboard' (pip install keyboard) for global hotkeys.")
+    except Exception as e:
+        print(f"[Desktop] Could not register global hotkey: {e}")
+
     geo = app.primaryScreen().availableGeometry()
     win.move(geo.center().x() - WIDTH // 2, geo.top() + 70)
     win.show()

@@ -82,7 +82,7 @@
           <div class="selector-label">Model</div>
           <select id="model-id"></select>
         </div>
-        <div class="settings-group">
+        <div class="settings-group" style="display:none">
           <div class="selector-label">Mode</div>
           <select id="mode-id">
             <option value="auto">Auto detect</option>
@@ -161,20 +161,20 @@
       <div class="feed" id="feed">
         <section class="welcome" id="welcome">
           <div class="hello-eye">AI Computer</div>
-          <h3>What should the agent do?</h3>
-          <p>Describe a goal. The agent plans, acts across your computer or browser, and pauses for approval before anything risky.</p>
+          <h3>What can I help you with?</h3>
+          <p>Describe a goal. I can read your screen, browse the web, or automate your desktop safely.</p>
           <div class="example-grid">
-            <button class="example-btn" type="button" data-example="Create a FastAPI app with CRUD endpoints and tests.">
-              <div class="ex-body"><strong>Build a coding task</strong><span>Plans, file writes, terminal, and reflections render inline.</span></div>
+            <button class="example-btn" type="button" data-example="Explain what is on my screen.">
+              <div class="ex-body"><strong>Explain my screen</strong><span>Takes a screenshot and answers questions about what you're looking at.</span></div>
             </button>
-            <button class="example-btn" type="button" data-example="Open example.com in browser cowork mode, summarize the page, and save notes to the current project folder.">
-              <div class="ex-body"><strong>Use browser cowork</strong><span>Research pages with browser tools and a clean final answer.</span></div>
+            <button class="example-btn" type="button" data-example="Go to my Spotify and play a focus playlist.">
+              <div class="ex-body"><strong>Automate an app</strong><span>Takes control of a specific app to perform a task safely.</span></div>
             </button>
-            <button class="example-btn" type="button" data-example="Using full desktop control, take a screenshot of the current desktop, describe the active window, and finish.">
-              <div class="ex-body"><strong>Test desktop control</strong><span>Requires explicit desktop access before running.</span></div>
+            <button class="example-btn" type="button" data-example="Search the web for recent news about AI agents and summarize it.">
+              <div class="ex-body"><strong>Research a topic</strong><span>Uses the browser to search the web and compile notes.</span></div>
             </button>
-            <button class="example-btn" type="button" data-example="Open Calculator in isolated app mode, calculate 12 + 30, verify the result shown is 42, then finish.">
-              <div class="ex-body"><strong>Use isolated app control</strong><span>Lock the task to one app when possible.</span></div>
+            <button class="example-btn" type="button" data-example="Refactor the current python file to use asyncio.">
+              <div class="ex-body"><strong>Help me code</strong><span>Writes, edits, and runs code in your workspace.</span></div>
             </button>
           </div>
         </section>
@@ -190,7 +190,7 @@
             <div class="mini-chip"><kbd>⇧↵</kbd> newline</div>
             <div class="char-count" id="char-count"></div>
           </div>
-          <div class="composer-options" aria-label="Task options">
+          <div class="composer-options" aria-label="Task options" style="display:none">
             <label class="composer-toggle"><input type="checkbox" id="plan-first-toggle"><span>Plan first</span></label>
             <label class="composer-toggle"><input type="checkbox" id="notify-toggle"><span>Notify</span></label>
             <label class="composer-toggle"><input type="checkbox" id="checkpoint-toggle"><span>Checkpoint</span></label>
@@ -218,7 +218,7 @@
       <span class="sb-dot"></span>
       <span class="sb-val">Ready</span>
     </div>
-    <div class="sb-item sb-mode clickable" id="sb-mode" title="Change mode (Ctrl+K)">
+    <div class="sb-item sb-mode clickable" id="sb-mode" title="Change mode (Ctrl+K)" style="display:none">
       <span class="sb-label">mode</span>
       <span class="sb-val" id="sb-mode-val">coding</span>
     </div>
