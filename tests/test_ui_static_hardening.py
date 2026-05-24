@@ -246,10 +246,10 @@ def test_dynamic_widget_library_present():
 def test_desktop_launcher_has_frameless_widget_mode():
     root = STATIC_HTML.parents[0].parent
     launcher = (root / "run_desktop.py").read_text(encoding="utf-8")
-    qt_shell = (root / "app" / "qt_shell.py").read_text(encoding="utf-8")
+    qt_shell = (root / "app" / "widget" / "qt_shell.py").read_text(encoding="utf-8")
 
-    # run_desktop.py --widget delegates to the Qt shell
-    assert '"--widget"' in launcher
+    # run_desktop.py defaults to Qt sidekick; --dashboard opts into pywebview
+    assert '"--dashboard"' in launcher
     assert "qt_shell" in launcher
 
     # the Qt shell is a frameless, translucent, always-on-top capsule built
@@ -260,7 +260,7 @@ def test_desktop_launcher_has_frameless_widget_mode():
     assert "FramelessWindowHint" in qt_shell
     assert "WindowStaysOnTopHint" in qt_shell
     assert "WA_TranslucentBackground" in qt_shell
-    assert "_apply_acrylic" in qt_shell
+    assert "_apply_pill_glass" in qt_shell
 
 
 def test_live_reasoning_not_filtered_by_step_announcement(monkeypatch):
