@@ -383,3 +383,46 @@ async def test_tool_partial_events_emitted_during_arg_streaming(provider, monkey
     # Final tool_call still emitted with complete args
     assert len(tool_call_events) == 1
     assert tool_call_events[0]["args"] == {"path": "foo.txt"}
+
+
+# ── AI-22: BLOCKED_MODELS / BLOCKED_PROVIDERS ──────────────────────────────
+
+def test_blocked_models_glob_blocks_matching_model(monkeypatch):
+    """BLOCKED_MODELS with a glob pattern blocks matching models."""
+    monkeypatch.setenv("BLOCKED_MODELS", "*minimax*")
+    monkeypatch.delenv("ALLOWED_MODELS", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from importlib import reload
+    import app.providers as _prov
+    reload(_prov)
+    p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
+    with pytest.raises(ValueError, match="blocked"):
+        p._openrouter_models_to_try("minimax/minimax-m1:extended")
+
+
+def test_blocked_providers_blocks_entire_provider(monkeypatch):
+    """BLOCKED_PROVIDERS removes all models from a named provider."""
+    monkeypatch.setenv("BLOCKED_PROVIDERS", "google")
+    monkeypatch.delenv("ALLOWED_MODELS", raising=False)
+    monkeypatch.delenv("BLOCKED_MODELS", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from importlib import reload
+    import app.providers as _prov
+    reload(_prov)
+    p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
+    with pytest.raises(ValueError, match="blocked"):
+        p._openrouter_models_to_try("google/gemma-4-31b-it:free")
+
+
+def test_blocked_models_empty_allows_all(monkeypatch):
+    """Unset BLOCKED_MODELS/BLOCKED_PROVIDERS permits all models (default)."""
+    monkeypatch.delenv("BLOCKED_MODELS", raising=False)
+    monkeypatch.delenv("BLOCKED_PROVIDERS", raising=False)
+    monkeypatch.delenv("ALLOWED_MODELS", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from importlib import reload
+    import app.providers as _prov
+    reload(_prov)
+    p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
+    chain = p._openrouter_models_to_try("google/gemma-4-31b-it:free")
+    assert len(chain) > 0

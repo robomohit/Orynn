@@ -456,6 +456,33 @@ def _is_model_allowed(model: str, allowed: Optional[frozenset]) -> bool:
     return any(fnmatch.fnmatchcase(candidate, pattern) for pattern in allowed)
 
 
+def _get_blocked_models() -> frozenset:
+    """Parse BLOCKED_MODELS env var (comma-separated; fnmatch patterns ok, e.g. *minimax*)."""
+    raw = os.environ.get("BLOCKED_MODELS", "").strip()
+    if not raw:
+        return frozenset()
+    return frozenset(m.strip() for m in raw.split(",") if m.strip())
+
+
+def _get_blocked_providers() -> frozenset:
+    """Parse BLOCKED_PROVIDERS env var (comma-separated provider name prefixes, e.g. minimax)."""
+    raw = os.environ.get("BLOCKED_PROVIDERS", "").strip()
+    if not raw:
+        return frozenset()
+    return frozenset(p.strip().lower() for p in raw.split(",") if p.strip())
+
+
+def _is_model_blocked(model: str, blocked_models: frozenset, blocked_providers: frozenset) -> bool:
+    candidate = (model or "").strip()
+    if any(fnmatch.fnmatchcase(candidate, patt) for patt in blocked_models):
+        return True
+    if blocked_providers:
+        provider = candidate.split("/")[0].lower()
+        if provider in blocked_providers:
+            return True
+    return False
+
+
 _SCREENSHOT_CAPS: tuple[tuple[int, int], ...] = (
     (1024, 768),
     (1280, 800),
@@ -1097,6 +1124,12 @@ class PlannerProvider:
 
     def _openrouter_models_to_try(self, requested_model: str, screenshot_b64: Optional[str] = None) -> List[str]:
         """Return an ordered OpenRouter model fallback chain for this request."""
+        blocked_models = _get_blocked_models()
+        blocked_providers = _get_blocked_providers()
+        if _is_model_blocked(requested_model, blocked_models, blocked_providers):
+            raise ValueError(
+                f"Model {requested_model!r} is blocked by BLOCKED_MODELS/BLOCKED_PROVIDERS policy"
+            )
         # Speed tier: use the tier's whole chain. The chain already survives
         # free-tier flakiness, so no per-model fallback logic is needed.
         if self.model_tier and self.model_tier in MODEL_TIERS:
@@ -1120,6 +1153,12 @@ class PlannerProvider:
                         f"No models in the {self.model_tier} tier are permitted by "
                         f"ALLOWED_MODELS={os.environ.get('ALLOWED_MODELS')!r}"
                     )
+            deduped_tier = [m for m in deduped_tier if not _is_model_blocked(m, blocked_models, blocked_providers)]
+            if not deduped_tier:
+                raise ValueError(
+                    f"All models in the {self.model_tier} tier are blocked by "
+                    f"BLOCKED_MODELS/BLOCKED_PROVIDERS policy"
+                )
             return deduped_tier
 
         model = requested_model
@@ -1166,6 +1205,11 @@ class PlannerProvider:
                 raise ValueError(
                     f"No models in fallback chain are permitted by ALLOWED_MODELS={os.environ.get('ALLOWED_MODELS')!r}"
                 )
+        deduped = [m for m in deduped if not _is_model_blocked(m, blocked_models, blocked_providers)]
+        if not deduped:
+            raise ValueError(
+                "All models in fallback chain are blocked by BLOCKED_MODELS/BLOCKED_PROVIDERS policy"
+            )
         return deduped
 
     def _chat_google(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
