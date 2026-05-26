@@ -659,6 +659,34 @@ def main(port: int = 8000) -> int:
         ]
         VISION_MODEL = VISION_MODELS[0]
 
+        # Cache of currently-linked connectors. Refreshed every few minutes
+        # in the background so the dashboard <-> widget stays in sync without
+        # blocking task submit.
+        _linked_connectors_cache: list[dict] = []
+        _linked_cache_ms: int = 0
+
+        def _fetch_linked_connectors(self) -> list[dict]:
+            """Returns connector dicts with linked=True. Cached ~3 min."""
+            import time as _t
+            now_ms = int(_t.time() * 1000)
+            if self._linked_connectors_cache and (
+                    now_ms - self._linked_cache_ms < 180_000):
+                return self._linked_connectors_cache
+            try:
+                import httpx
+                with httpx.Client(timeout=4.0) as c:
+                    c.post(f"{BASE}/api/session")
+                    r = c.get(f"{BASE}/api/connectors")
+                    if r.status_code == 200:
+                        all_c = r.json().get("connectors", [])
+                        self._linked_connectors_cache = [
+                            c for c in all_c if c.get("linked")
+                        ]
+                        self._linked_cache_ms = now_ms
+            except Exception as exc:
+                print(f"[capsule] connector fetch failed: {exc}", flush=True)
+            return self._linked_connectors_cache
+
         # Prompt prefix that meaningfully improves how free OpenRouter
         # models drive the desktop. Forces a screenshot-first / verify-after
         # rhythm and discourages the common failure modes (hallucinated
@@ -719,6 +747,20 @@ def main(port: int = 8000) -> int:
             if payload.get("mode") in ("computer", "computer_use",
                                        "computer_isolated"):
                 payload["goal"] = self.DESKTOP_HARDENING + payload["goal"]
+
+            # Connect the dashboard's linked connectors to the agent: prepend
+            # a short hint listing services the user has authorised so the
+            # agent knows where it's allowed to act (Gmail, Slack, etc.).
+            linked = self._fetch_linked_connectors()
+            web_connectors = [c for c in linked
+                              if c.get("auth_kind") == "browser"]
+            if web_connectors:
+                names = ", ".join(c["label"] for c in web_connectors)
+                payload["goal"] = (
+                    f"[User has linked these web connectors — feel free to "
+                    f"drive them via the browser when relevant: {names}.]\n\n"
+                    + payload["goal"]
+                )
 
             return payload
 
@@ -818,12 +860,53 @@ def main(port: int = 8000) -> int:
                                 self.runningChanged.emit(False)
                                 return
                             elif t in ("error", "failed", "cancelled"):
+                                reason = (ev.get("reason")
+                                          or ev.get("message") or "")
+                                # Auto-retry on free-tier rate-limit.
+                                # Look for "429" / "rate-limited" /
+                                # "retry shortly" and resubmit ONCE after
+                                # the suggested Retry-After window.
+                                lr = reason.lower()
+                                if (("429" in lr or "rate-limited" in lr
+                                        or "retry shortly" in lr)
+                                        and not getattr(self, "_did_retry", False)):
+                                    self._did_retry = True
+                                    # Parse Retry-After seconds if present;
+                                    # default 15s.
+                                    import re as _re
+                                    m = _re.search(
+                                        r"retry[_ -]after[_ -]?seconds?[\":\s]*?(\d+)",
+                                        reason, _re.IGNORECASE)
+                                    wait = int(m.group(1)) if m else 15
+                                    wait = min(wait, 60)
+                                    self.statusChanged.emit(
+                                        f"Rate-limited — retrying in {wait}s…")
+                                    time.sleep(wait)
+                                    # Re-fire same task with a fresh id
+                                    self.statusChanged.emit("Retrying…")
+                                    new_tid = "cap-" + secrets.token_hex(5)
+                                    self.current_task_id = new_tid
+                                    payload["task_id"] = new_tid
+                                    r2 = c.post(f"{BASE}/api/tasks",
+                                                json=payload)
+                                    if r2.status_code < 400:
+                                        # Reset polling for the new tid.
+                                        # `_retry_reset` tells the for-end
+                                        # to skip seen = len(log).
+                                        tid = new_tid
+                                        deadline = time.time() + 600
+                                        _retry_reset = True
+                                        break
+                                self._did_retry = False
                                 self.finished.emit(
-                                    ev.get("reason") or ev.get("message")
-                                    or "That task failed.", [])
+                                    reason or "That task failed.", [])
                                 self.runningChanged.emit(False)
                                 return
-                        seen = len(log)
+                        if locals().get("_retry_reset"):
+                            seen = 0
+                            _retry_reset = False
+                        else:
+                            seen = len(log)
                     self.finished.emit(
                         "Still working — taking longer than expected.", [])
                     self.runningChanged.emit(False)
@@ -2377,16 +2460,70 @@ def main(port: int = 8000) -> int:
         import keyboard
         # Register the global hotkey
         keyboard.add_hotkey('ctrl+shift+space', hotkey_callback)
-        print("[Desktop] Global hotkey Ctrl+Shift+Space registered.")
+        print("[Desktop] Global hotkey Ctrl+Shift+Space registered.",
+              flush=True)
     except ImportError:
         print("[Desktop] Install 'keyboard' (pip install keyboard) for global hotkeys.")
     except Exception as e:
         print(f"[Desktop] Could not register global hotkey: {e}")
 
+    # ── System tray icon — table-stakes hygiene so the app feels native.
+    # Shows in the Windows taskbar tray, right-click for Show/Hide/Quit.
+    # Single-click also toggles the capsule.
+    try:
+        from PySide6.QtWidgets import QSystemTrayIcon, QMenu
+        from PySide6.QtGui import (QAction, QIcon as _QIcon, QPixmap as _QPx,
+                                    QBrush as _QBrush, QPen as _QPen,
+                                    QPainter as _QPainter, QColor as _QColor)
+        _QBrush_ = _QBrush; _QPen_ = _QPen; _QPainter_ = _QPainter
+        _QColor_ = _QColor
+        # Build a simple white-on-teal monitor glyph as the tray icon
+        tray_pm = _QPx(32, 32)
+        tray_pm.fill(Qt.transparent)
+        _tp = _QPainter_(tray_pm)
+        _tp.setRenderHint(_QPainter_.Antialiasing)
+        _tp.setBrush(_QBrush_(_QColor_(ACCENT)))
+        _tp.setPen(Qt.NoPen)
+        _tp.drawRoundedRect(2, 2, 28, 28, 8, 8)
+        _tp.setBrush(Qt.NoBrush)
+        _tp.setPen(_QPen_(_QColor_("#062925"), 2.2))
+        _tp.drawRect(8, 9, 16, 12)
+        _tp.drawLine(13, 22, 19, 22)
+        _tp.drawLine(16, 21, 16, 23)
+        _tp.end()
+        tray = QSystemTrayIcon(_QIcon(tray_pm))
+        tray.setToolTip("AI Computer — click to toggle")
+        menu = QMenu()
+        act_show = QAction("Show / Hide capsule", menu)
+        act_show.triggered.connect(on_toggle)
+        menu.addAction(act_show)
+        act_dash = QAction("Open dashboard…", menu)
+        def _open_dash():
+            import webbrowser as _wb
+            _wb.open(f"http://127.0.0.1:{port}")
+        act_dash.triggered.connect(_open_dash)
+        menu.addAction(act_dash)
+        menu.addSeparator()
+        act_quit = QAction("Quit AI Computer", menu)
+        act_quit.triggered.connect(app.quit)
+        menu.addAction(act_quit)
+        tray.setContextMenu(menu)
+        # Left-click = toggle, right-click = menu (default on Win)
+        def _on_tray_activated(reason):
+            if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+                on_toggle()
+        tray.activated.connect(_on_tray_activated)
+        tray.show()
+        print("[Desktop] System tray icon registered.", flush=True)
+    except Exception as e:
+        print(f"[Desktop] System tray unavailable: {e}", flush=True)
+
     geo = app.primaryScreen().availableGeometry()
     win.move(geo.center().x() - WIDTH // 2, geo.top() + 70)
     win.show()
     win.input.setFocus()
+    # Don't quit when the capsule is hidden — tray icon keeps the app alive
+    app.setQuitOnLastWindowClosed(False)
     return app.exec()
 
 
