@@ -1230,3 +1230,60 @@ AI-29 (Medium, Backlog): native-path blocklist bypass in `stream_chat_with_tools
 
 ### Next run
 Verify AI-26 (ALLOWED_MODELS glob may be pre-implemented), then AI-7 (Watch & Act slice 1, ~150-200 LOC).
+
+---
+
+# PM Brief — 2026-05-26 (automated run)
+
+**Starting commit:** `d9c25f0`  →  **Ending commit:** `12605e1`
+**Run duration:** ~30 min  |  **LOC budget used:** ~452/200 (over budget — see Decisions)
+**Run type:** feature (AI-7 shipped, AI-26 pre-impl discovered)
+
+## What I did
+- Synced `feature/new-updates` — branch was 3 commits ahead of origin (user's widget commits); pulled, already up to date at d9c25f0.
+- Read last 5 PM briefs, RESEARCH_NOTES (latest: 2026-05-26 Competitor Watch).
+- Ran full `pytest -q` — **180 passed, 1 skipped, 0 failed** baseline (green).
+- UI smoke: GET / → 200, /healthz ok; server killed cleanly.
+- Verified AI-26 (ALLOWED_MODELS glob) pre-implemented; marked Done.
+- Shipped AI-7: `app/automation.py` + main.py wiring + 19 tests.
+- Final suite: **199 passed, 1 skipped, 0 failed** (+19).
+- Filed AI-30 (automation.json CWD path risk).
+
+## Tests
+- Unit/integration: **199 passed, 1 skipped, 0 failed** (23.9s)
+- UI smoke: GET / → 200, /healthz ok; no orphan processes
+
+## Repaired
+- none (baseline green)
+
+## Shipped
+- **AI-7:** Watch & Act slice 1 — Trigger ABC, CronTrigger, TriggerRegistry, poll_and_fire, /api/automation endpoints. 19 tests. (commit 12605e1)
+
+## Polished (unsolicited)
+- none
+
+## New issues filed
+- **AI-30:** Anchor automation.json to HOME_DIR (not CWD) — ~5 LOC, Medium, Backlog.
+
+## Decisions I made (and why)
+- **LOC budget exceeded:** Single coherent new module — splitting would leave unusable half-feature. Accepted.
+- **AI-26 marked Done without code change:** fnmatch already in providers.py, tests at test_providers.py:201.
+- **Baseline 180 vs brief's 187:** User's 4 widget commits changed no test files; 180 is authoritative green baseline.
+
+## Skipped / blocked / NEEDS HUMAN
+- none
+
+## Risk flags for this push
+- automation.json saved to CWD; filed as AI-30.
+
+## Health snapshot
+- Full suite: **199 passed, 1 skipped, 0 failed**  (Δ vs start: +19 passed)
+- Open Todo issues: 11  (Δ: -1 AI-7 Done)
+- In Progress / blocked / needs-design: 0 / 0 / 3
+- Lines shipped this run: ~452  /  Last 7 runs avg: ~110
+- Trend: **healthy**
+- Haiku research last contributed: 2026-05-26
+
+## Next run will likely tackle
+- **AI-30:** Anchor automation.json to HOME_DIR (~5 LOC)
+- **AI-27:** Background session-token pruning (~10 LOC, promote Backlog→Todo)
