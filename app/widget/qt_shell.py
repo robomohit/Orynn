@@ -686,7 +686,7 @@ def main(port: int = 8000) -> int:
                                    QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
                                    QSizePolicy)
 
-    from .capsule_widgets import create_widget, set_api_base
+    from .capsule_widgets import create_widget, set_api_base, set_card_palette
     from PySide6.QtWidgets import QFrame
     from .virtual_cursor import VirtualCursorOverlay, parse_click_xy
     from . import desktop_features as _df
@@ -1114,6 +1114,11 @@ def main(port: int = 8000) -> int:
             # and after drags. 0.0 = dark bg, 1.0 = light bg.
             self._bg_light = 0.0
             self._animating = False           # True during grow/shrink tween
+            # Discrete light/dark theme for the CONTENT (chips, icons, card
+            # text). Flipped with hysteresis so the chrome stays legible: over
+            # a bright backdrop the whole capsule becomes a light glass with
+            # dark content; over dark it's the dark glass. None = not yet set.
+            self._light_mode = None
 
             # Virtual cursor overlay — frameless click-through window that
             # paints a smooth animated cursor + ripple wherever the agent
@@ -2536,8 +2541,104 @@ def main(port: int = 8000) -> int:
                 if abs(target - self._bg_light) > 0.03:
                     self._bg_light = target
                     self.update()
+                # Discrete content theme with hysteresis so it doesn't flicker
+                # near the threshold.
+                new_mode = self._light_mode
+                if lum > 0.66:
+                    new_mode = True
+                elif lum < 0.50:
+                    new_mode = False
+                if new_mode is not None and new_mode != self._light_mode:
+                    self._light_mode = new_mode
+                    self._apply_palette(new_mode)
             except Exception:
                 pass
+
+        def _apply_palette(self, light: bool) -> None:
+            """Recolour the content chrome (chips, toolbar icons, close, ticker,
+            reply, answer cards) so it stays legible when the glass body flips
+            between dark and light. The input pill is already light in both."""
+            if light:
+                ic = "#1A1D24"                       # dark icons/text
+                chip_text = "rgba(28,32,42,235)"
+                chip_bg = "rgba(20,24,32,16)"
+                chip_bd = "rgba(20,24,32,48)"
+                chip_hbg = "rgba(91,224,208,150)"
+                chip_hbd = "rgba(40,150,140,210)"
+                chip_ht = "#06231f"
+                tb_hbg = "rgba(20,24,32,20)"
+                tb_hbd = "rgba(20,24,32,45)"
+                tb_chk = "rgba(20,24,32,32)"
+                ticker = "rgba(38,46,58,235)"
+                reply_c = "#1A2230"
+                reply_bd = "rgba(20,24,32,0.16)"
+            else:
+                ic = "#F0F2F8"                       # light icons/text
+                chip_text = "rgba(240,242,248,225)"
+                chip_bg = "rgba(255,255,255,30)"
+                chip_bd = "rgba(255,255,255,55)"
+                chip_hbg = "rgba(91,224,208,80)"
+                chip_hbd = "rgba(91,224,208,180)"
+                chip_ht = "#062925"
+                tb_hbg = "rgba(255,255,255,32)"
+                tb_hbd = "rgba(255,255,255,60)"
+                tb_chk = "rgba(255,255,255,48)"
+                ticker = ACCENT
+                reply_c = "#FFFFFF"
+                reply_bd = "rgba(255,255,255,0.15)"
+            # recipe chips
+            chip_qss = (
+                "QPushButton{"
+                f"  color: {chip_text};"
+                f"  background: {chip_bg};"
+                f"  border: 1px solid {chip_bd};"
+                "  border-radius: 13px; padding: 5px 12px 5px 8px; font-size: 11px;"
+                "}"
+                f"QPushButton:hover{{ background: {chip_hbg};"
+                f"  border-color: {chip_hbd}; color: {chip_ht}; }}"
+            )
+            try:
+                for btn, r in zip(self.recipe_buttons, RECIPES):
+                    btn.setStyleSheet(chip_qss)
+                    btn.setIcon(_icon(r["icon"], 13, ic, 1.7))
+            except Exception:
+                pass
+            # toolbar icon buttons
+            tb_qss = (
+                "QPushButton{ background: transparent;"
+                "  border: 1px solid transparent; border-radius: 12px; padding: 6px; }"
+                f"QPushButton:hover{{ background: {tb_hbg}; border-color: {tb_hbd}; }}"
+                f"QPushButton:checked{{ background: {tb_chk}; border-color: {tb_hbd}; }}"
+            )
+            try:
+                for nm, b in self.cap_buttons.items():
+                    b.setStyleSheet(tb_qss)
+                    b.setIcon(_icon(nm, 18, ic, 1.7))
+            except Exception:
+                pass
+            # close, ticker, reply
+            try:
+                self.close_btn.setIcon(_icon("close", 12, ic, 2.2))
+            except Exception:
+                pass
+            try:
+                self.action_label.setStyleSheet(
+                    f"color:{ticker};background:transparent;")
+            except Exception:
+                pass
+            try:
+                self.reply.setStyleSheet(
+                    f"QLabel{{color:{reply_c}; background:transparent; "
+                    f"border-top: 1px solid {reply_bd}; "
+                    "padding: 18px 5px 5px 5px; margin-top: 5px;}}")
+            except Exception:
+                pass
+            # answer/widget cards created from here on use this palette
+            try:
+                set_card_palette(light)
+            except Exception:
+                pass
+            self.update()
 
         # --- liquid-glass painting (adaptive) ---
         def paintEvent(self, _e) -> None:
@@ -2558,6 +2659,47 @@ def main(port: int = 8000) -> int:
             inset = 0.5
             path = QPainterPath()
             path.addRoundedRect(inset, inset, w - 1, h - 1, r, r)
+
+            # ── LIGHT MODE: a bright, airy frosted glass over light backdrops.
+            # Matches the already-light input pill so the whole capsule reads as
+            # one premium light-glass object (content flips to dark via
+            # _apply_palette). This is where the light background shines.
+            if self._light_mode:
+                # 1) bright cool-white tint (acrylic supplies the frost beneath)
+                tint = QLinearGradient(0, 0, 0, h)
+                tint.setColorAt(0.0, QColor(255, 255, 255, 150))
+                tint.setColorAt(0.5, QColor(247, 249, 252, 165))
+                tint.setColorAt(1.0, QColor(236, 240, 248, 182))
+                p.fillPath(path, tint)
+                # 2) glossy top sheen — bright sheet of light near the top
+                sheen = QLinearGradient(0, 0, 0, h)
+                sheen.setColorAt(0.00, QColor(255, 255, 255, 170))
+                sheen.setColorAt(0.16, QColor(255, 255, 255, 60))
+                sheen.setColorAt(0.42, QColor(255, 255, 255, 0))
+                p.fillPath(path, sheen)
+                # 3) soft cool inner shadow at the very bottom for slab depth
+                p.save(); p.setClipPath(path)
+                lo = QLinearGradient(0, h * 0.7, 0, h)
+                lo.setColorAt(0.0, QColor(70, 84, 110, 0))
+                lo.setColorAt(1.0, QColor(70, 84, 110, 34))
+                p.fillRect(QRectF(0, h * 0.7, w, h * 0.3), lo)
+                p.restore()
+                # 4) bright inner top highlight line (glass edge catching light)
+                p.save(); p.setClipPath(path)
+                hl = QPainterPath()
+                hl.addRoundedRect(1.4, 1.4, w - 2.8, h - 2.8, r, r)
+                p.setPen(QPen(QColor(255, 255, 255, 200), 1.2))
+                p.setBrush(Qt.NoBrush); p.drawPath(hl)
+                p.restore()
+                # 5) crisp cool outer rim — clean definition on a light backdrop
+                edge = QLinearGradient(0, 0, 0, h)
+                edge.setColorAt(0.0, QColor(120, 132, 152, 120))
+                edge.setColorAt(0.5, QColor(96, 110, 134, 95))
+                edge.setColorAt(1.0, QColor(72, 86, 112, 120))
+                p.setPen(QPen(edge, 1.0)); p.setBrush(Qt.NoBrush)
+                p.drawPath(path)
+                p.end()
+                return
 
             # Adaptive blend: t=0 over a dark backdrop (clear glass + bright
             # edge lensing), t=1 over a light backdrop (denser dark tint so it

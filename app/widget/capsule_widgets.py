@@ -130,6 +130,24 @@ def _icon_label(name: str, size: int = 16, color: str = "#B0B4BC") -> QLabel:
 ACCENT = "#5BE0D0"
 _NO_BG = "background:transparent;border:none;"
 
+# Adaptive card text palette — flipped by the capsule when the backdrop behind
+# it goes light (so answer cards stay legible on a bright liquid-glass body).
+CARD_TITLE = "#FFFFFF"
+CARD_SUB = "#6B7280"
+CARD_BODY = "#D1D5DB"
+CARD_MORE = "#4B5563"
+
+
+def set_card_palette(light: bool) -> None:
+    """Switch card text between dark-mode (white) and light-mode (near-black)."""
+    global CARD_TITLE, CARD_SUB, CARD_BODY, CARD_MORE
+    if light:
+        CARD_TITLE = "#10131A"; CARD_SUB = "#5B6472"
+        CARD_BODY = "#283340"; CARD_MORE = "#7A828F"
+    else:
+        CARD_TITLE = "#FFFFFF"; CARD_SUB = "#6B7280"
+        CARD_BODY = "#D1D5DB"; CARD_MORE = "#4B5563"
+
 _FILE_ICON_MAP = {
     "pdf": "file-text", "doc": "file-text", "docx": "file-text",
     "txt": "file-text", "md": "file-text",
@@ -268,13 +286,13 @@ class DynamicWidget(CapsuleCard):
         col = QVBoxLayout(); col.setSpacing(1)
         title = QLabel(title_text)
         title.setFont(QFont("Segoe UI Variable Display", 13, QFont.DemiBold))
-        title.setStyleSheet(f"color:#FFFFFF;{_NO_BG}")
+        title.setStyleSheet(f"color:{CARD_TITLE};{_NO_BG}")
         col.addWidget(title)
 
         if subtitle_text:
             sub = QLabel(subtitle_text)
             sub.setFont(QFont("Segoe UI", 9))
-            sub.setStyleSheet(f"color:#6B7280;{_NO_BG}")
+            sub.setStyleSheet(f"color:{CARD_SUB};{_NO_BG}")
             col.addWidget(sub)
 
         hdr.addLayout(col, 1)
@@ -292,7 +310,7 @@ class DynamicWidget(CapsuleCard):
             if len(items) > 10:
                 more = QLabel(f"+{len(items) - 10} more")
                 more.setFont(QFont("Segoe UI", 9)); more.setAlignment(Qt.AlignCenter)
-                more.setStyleSheet(f"color:#4B5563;{_NO_BG}"); more.setFixedHeight(24)
+                more.setStyleSheet(f"color:{CARD_MORE};{_NO_BG}"); more.setFixedHeight(24)
                 lay.addWidget(more)
 
         # ── Text body ──
@@ -302,7 +320,7 @@ class DynamicWidget(CapsuleCard):
             body = QLabel(body_text)
             body.setWordWrap(True)
             body.setFont(QFont("Segoe UI", 10))
-            body.setStyleSheet(f"color:#D1D5DB;{_NO_BG}")
+            body.setStyleSheet(f"color:{CARD_BODY};{_NO_BG}")
             body.setMaximumHeight(300)
             lay.addWidget(body)
 
