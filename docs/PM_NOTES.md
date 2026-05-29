@@ -1287,3 +1287,67 @@ Verify AI-26 (ALLOWED_MODELS glob may be pre-implemented), then AI-7 (Watch & Ac
 ## Next run will likely tackle
 - **AI-30:** Anchor automation.json to HOME_DIR (~5 LOC)
 - **AI-27:** Background session-token pruning (~10 LOC, promote Backlog→Todo)
+
+---
+
+# PM Brief — 2026-05-29 (automated run)
+
+**Starting commit:** `fd4625f`  →  **Ending commit:** `55e9225`
+**Run duration:** ~35 min  |  **LOC budget used:** ~200/200 (at limit; see Decisions)
+**Run type:** mixed (repair + 1 feature shipped)
+
+## What I did
+- Synced `feature/new-updates` — branch was 8 commits ahead of origin (user's UIA-first desktop agent commits); pulled, already up to date at fd4625f.
+- Read last 5 PM briefs, standing policy, and RESEARCH_NOTES (latest: 2026-05-26 competitor watch).
+- Ran full `pytest -q` — 198 passed, 1 failed, 1 skipped baseline.
+- Repaired `test_desktop_action_emits_post_screenshot_and_no_effect_hint`: UIA commits added a `not _model_sees` guard that skips the initial screenshot, offsetting the mock call counter so the test received "initial-shot" instead of "after-shot". Fix: monkeypatch `is_vision_model → True` — 1 LOC (commit e618da3).
+- Full suite post-repair: 199 passed, 0 failed, 1 skipped.
+- UI smoke: GET / → 200, /healthz → ok; server killed cleanly.
+- Linear survey: 0 In Progress, 0 blocked, ~10 real Todo. Picked AI-20.
+- Shipped AI-20: per-file git auto-commit + one-click revert (commit 55e9225).
+- Board hygiene: all Todo issues < 10 days old — no stale comments needed.
+- Filed AI-31 (include task_id in auto-commit message, Backlog).
+- Pushed 2 commits to remote.
+
+## Tests
+- Unit/integration: **205 passed, 0 failed, 1 skipped** (23.9s)
+- UI smoke: GET / → 200, /healthz ok; no orphan processes
+
+## Repaired
+- **test_desktop_action_emits_post_screenshot_and_no_effect_hint**: user UIA commits added _model_sees guard breaking pre/post screenshot call order. Fixed by patching is_vision_model → True in test (1 LOC, commit e618da3).
+
+## Shipped
+- **AI-20:** Per-file git auto-commit + one-click revert — _git_commit_file() helper, file_change + file_commit events in streaming loop, POST /api/tasks/{task_id}/git/revert endpoint, app.js Revert button. 6 new tests. (commit 55e9225)
+
+## Polished (unsolicited)
+- none
+
+## New issues filed
+- **AI-31:** Include task_id in git auto-commit message for traceability (~2 LOC). Low priority, Backlog.
+
+## Decisions I made (and why)
+- Repair: patched is_vision_model in test rather than weakening assertion — semantically correct.
+- AI-20: added file_change events to streaming loop (previously only emitted in hierarchical path, which is now the fallback).
+- Reused revert_git_checkpoint from premium_features.py.
+- app.js CRLF→LF change: Python write changed line endings; content verified correct by tests.
+- LOC at limit: shipped full feature including frontend rather than half-finished implementation.
+
+## Skipped / blocked / NEEDS HUMAN
+- none
+
+## Risk flags for this push
+- _git_commit_file: subprocess.run in asyncio.to_thread; silent no-op if git not on PATH.
+- app.js: CRLF→LF makes whole file appear changed in diff; content verified correct.
+- git/revert endpoint: can fail on conflicts (returns 409); no data loss.
+
+## Health snapshot
+- Full suite: **205 passed, 0 failed, 1 skipped**  (Δ vs last run: +6 passed / -1 failed)
+- Open Todo issues: 9  (Δ: -1 AI-20 shipped)
+- In Progress / blocked / needs-design: 0 / 0 / 3
+- Lines shipped this run: ~200  /  Last 7 runs avg: ~120
+- Trend: **healthy** — suite green after UIA repair, AI-20 shipped
+- Haiku research last contributed: 2026-05-26
+
+## Next run will likely tackle
+- **AI-21:** Planning mode (Medium priority, ~60-80 LOC)
+- **AI-31:** Include task_id in auto-commit message (~2 LOC, promote Backlog→Todo)
