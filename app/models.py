@@ -96,6 +96,11 @@ class ActionType(str, Enum):
     analyze_folder = "analyze_folder"
     show_widget = "show_widget"
     screen_context = "screen_context"
+    uia_find = "uia_find"
+    uia_click = "uia_click"
+    uia_type = "uia_type"
+    electron_check = "electron_check"
+    electron_unlock = "electron_unlock"
 
 
 class Action(BaseModel):

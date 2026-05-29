@@ -536,6 +536,120 @@ def click_ui_element(query: str, app_hint: str = "",
         return {"ok": False, "error": str(exc), "found_at": hit}
 
 
+def _find_uia_control(query: str, app_hint: str = ""):
+    """Internal: walk the UIA tree and return the live control object
+    (not just a dict of coords) for the best match. Returns (ctrl, info)
+    or (None, error_dict)."""
+    try:
+        import uiautomation as uia  # noqa: F401
+    except ImportError:
+        return None, {"ok": False,
+                      "error": "uiautomation not installed (pip install uiautomation)"}
+    try:
+        root = _uia_root(app_hint)
+        best = (0, None, None)
+
+        def walk(ctrl, depth=0):
+            nonlocal best
+            if depth > 10:
+                return
+            try:
+                name = ctrl.Name or ""
+                aid = ctrl.AutomationId or ""
+                role = ctrl.ControlTypeName or ""
+                score = _score_match(query, name, aid, role)
+                if score > best[0]:
+                    rect = ctrl.BoundingRectangle
+                    if rect.right > rect.left and rect.bottom > rect.top:
+                        info = {
+                            "name": name, "automation_id": aid,
+                            "control_type": role,
+                            "x": (rect.left + rect.right) // 2,
+                            "y": (rect.top + rect.bottom) // 2,
+                            "score": score,
+                        }
+                        best = (score, ctrl, info)
+                for child in ctrl.GetChildren():
+                    walk(child, depth + 1)
+            except Exception:
+                pass
+
+        walk(root)
+        if best[1] is None:
+            return None, {"ok": False, "error": f"no UIA control matched '{query}'"}
+        return best[1], best[2]
+    except Exception as exc:
+        return None, {"ok": False, "error": str(exc)}
+
+
+def type_into_ui_element(query: str, text: str, app_hint: str = "",
+                         clear_first: bool = False) -> dict:
+    """Find an editable control by name/id and set its text WITHOUT pixel
+    clicks. Prefers the UIA ValuePattern (instant, reliable on Electron
+    inputs); falls back to focusing the control and typing via keyboard.
+    """
+    ctrl, info = _find_uia_control(query, app_hint)
+    if ctrl is None:
+        return info  # error dict
+    # Strategy 1: ValuePattern.SetValue — atomic, no focus race
+    try:
+        vp = ctrl.GetValuePattern()
+        if vp is not None:
+            if clear_first:
+                try:
+                    vp.SetValue("")
+                except Exception:
+                    pass
+            vp.SetValue(text)
+            return {"ok": True, "method": "value_pattern",
+                    "target": info["name"] or info["automation_id"],
+                    "control_type": info["control_type"]}
+    except Exception:
+        pass
+    # Strategy 2: focus the control then type via keyboard
+    try:
+        import pyautogui
+        try:
+            ctrl.SetFocus()
+        except Exception:
+            pyautogui.click(info["x"], info["y"])
+        if clear_first:
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.press("delete")
+        pyautogui.typewrite(text, interval=0.01)
+        return {"ok": True, "method": "focus_type",
+                "target": info["name"] or info["automation_id"],
+                "control_type": info["control_type"]}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "found_at": info}
+
+
+def invoke_ui_element(query: str, app_hint: str = "") -> dict:
+    """Activate a control via the UIA InvokePattern (button press without a
+    pixel click). Falls back to a physical click if Invoke isn't supported."""
+    ctrl, info = _find_uia_control(query, app_hint)
+    if ctrl is None:
+        return info
+    try:
+        ip = ctrl.GetInvokePattern()
+        if ip is not None:
+            ip.Invoke()
+            return {"ok": True, "method": "invoke_pattern",
+                    "target": info["name"] or info["automation_id"],
+                    "control_type": info["control_type"]}
+    except Exception:
+        pass
+    # fall back to physical click at center
+    try:
+        import pyautogui
+        pyautogui.click(info["x"], info["y"])
+        return {"ok": True, "method": "click_fallback",
+                "x": info["x"], "y": info["y"],
+                "target": info["name"] or info["automation_id"]}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "found_at": info}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CLIPBOARD HISTORY — tail clipboard in a background thread, keep last N items
 # ─────────────────────────────────────────────────────────────────────────────

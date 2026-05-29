@@ -1941,6 +1941,47 @@ class ToolExecutor:
         except Exception as e:
             return ToolResult(ok=False, output=str(e))
 
+    # ── UIA (UI Automation) tools — drive native/Electron apps by control
+    #    name/AutomationId, no screenshots, no pixel guessing. ──────────────
+    def uia_find(self, query: str, app: str = "", limit: int = 5):
+        from .widget.desktop_features import find_ui_elements
+        res = find_ui_elements(query, app, limit)
+        if not res.get("ok"):
+            return ToolResult(ok=False, output=res.get("error", "no match"), data=res)
+        lines = [f"{i+1}. {c.get('name') or c.get('automation_id') or '(unnamed)'} "
+                 f"[{c.get('control_type')}] @ ({c['x']},{c['y']}) score={c.get('score')}"
+                 for i, c in enumerate(res.get("items", []))]
+        return ToolResult(ok=True, output="UIA matches:\n" + "\n".join(lines), data=res)
+
+    def uia_click(self, query: str, app: str = ""):
+        from .widget.desktop_features import invoke_ui_element
+        res = invoke_ui_element(query, app)
+        if not res.get("ok"):
+            return ToolResult(ok=False, output=res.get("error", "click failed"), data=res)
+        return ToolResult(ok=True, output=f"Activated '{res.get('target')}' via {res.get('method')}.", data=res)
+
+    def uia_type(self, query: str, text: str, app: str = "", clear_first: bool = False):
+        from .widget.desktop_features import type_into_ui_element
+        res = type_into_ui_element(query, text, app, clear_first)
+        if not res.get("ok"):
+            return ToolResult(ok=False, output=res.get("error", "type failed"), data=res)
+        return ToolResult(ok=True, output=f"Typed into '{res.get('target')}' via {res.get('method')}.", data=res)
+
+    def electron_check(self, exe: str):
+        from .widget.desktop_features import is_electron_app
+        is_e = is_electron_app(exe)
+        return ToolResult(ok=True, output=f"is_electron={is_e}", data={"exe": exe, "is_electron": is_e})
+
+    def electron_unlock(self, exe: str, args: list = None):
+        from .widget.desktop_features import relaunch_with_accessibility
+        res = relaunch_with_accessibility(exe, args or [], False)
+        if not res.get("ok"):
+            return ToolResult(ok=False, output=res.get("error", "relaunch failed"), data=res)
+        return ToolResult(ok=True, output=(
+            f"Relaunched {exe} (pid {res.get('pid')}) with --force-renderer-accessibility. "
+            f"Its DOM is now exposed to UIA — retry uia_find/uia_click/uia_type. "
+            f"{res.get('note','')}"), data=res)
+
     def api_call(self, method: str, url: str, headers: dict = None, body: dict = None):
         try:
             safe_url = _validate_public_http_url(url)
@@ -1992,6 +2033,11 @@ class ToolExecutor:
         "git":            ["command"],
         "lint_code":      ["path"],
         "find_symbol":    ["symbol"],
+        "uia_find":       ["query"],
+        "uia_click":      ["query"],
+        "uia_type":       ["query", "text"],
+        "electron_check": ["exe"],
+        "electron_unlock":["exe"],
     }
 
     def _validate_action_args(self, action: "Action") -> "Optional[ToolResult]":
@@ -2173,6 +2219,11 @@ class ToolExecutor:
             ActionType.analyze_folder: lambda a: self.analyze_folder(a.args.get("path", ""), a.args.get("action", "scan")),
             ActionType.show_widget: lambda a: self.show_widget(a.args),
             ActionType.screen_context: lambda a: self.screen_context(),
+            ActionType.uia_find: lambda a: self.uia_find(a.args["query"], a.args.get("app", ""), a.args.get("limit", 5)),
+            ActionType.uia_click: lambda a: self.uia_click(a.args["query"], a.args.get("app", "")),
+            ActionType.uia_type: lambda a: self.uia_type(a.args["query"], a.args["text"], a.args.get("app", ""), a.args.get("clear_first", False)),
+            ActionType.electron_check: lambda a: self.electron_check(a.args["exe"]),
+            ActionType.electron_unlock: lambda a: self.electron_unlock(a.args["exe"], a.args.get("args", [])),
         }
         if action.type in handlers:
             try:
