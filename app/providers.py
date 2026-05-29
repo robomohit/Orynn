@@ -853,16 +853,28 @@ _CHAIN_RETRY_BACKOFFS = [10, 30]  # seconds between chain retry attempts
 # given moment). Latencies measured 2026-05-18 against OpenRouter free tier.
 MODEL_TIERS: Dict[str, List[str]] = {
     # Quick — fast, lighter. Fine for simple/short tasks; weaker at hard coding.
+    # NOTE: every model here MUST support native tool calling — a non-tool model
+    # as primary just fails and wastes a round-trip (liquid/lfm did exactly that).
     "quick": [
-        "liquid/lfm-2.5-1.2b-instruct:free",       # ~1s — genuinely fast, small
-        "openai/gpt-oss-20b:free",                 # ~11s — capable fallback
+        "openai/gpt-oss-20b:free",                 # fast + reliable tool calls
         "nvidia/nemotron-nano-9b-v2:free",         # nano fallback
+        "openai/gpt-oss-120b:free",                # strong fallback
     ],
     # Balanced — best free quality; ~8-21s. The sensible default.
     "balanced": [
         "minimax/minimax-m2.5:free",               # ~9s — capable, mid speed
         "openai/gpt-oss-120b:free",                # ~21s — strongest free
         "nvidia/nemotron-3-super-120b-a12b:free",  # heavy fallback
+    ],
+    # UIA — desktop control via UI Automation (text-only, NO vision needed).
+    # Benchmarked 2026-05-28 on a real uia_type tool call: gpt-oss both 3/3
+    # accurate; glm-4.5-air reliable; qwen/llama/minimax 429'd on free tier.
+    # Ordered fastest-accurate first.
+    "uia": [
+        "openai/gpt-oss-20b:free",                 # ~3-7s, 3/3 correct tool calls
+        "openai/gpt-oss-120b:free",                # ~4-12s, 3/3 correct
+        "z-ai/glm-4.5-air:free",                   # ~6s, reliable find-first
+        "nvidia/nemotron-3-super-120b-a12b:free",  # heavy last-resort
     ],
 }
 

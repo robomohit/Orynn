@@ -887,8 +887,13 @@ class AgentService:
                         env_context += _workspace_tree(tools.workspace, depth=1)
 
             
-            # No screenshots for coding/chat — only for computer/desktop modes
-            if runs_in_background or is_coding_mode:
+            # No screenshots for coding/chat — only for computer/desktop modes.
+            # Also skip when the model can't see (UIA tier uses a fast text-only
+            # tool-calling model): a screenshot would be wasted tokens at best,
+            # or break the request at worst. UIA drives the desktop blind by
+            # control name, so no pixels are needed.
+            _model_sees = is_vision_model(getattr(provider, "model", model))
+            if runs_in_background or is_coding_mode or not _model_sees:
                 screenshot_b64 = None
             elif isolated_hwnd:
                 # Isolated mode: crop to just the target window so model isn't distracted
@@ -1100,39 +1105,62 @@ class AgentService:
                     )
                 elif _is_computer_desktop:
                     system = (
-                        "You are AI Computer — a desktop automation agent controlling a real Windows PC.\n"
-                        "A screenshot of the current desktop is attached. Use it to understand the current state.\n\n"
+                        "You are AI Computer — a desktop automation agent controlling a real Windows PC "
+                        "through Windows UI Automation (UIA). You drive apps by the NAME of their on-screen "
+                        "controls — no screenshots, no pixel coordinates, no guessing.\n\n"
                         "DESKTOP CONTROL WORKFLOW:\n"
-                        "1. Look at the screenshot to understand the current state of the desktop.\n"
-                        "2. Use bash to open applications (e.g. `start notepad`, `start calc`, `start ms-paint:`). Do NOT try to double-click desktop icons.\n"
-                        "3. After opening an app, IMMEDIATELY call focus_window with the app name (e.g. focus_window {\"title\": \"Notepad\"}) to bring it to the foreground. This is MANDATORY before typing.\n"
-                        "4. After focus_window succeeds, type your text with keyboard_type.\n"
-                        "5. A fresh screenshot is captured automatically after every desktop interaction. Use explicit screenshot only when you want an extra check.\n"
-                        "6. Use key_combo for shortcuts (e.g. ctrl+s to save, ctrl+w to close a tab).\n"
-                        "7. SAVING FILES: When a Save-As dialog opens, type the FULL path (e.g. C:\\Users\\<username>\\Desktop\\filename.txt) to save to a specific folder. Do NOT type just the filename — it will save to the wrong folder.\n"
-                        "   To get the username, run: bash {\"command\": \"echo %USERNAME%\"} before saving.\n"
-                        "8. When done, call finish with a summary of what was accomplished.\n\n"
+                        "1. If the target app is already open, go straight to step 3. To open an app, use "
+                        "run_command with the Windows `start` command (e.g. run_command {\"command\": \"start notepad\"}). "
+                        "It returns immediately — never wait on it. Then `uia_wait` for one of its controls to appear.\n"
+                        "2. Bring the app forward with focus_window (e.g. focus_window {\"title\": \"Notepad\"}).\n"
+                        "3. Find what you want with `uia_find` using the control's visible NAME and the app "
+                        "title (e.g. uia_find {\"query\": \"Text editor\", \"app\": \"Notepad\"}). It returns the "
+                        "matching controls — never guess coordinates.\n"
+                        "4. Act:\n"
+                        "   - `uia_click` to press a button / open a menu / select a channel (uses the UIA "
+                        "Invoke pattern — a real activation, not a pixel click).\n"
+                        "   - `uia_type` to enter text into a field. Pass app=<window title>. "
+                        "Use clear_first=true to replace existing text, and submit=true to press Enter "
+                        "afterwards (send a message / run a search) in one step.\n"
+                        "5. To confirm an outcome, `uia_find` for the control/text you expect rather than "
+                        "taking a screenshot.\n"
+                        "6. ELECTRON APPS (Discord, Slack, VS Code, Cursor, Spotify, Notion...): if uia_find "
+                        "returns nothing, the app may be hiding its UIA tree. Call `electron_check` on its .exe, "
+                        "and if it is Electron, `electron_unlock` it (relaunches with accessibility enabled), "
+                        "then retry uia_find.\n"
+                        "7. When done, call finish with a short summary.\n\n"
+                        "RULES:\n"
+                        "- PREFER uia_find / uia_click / uia_type over screenshot + mouse_click. They are far "
+                        "faster and never mis-click. Only fall back to screenshot + coordinate clicks for "
+                        "controls with no accessible name (canvas / custom-drawn UI).\n"
+                        "- ALWAYS pass the `app` window-title to uia_find/uia_click/uia_type so UIA targets the "
+                        "right window even if focus didn't take.\n"
+                        "- After navigating (opening an app, switching a channel/page), use `uia_wait` instead "
+                        "of guessing — it returns the instant the next control is ready.\n"
+                        "- Don't repeat an action that already succeeded. Don't loop.\n\n"
                         "CRITICAL SAFETY RULES:\n"
-                        "- NEVER close, minimize, or interact with Google Chrome or Microsoft Edge — those are the monitoring dashboard. Any Alt+F4, Ctrl+W, or clicks on the browser X button are FORBIDDEN.\n"
-                        "- In full desktop mode, do not interact with Cursor, browsers, File Explorer, or unrelated windows unless the user explicitly asks.\n"
+                        "- NEVER close, minimize, or interact with Google Chrome or Microsoft Edge — those are the monitoring dashboard.\n"
+                        "- Do not interact with Cursor, browsers, File Explorer, or unrelated windows unless the user explicitly asks.\n"
                         "- NEVER send Alt+F4 unless explicitly asked to close a specific non-browser app.\n"
-                        "- NEVER click outside the target app window — confirm target window is in focus first.\n"
-                        "- If an action fails or the screenshot shows an unexpected state, re-evaluate and try a different approach.\n\n"
+                        "- Do NOT click Send / Submit / Pay / Delete (or use submit=true on a message) unless the user clearly asked you to.\n\n"
                         "APP-SPECIFIC RULES:\n"
-                        "- For Notepad or text-editor tasks, start a fresh blank document before typing when possible. Do not type into a restored or titled document unless the user asked to edit it.\n"
-                        "- In isolated mode, verify the focused window title matches the target app before typing.\n"
-                        "- Once the requested result is visible in a screenshot, call finish. Do not keep taking screenshots or repeating input.\n\n"
-                        "EFFICIENCY:\n"
-                        "- Don't take screenshots you don't need (once after open, once after action is enough).\n"
-                        "- Don't repeat failed actions — if a click didn't work, try a different coordinate or approach.\n"
+                        "- For Notepad/text-editor tasks, the editor control is named \"Text editor\".\n"
+                        "- SAVING FILES: when a Save dialog opens, uia_type the FULL path into the "
+                        "\"File name\" field (e.g. C:\\Users\\<username>\\Desktop\\file.txt), then uia_click \"Save\". "
+                        "Get the username with run_command {\"command\": \"echo %USERNAME%\"} if needed.\n"
+                        f"\nAvailable tools:\n{tool_guidance}\n"
                     )
                     xml_system = (
-                        "You are AI Computer — a desktop automation agent controlling a real Windows PC.\n"
+                        "You are AI Computer — a desktop automation agent driving a real Windows PC via UI Automation (UIA).\n"
                         "FORMAT: <thought>reasoning</thought> then <action type=\"tool\">{args}</action>\n\n"
-                        "WORKFLOW: screenshot → bash to open app → focus_window to bring it forward → keyboard_type text → inspect the automatic post-action screenshot → finish\n"
-                        "SAFETY: NEVER close Chrome, Edge, Cursor, or unrelated windows. Verify the target window title before typing. For Notepad, use a fresh blank document when possible. Finish as soon as the requested result is visible.\n\n"
+                        "WORKFLOW: (open app via run_command \"start <app>\" only if not already open) → focus_window → "
+                        "uia_find {query, app} → uia_click / uia_type {query, text, app, clear_first, submit} → uia_find to verify → finish\n"
+                        "PREFER uia_find/uia_click/uia_type over screenshots and pixel clicks — faster and never mis-click. "
+                        "Always pass the app window title. For Electron apps (Discord/Slack/VS Code) that return no controls, "
+                        "electron_check then electron_unlock, then retry. Use uia_wait after navigating instead of sleeping.\n"
+                        "SAFETY: NEVER close Chrome, Edge, Cursor, or unrelated windows. Do not send/submit/pay/delete unless asked.\n\n"
                         f"Available tools:\n{tool_guidance}\n\n"
-                        "After each <observation>, decide next step. Always take a screenshot after opening an app or after clicking."
+                        "After each <observation>, decide the next step. Call finish as soon as the goal is achieved."
                     )
                 else:
                     system = (

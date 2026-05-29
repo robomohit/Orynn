@@ -890,6 +890,8 @@ class ToolExecutor:
         command: str,
         on_chunk: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
     ) -> ToolResult:
+        if self._looks_like_gui_launch(command):
+            return self._launch_gui_command(command, self.workspace)
         return await self._stream_subprocess(command, self.workspace, on_chunk)
 
     def bash(self, command: str, restart: bool = False):
@@ -980,6 +982,12 @@ class ToolExecutor:
                 return ToolResult(ok=False, output=f"Not a directory: {target}")
             self._bash_cwd = target
             return ToolResult(ok=True, output=f"Changed directory to {target}")
+
+        # GUI launches (`start notepad`, `explorer`, etc.) keep stdout/stderr
+        # pipes open until the app closes — streaming would block for the full
+        # timeout. Detach and fire-and-forget instead.
+        if self._looks_like_gui_launch(command):
+            return self._launch_gui_command(command, self._bash_cwd)
 
         return await self._stream_subprocess(command, self._bash_cwd, on_chunk, include_cwd=True)
 

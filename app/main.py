@@ -1262,9 +1262,16 @@ async def create_task(body: TaskIn):
     # Auto-pick a model from whatever keys are available when none is specified
     if not body.model:
         if os.environ.get("OPENROUTER_API_KEY"):
+            _mode = body.mode or "auto"
             # Qwen3-Coder is purpose-built for code; use it for coding mode
-            if (body.mode or "auto") == "coding":
+            if _mode == "coding":
                 selected_model = "openrouter/qwen/qwen3-coder:free"
+            elif _mode in ("computer", "computer_isolated"):
+                # Desktop control via UI Automation is text-only (no vision):
+                # use the fast, accurate tool-calling UIA tier. (When an image
+                # is attached the widget sends an explicit vision model, which
+                # takes this branch out of play since body.model is set.)
+                selected_model = "tier:uia"
             else:
                 selected_model = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
         elif os.environ.get("ANTHROPIC_API_KEY"):
