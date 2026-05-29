@@ -449,6 +449,83 @@ ELECTRON_EXES = {
 }
 
 
+def resolve_app_exe(name_or_path: str) -> str:
+    """Resolve a bare app name (e.g. 'Discord' or 'Discord.exe') to the full
+    .exe path of a currently-running window's process. Agents rarely know the
+    full install path; this lets electron_check/electron_unlock accept a name.
+    Returns the input unchanged if nothing matches.
+    """
+    if not name_or_path:
+        return name_or_path
+    if os.path.exists(name_or_path):
+        return name_or_path
+    base = os.path.basename(name_or_path).lower()
+    base_exe = base if base.endswith(".exe") else base + ".exe"
+    stem = base_exe[:-4]
+    try:
+        windows = list_visible_windows()
+        # 1. exact exe basename match
+        for w in windows:
+            exe = w.get("exe") or ""
+            if exe and os.path.basename(exe).lower() == base_exe:
+                return exe
+        # 2. app name appears in a window title (e.g. '... - Discord')
+        for w in windows:
+            if stem and stem in (w.get("title") or "").lower():
+                exe = w.get("exe") or ""
+                if exe:
+                    return exe
+    except Exception:
+        pass
+    return name_or_path
+
+
+def count_app_controls(app_hint: str, cap: int = 60) -> int:
+    """Count UIA controls under an app's top-level window (stops early at `cap`).
+    Used to tell whether an Electron app already exposes a rich accessibility
+    tree, so we can skip a disruptive --force-renderer-accessibility relaunch.
+    """
+    try:
+        import uiautomation as uia  # noqa: F401
+    except ImportError:
+        return 0
+    _ensure_uia_config(uia)
+    try:
+        # Only count when a top-level window actually matches app_hint — do NOT
+        # fall back to the foreground window (that would falsely report a closed
+        # app as "already accessible").
+        hint = (app_hint or "").lower()
+        root = None
+        if hint:
+            for top in uia.GetRootControl().GetChildren():
+                try:
+                    if hint in (top.Name or "").lower():
+                        root = top
+                        break
+                except Exception:
+                    continue
+        if root is None:
+            return 0
+        n = [0]
+
+        def w(c, d=0):
+            if d > _UIA_MAX_DEPTH or n[0] >= cap:
+                return
+            try:
+                n[0] += 1
+                for ch in c.GetChildren():
+                    if n[0] >= cap:
+                        break
+                    w(ch, d + 1)
+            except Exception:
+                pass
+
+        w(root)
+        return n[0]
+    except Exception:
+        return 0
+
+
 def is_electron_app(exe_path: str) -> bool:
     """Returns True if the .exe path looks like an Electron app.
     Heuristics:

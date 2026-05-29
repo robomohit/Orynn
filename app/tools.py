@@ -1989,8 +1989,19 @@ class ToolExecutor:
         return ToolResult(ok=True, output=f"is_electron={is_e} (exe={resolved})", data={"exe": resolved, "is_electron": is_e})
 
     def electron_unlock(self, exe: str, args: list = None):
-        from .widget.desktop_features import relaunch_with_accessibility, resolve_app_exe
+        from .widget.desktop_features import (
+            relaunch_with_accessibility, resolve_app_exe, count_app_controls)
+        import os as _os
         resolved = resolve_app_exe(exe)
+        # Skip the disruptive relaunch if the app already exposes a rich UIA
+        # tree (already unlocked, or not an app that needs it). The earlier
+        # Discord grind wasted ~15s relaunching an already-accessible app.
+        app_name = _os.path.splitext(_os.path.basename(resolved))[0]
+        if count_app_controls(app_name, cap=60) >= 40:
+            return ToolResult(ok=True, output=(
+                f"{app_name} already exposes a rich UIA tree (no relaunch needed). "
+                f"Use uia_find/uia_click/uia_type directly."),
+                data={"exe": resolved, "already_accessible": True})
         res = relaunch_with_accessibility(resolved, args or [], False)
         if not res.get("ok"):
             return ToolResult(ok=False, output=res.get("error", "relaunch failed"), data=res)
