@@ -1,0 +1,198 @@
+/* ============================================================================
+   DYNAMIC LAYER — ambient motion, entrance animation, live micro-interactions.
+   Loaded AFTER style.css so it layers on top. Uses the accent HSL tokens
+   (--accent-h/s/l) so everything stays on-brand (Aqua Mint). Tasteful, premium
+   motion — not gaudy. Fully disabled under prefers-reduced-motion.
+   ============================================================================ */
+
+:root {
+  --dyn-accent:      hsl(var(--accent-h), var(--accent-s), var(--accent-l));
+  --dyn-accent-2:    hsl(calc(var(--accent-h) + 42), 82%, 62%);
+  --dyn-accent-3:    hsl(calc(var(--accent-h) - 34), 86%, 62%);
+}
+
+/* ── 1. Ambient aurora behind the main panel ─────────────────────────────── */
+.main { isolation: isolate; }
+.main::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 48% at 22% 28%, hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.14), transparent 70%),
+    radial-gradient(44% 52% at 80% 26%, hsla(calc(var(--accent-h) + 42), 82%, 60%, 0.10), transparent 72%),
+    radial-gradient(52% 50% at 62% 96%, hsla(calc(var(--accent-h) - 34), 86%, 60%, 0.09), transparent 75%);
+  filter: blur(46px) saturate(1.12);
+  opacity: 0.9;
+  animation: dyn-aurora 28s var(--ease-out, ease-in-out) infinite alternate;
+}
+/* keep all real content above the aurora */
+.main > * { position: relative; z-index: 1; }
+
+@keyframes dyn-aurora {
+  0%   { transform: translate3d(-3%, -2%, 0) scale(1.00) rotate(0deg); }
+  50%  { transform: translate3d(4%, 3%, 0)   scale(1.08) rotate(1.2deg); }
+  100% { transform: translate3d(-2%, 4%, 0)  scale(1.04) rotate(-0.8deg); }
+}
+
+/* A faint second, slower veil for depth (very subtle) */
+.main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(60% 60% at 50% 40%,
+              hsla(var(--accent-h), var(--accent-s), 60%, 0.05), transparent 80%);
+  animation: dyn-breathe 9s ease-in-out infinite;
+}
+@keyframes dyn-breathe {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+
+/* ── 2. Entrance animations — staggered fade-up on first paint ────────────── */
+@keyframes dyn-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes dyn-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.welcome .hello-eye,
+.welcome h3,
+.welcome > p,
+.welcome .example-grid { animation: dyn-fade-up 0.66s var(--ease-out, cubic-bezier(0.16,1,0.3,1)) both; }
+.welcome h3            { animation-delay: 0.05s; }
+.welcome > p           { animation-delay: 0.12s; }
+.welcome .example-grid { animation-delay: 0.18s; }
+
+/* stagger the example cards */
+.welcome .example-btn { animation: dyn-fade-up 0.6s var(--ease-out, cubic-bezier(0.16,1,0.3,1)) both; }
+.welcome .example-btn:nth-child(1) { animation-delay: 0.20s; }
+.welcome .example-btn:nth-child(2) { animation-delay: 0.27s; }
+.welcome .example-btn:nth-child(3) { animation-delay: 0.34s; }
+.welcome .example-btn:nth-child(4) { animation-delay: 0.41s; }
+
+.sidebar .sidebar-controls { animation: dyn-fade-in 0.7s ease both; animation-delay: 0.05s; }
+.composer-wrap             { animation: dyn-fade-up 0.6s var(--ease-out, cubic-bezier(0.16,1,0.3,1)) both; animation-delay: 0.24s; }
+
+/* ── 3. Live micro-interactions ──────────────────────────────────────────── */
+
+/* Example / suggestion cards: lift + accent glow + sliding sheen on hover */
+.example-btn {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.22s var(--ease-out, ease),
+              border-color 0.22s ease,
+              box-shadow 0.22s ease,
+              background 0.22s ease;
+}
+.example-btn::after {
+  content: "";
+  position: absolute;
+  top: 0; left: -120%;
+  width: 80%; height: 100%;
+  background: linear-gradient(100deg, transparent,
+              hsla(var(--accent-h), var(--accent-s), 70%, 0.14), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.55s var(--ease-out, ease);
+  pointer-events: none;
+}
+.example-btn:hover {
+  transform: translateY(-2px);
+  border-color: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.55);
+  box-shadow: 0 10px 26px -14px hsla(var(--accent-h), var(--accent-s), 50%, 0.55),
+              0 0 0 1px hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.18) inset;
+}
+.example-btn:hover::after { left: 130%; }
+.example-btn:active { transform: translateY(0) scale(0.99); }
+
+/* Sidebar items: smooth slide + accent edge on hover */
+.sidebar-button,
+.project-folder-trigger,
+.sidebar-settings-btn,
+.history-list .history-item,
+.history-list .task-item {
+  transition: transform 0.18s var(--ease-out, ease),
+              background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.sidebar-button:hover,
+.project-folder-trigger:hover,
+.sidebar-settings-btn:hover,
+.history-list .history-item:hover,
+.history-list .task-item:hover {
+  transform: translateX(2px);
+  box-shadow: inset 2px 0 0 hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.7);
+}
+
+/* Primary CTA (Start task): a slow breathing glow + an animated gradient edge */
+.send-btn {
+  position: relative;
+  overflow: hidden;
+  animation: dyn-cta-glow 3.4s ease-in-out infinite;
+}
+.send-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%,
+              hsla(0, 0%, 100%, 0.28) 50%, transparent 70%);
+  transform: translateX(-130%);
+  animation: dyn-cta-sweep 4.2s ease-in-out 1.2s infinite;
+  pointer-events: none;
+}
+@keyframes dyn-cta-glow {
+  0%, 100% { box-shadow: 0 0 0 0 hsla(var(--accent-h), var(--accent-s), 50%, 0.0),
+                         inset 0 1px 0 rgba(255,255,255,0.12); }
+  50%      { box-shadow: 0 6px 22px -8px hsla(var(--accent-h), var(--accent-s), 55%, 0.65),
+                         inset 0 1px 0 rgba(255,255,255,0.18); }
+}
+@keyframes dyn-cta-sweep {
+  0%   { transform: translateX(-130%); }
+  35%  { transform: translateX(130%); }
+  100% { transform: translateX(130%); }
+}
+.send-btn:hover { transform: translateY(-1px) scale(1.02); }
+
+/* Provider status chips: gentle live pulse on the "ok" dot */
+.provider-chips .chip.ok::before,
+.provider-chips .chip[data-status="ok"]::before,
+.provider-chips .dot-ok {
+  animation: dyn-pulse 2.4s ease-in-out infinite;
+}
+@keyframes dyn-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.9); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+
+/* The composer gets a subtle focus-within accent ring that animates in */
+.composer { transition: border-color 0.25s ease, box-shadow 0.25s ease; }
+.composer:focus-within {
+  border-color: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.45);
+  box-shadow: 0 0 0 3px hsla(var(--accent-h), var(--accent-s), 50%, 0.12),
+              0 10px 30px -18px hsla(var(--accent-h), var(--accent-s), 45%, 0.55);
+}
+
+/* New-session button: brand-tinted hover with a soft glow */
+.sidebar-button:hover { color: var(--ink, #e8e8ea); }
+
+/* ── 4. Live status / running indicators feel alive ──────────────────────── */
+.history-item.running .status-dot,
+.task-item[data-status="running"] .dot,
+.status-dot.running {
+  animation: dyn-pulse 1.4s ease-in-out infinite;
+}
+
+/* ── Reduced motion: turn it all off ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .main::before, .main::after, .send-btn, .send-btn::before,
+  .example-btn::after, .provider-chips .chip.ok::before,
+  .welcome .hello-eye, .welcome h3, .welcome > p, .welcome .example-grid,
+  .welcome .example-btn, .sidebar .sidebar-controls, .composer-wrap {
+    animation: none !important;
+  }
+}
