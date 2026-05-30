@@ -1952,6 +1952,22 @@
       return;
     }
 
+    if (event.type === 'usage_update') {
+      const tok = event.total_tokens || 0;
+      const label = tok >= 1000 ? `${(tok / 1000).toFixed(1)}k tokens` : `${tok} tokens`;
+      const activeItem = $('task-history')?.querySelector('.history-item.active');
+      if (activeItem) {
+        let badge = activeItem.querySelector('.usage-badge');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'usage-badge';
+          activeItem.querySelector('.history-copy')?.appendChild(badge);
+        }
+        badge.textContent = label;
+      }
+      return;
+    }
+
     if (event.type === 'widget' || event.type === 'ui_widget') {
       finalizeTurnSummary();
       renderAgentWidget(event);
@@ -2212,7 +2228,8 @@
         plan_first: !!$('plan-first-toggle')?.checked,
         notify_on_completion: !!$('notify-toggle')?.checked,
         auto_commit: !!$('checkpoint-toggle')?.checked,
-        autonomy_level: $('autonomy-level')?.value || 'balanced'
+        autonomy_level: $('autonomy-level')?.value || 'balanced',
+        thinking_budget: $('thinking-budget')?.value || 'off'
       });
       if (window.innerWidth <= 1080) document.body.classList.remove('nav-open');
     } catch (err) {

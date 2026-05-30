@@ -303,3 +303,17 @@ def test_ai15_voice_widget_v2_drag_strip_hotkey():
     # hotkey toggles visibility (summon/dismiss), not just focus
     assert "root.hidden = !root.hidden" in js, "hotkey must toggle root.hidden"
     assert "e.ctrlKey && e.shiftKey && e.code === 'Space'" in js, "hotkey combo missing"
+
+
+def test_ai23_thinking_budget_ui():
+    """AI-23: thinking-budget select in HTML and thinking_budget in app.js payload."""
+    html = STATIC_HTML.read_text(encoding="utf-8")
+    js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
+    css = (_STATIC / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="thinking-budget"' in html, "thinking-budget select missing from HTML"
+    assert 'value="extended"' in html, "Extended option missing from thinking-budget select"
+    assert "thinking_budget" in js, "thinking_budget missing from task payload in app.js"
+    assert "usage_update" in js, "usage_update event handler missing from app.js"
+    assert "usage-badge" in js, "usage-badge class missing from app.js"
+    assert "usage-badge" in css, ".usage-badge CSS missing from style.css"

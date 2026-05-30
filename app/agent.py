@@ -593,6 +593,7 @@ class AgentService:
         notify_on_completion: bool = False,
         auto_commit: bool = False,
         autonomy_level: str = "balanced",
+        thinking_budget: str = "off",
     ) -> TaskRecord:
         active_skills = list(active_skills or [])
         task_workspace = Path(project_folder).expanduser().resolve() if project_folder else self.home_dir
@@ -606,6 +607,7 @@ class AgentService:
         environment_payload["plan_first"] = bool(plan_first)
         environment_payload["notify_on_completion"] = bool(notify_on_completion)
         environment_payload["auto_commit"] = bool(auto_commit)
+        environment_payload["thinking_budget"] = thinking_budget or "off"
         self._task_environments[task_id] = environment_payload
         context = AgentContext(
             goal=goal,
@@ -627,6 +629,7 @@ class AgentService:
             notify_on_completion=bool(notify_on_completion),
             auto_commit=bool(auto_commit),
             autonomy_level=autonomy_level or "balanced",
+            thinking_budget=thinking_budget or "off",
         )
         self._active_tasks[task_id] = asyncio.create_task(
             self.run_task(
@@ -645,6 +648,7 @@ class AgentService:
                 notify_on_completion=bool(notify_on_completion),
                 auto_commit=bool(auto_commit),
                 autonomy_level=autonomy_level or "balanced",
+                thinking_budget=thinking_budget or "off",
             )
         )
         return record
@@ -679,6 +683,7 @@ class AgentService:
         notify_on_completion: bool = False,
         auto_commit: bool = False,
         autonomy_level: str = "balanced",
+        thinking_budget: str = "off",
     ):
         provider_override = None
         if not isinstance(screen_width, int) and hasattr(screen_width, "stream_chat"):
@@ -686,6 +691,7 @@ class AgentService:
             screen_width = 1280
         active_skills = list(active_skills or [])
         provider = provider_override or _new_planner_provider(model)
+        provider.thinking_budget = thinking_budget or "off"
         tools = self._get_task_tools(task_id)
         if project_folder and task_id not in self._task_tools:
             tools = self._assign_task_tools(task_id, Path(project_folder).expanduser().resolve())
@@ -1772,6 +1778,7 @@ class AgentService:
                     provider._total_output_tokens += len(thought_text) // 4
                     if await self._check_token_budget(task_id, provider, token_budget):
                         return
+                    await self._emit(task_id, "usage_update", {"total_tokens": provider.total_tokens})
                     
                     if act.type == AT.finish:
                         self._finalize(task_id, "done", res.output)

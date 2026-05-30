@@ -426,3 +426,85 @@ def test_blocked_models_empty_allows_all(monkeypatch):
     p = _prov.PlannerProvider(model="google/gemma-4-31b-it:free")
     chain = p._openrouter_models_to_try("google/gemma-4-31b-it:free")
     assert len(chain) > 0
+
+
+# ── AI-23: Thinking budget ────────────────────────────────────────────────────
+
+def test_thinking_budget_default_is_off():
+    """PlannerProvider.thinking_budget defaults to 'off'."""
+    from app.providers import PlannerProvider
+    p = PlannerProvider(model="anthropic/claude-3-haiku")
+    assert p.thinking_budget == "off"
+
+
+def test_thinking_budget_standard_adds_thinking_param(monkeypatch):
+    """_chat_anthropic includes thinking param when budget is 'standard'."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    from app.providers import PlannerProvider
+    p = PlannerProvider(model="anthropic/claude-3-haiku")
+    p.thinking_budget = "standard"
+
+    captured = {}
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {}}
+
+    def fake_post(url, headers=None, json=None, **kw):
+        captured["payload"] = json
+        return FakeResp()
+
+    p._http_client.post = fake_post
+    result = p._chat_anthropic("sys", "prompt")
+    assert result == "ok"
+    assert "thinking" in captured["payload"]
+    assert captured["payload"]["thinking"]["type"] == "enabled"
+    assert captured["payload"]["thinking"]["budget_tokens"] == 5000
+
+
+def test_thinking_budget_extended_uses_larger_budget(monkeypatch):
+    """_chat_anthropic uses 16 000 budget_tokens when 'extended'."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    from app.providers import PlannerProvider
+    p = PlannerProvider(model="anthropic/claude-3-haiku")
+    p.thinking_budget = "extended"
+
+    captured = {}
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"content": [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": "deep"}], "usage": {}}
+
+    def fake_post(url, headers=None, json=None, **kw):
+        captured["payload"] = json
+        return FakeResp()
+
+    p._http_client.post = fake_post
+    result = p._chat_anthropic("sys", "prompt")
+    assert result == "deep"
+    assert captured["payload"]["thinking"]["budget_tokens"] == 16000
+
+
+def test_thinking_budget_off_omits_thinking_param(monkeypatch):
+    """_chat_anthropic omits the thinking key when budget is 'off'."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    from app.providers import PlannerProvider
+    p = PlannerProvider(model="anthropic/claude-3-haiku")
+    p.thinking_budget = "off"
+
+    captured = {}
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"content": [{"type": "text", "text": "plain"}], "usage": {}}
+
+    def fake_post(url, headers=None, json=None, **kw):
+        captured["payload"] = json
+        return FakeResp()
+
+    p._http_client.post = fake_post
+    p._chat_anthropic("sys", "prompt")
+    assert "thinking" not in captured["payload"]

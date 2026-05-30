@@ -159,6 +159,7 @@ class TaskRecord(BaseModel):
     notify_on_completion: bool = False
     auto_commit: bool = False
     autonomy_level: str = "balanced"
+    thinking_budget: str = "off"
     checkpoint_commit: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 

@@ -1000,6 +1000,7 @@ class PlannerProvider:
         self._ollama_base_url: str = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
         self._total_input_tokens: int = 0
         self._total_output_tokens: int = 0
+        self.thinking_budget: str = "off"
         # Persistent HTTP client — reuses TCP connections and avoids SSL handshake per call
         self._http_client = httpx.Client(timeout=300)
         # Cache provider type so _is_X() string checks don't repeat every call
@@ -1075,18 +1076,24 @@ class PlannerProvider:
             if data:
                 content.insert(0, {"type": "image", "source": {"type": "base64", "media_type": mime or "image/jpeg", "data": data}})
             
-        payload = {
+        _THINKING_BUDGETS = {"standard": 5000, "extended": 16000}
+        budget_tokens = _THINKING_BUDGETS.get(self.thinking_budget, 0)
+        max_tokens = max(4096, budget_tokens + 1024) if budget_tokens else 4096
+        payload: Dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": content}],
         }
+        if budget_tokens:
+            payload["thinking"] = {"type": "enabled", "budget_tokens": budget_tokens}
         last_err = None
         for attempt in range(3):
             try:
                 resp = self._http_client.post(
                     "https://api.anthropic.com/v1/messages",
-                    headers={"x-api-key": self._anthropic_key, "anthropic-version": "2023-06-01"},
+                    headers={"x-api-key": self._anthropic_key, "anthropic-version": "2023-06-01",
+                             "anthropic-beta": "interleaved-thinking-2025-05-14"},
                     json=payload,
                 )
                 resp.raise_for_status()
@@ -1094,7 +1101,9 @@ class PlannerProvider:
                 usage = data.get("usage", {})
                 self._total_input_tokens += usage.get("input_tokens", 0)
                 self._total_output_tokens += usage.get("output_tokens", 0)
-                return data["content"][0]["text"]
+                # With extended thinking, content may have thinking blocks before text blocks
+                text_blocks = [b["text"] for b in data.get("content", []) if b.get("type", "text") == "text" and "text" in b]
+                return text_blocks[0] if text_blocks else ""
             except httpx.HTTPStatusError as e:
                 last_err = e
                 if e.response.status_code in (402, 429) or e.response.status_code >= 500:

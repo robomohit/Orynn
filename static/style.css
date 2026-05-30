@@ -558,6 +558,16 @@
     font-family: var(--font-mono);
     letter-spacing: 0;
   }
+  .usage-badge {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 0 4px;
+    background: var(--bg-3);
+    border-radius: var(--r-sm);
+    color: var(--muted-2);
+    font-size: var(--fs-micro);
+    font-family: var(--font-mono);
+  }
   .history-retask {
     display: none;
     margin-top: 4px;

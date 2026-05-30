@@ -527,6 +527,7 @@ def _start_task_from_spec(spec: Dict[str, Any]) -> TaskRecord:
         notify_on_completion=bool(spec.get("notify_on_completion")),
         auto_commit=bool(spec.get("auto_commit")),
         autonomy_level=spec.get("autonomy_level") or "balanced",
+        thinking_budget=spec.get("thinking_budget") or "off",
     )
     _tasks[record.id] = record
     _save_task_record(record)
@@ -619,6 +620,7 @@ class TaskIn(BaseModel):
     notify_on_completion: bool = False
     auto_commit: bool = False
     autonomy_level: Literal["careful", "balanced", "fast"] = "balanced"
+    thinking_budget: Literal["off", "standard", "extended"] = "off"
 
 
 class AutomationIn(BaseModel):
@@ -1382,6 +1384,7 @@ async def create_task(body: TaskIn):
             "notify_on_completion": body.notify_on_completion,
             "auto_commit": body.auto_commit,
             "autonomy_level": body.autonomy_level,
+            "thinking_budget": body.thinking_budget,
         }
         if active >= _MAX_ACTIVE_TASKS:
             context = AgentContext(
