@@ -1,61 +1,59 @@
-# PM Brief — 2026-05-29 (automated run)
+# PM Brief — 2026-05-30 (automated run)
 
-**Starting commit:** `fd4625f`  →  **Ending commit:** `55e9225`
-**Run duration:** ~35 min  |  **LOC budget used:** ~200/200 (at limit; see Decisions)
-**Run type:** mixed (repair + 1 feature shipped)
+**Starting commit:** `b63ad01`  →  **Ending commit:** `594efdb`
+**Run duration:** ~40 min  |  **LOC budget used:** ~149/200
+**Run type:** feature (AI-23 shipped, AI-21 pre-impl discovered)
 
 ## What I did
-- Synced `feature/new-updates` — branch was 8 commits ahead of origin (user's UIA-first desktop agent commits); pulled, already up to date at fd4625f.
-- Read last 5 PM briefs, standing policy, and RESEARCH_NOTES (latest: 2026-05-26 competitor watch).
-- Ran full `pytest -q` — 198 passed, 1 failed, 1 skipped baseline.
-- Repaired `test_desktop_action_emits_post_screenshot_and_no_effect_hint`: UIA commits added a `not _model_sees` guard that skips the initial screenshot, offsetting the mock call counter so the test received "initial-shot" instead of "after-shot". Fix: add `monkeypatch.setattr("app.agent.is_vision_model", lambda model: True)` — 1 LOC in test (commit e618da3).
-- Full suite post-repair: 199 passed, 0 failed, 1 skipped.
-- UI smoke: GET / → 200, /healthz → {server, providers, ollama} ok; server killed cleanly.
-- Linear survey: 0 In Progress, 0 blocked, ~10 real Todo (AI-1/2/3/4 are onboarding placeholders; AI-5/14/18 have needs-design). Picked AI-20.
-- Shipped AI-20: per-file git auto-commit + one-click revert (commit 55e9225).
-- Board hygiene: all Todo issues < 10 days old — no stale comments needed. No blocked issues.
-- Filed AI-31 (include task_id in auto-commit message, Backlog).
-- Pushed 2 commits to remote.
+- Synced `feature/new-updates` — already up to date at b63ad01.
+- Read last 5 PM briefs, standing policy, and RESEARCH_NOTES (latest available: 2026-05-20; newer research commits are on a separate branch not merged into feature/new-updates).
+- Ran full `pytest -q` — **205 passed, 1 skipped, 0 failed** baseline (green).
+- UI smoke: GET / → 200, /healthz → openrouter+google ok; server killed cleanly.
+- Linear survey: 0 In Progress, 0 blocked. Todo: AI-5/14/18 (needs-design), AI-13/21/23 (pickable), AI-1/2/3/4 (onboarding placeholders).
+- Audited AI-21 (Planning mode) — fully pre-implemented (commit 2d9744d: backend, UI checkbox, app.js wiring, tests). Marked Done.
+- Picked AI-23 (Thinking budget toggle + cost badge). Implemented, tested, committed (594efdb).
+- Filed AI-32: emit usage_update in native-tools streaming path (~3 LOC follow-up).
+- Board hygiene: no blocked issues; all Todo issues < 11 days old, no stale comments needed.
+- Pushed 1 commit to origin.
 
 ## Tests
-- Unit/integration: **205 passed, 0 failed, 1 skipped** (23.9s)
+- Unit/integration: **210 passed, 1 skipped, 0 failed** (25.5s) — +5 from new tests
 - UI smoke: GET / → 200, /healthz ok; no orphan processes
 
 ## Repaired
-- **test_desktop_action_emits_post_screenshot_and_no_effect_hint**: user's UIA commits added `_model_sees` guard that skips initial screenshot when model has no vision, offsetting mock call counter. Fixed by patching `is_vision_model → True` in test (1 LOC, commit e618da3).
+- none (baseline was already green)
 
 ## Shipped
-- **AI-20:** Per-file git auto-commit + one-click revert — `_git_commit_file()` helper checks git repo, does `git add <file> && git commit [ai-computer] {action}:{basename}`, returns short hash or None. Streaming loop now emits `file_change` + `file_commit` events after each write_file/text_create/text_str_replace/text_insert in coding mode. New `POST /api/tasks/{task_id}/git/revert` endpoint uses existing `revert_git_checkpoint()`. `app.js` renders a `↩ Revert` button on `file_commit` events. Non-git workspaces: no-op. 6 new tests. (commit 55e9225)
+- **AI-23:** Thinking budget toggle + live token cost badge — `thinking_budget` (off/standard/extended) flows through CreateTaskRequest → environment_payload → run_task → PlannerProvider. Anthropic `_chat_anthropic` adds `thinking: {type:"enabled", budget_tokens:5k/16k}` + `anthropic-beta` header when non-off; text-block extraction handles interleaved thinking blocks. Agent emits `usage_update` SSE after each hierarchical-path turn. UI: Thinking select in `.composer-options`; app.js reads it and sends in payload; `usage_update` handler updates `.usage-badge` chip on active history item; style.css badge chip. 6 new tests. (commit 594efdb)
 
 ## Polished (unsolicited)
 - none
 
 ## New issues filed
-- **AI-31:** Include task_id in git auto-commit message for traceability (~2 LOC follow-up to AI-20). Low priority, Backlog.
+- **AI-32:** Emit `usage_update` in native-tools streaming path (~3 LOC). The event currently only fires from the hierarchical loop; the primary `stream_chat_with_tools` path doesn't emit it. Medium priority, Backlog.
 
 ## Decisions I made (and why)
-- **Repair: patched `is_vision_model` in test rather than reverting UIA commits or weakening assertion.** The UIA commits correctly added a vision-model check; the test was relying on call order that broke. Making the test explicitly declare "model can see" is more semantically correct than relying on mock-count side effects.
-- **AI-20 chose streaming loop for file_change events (not hierarchical path).** The streaming ReAct loop is now the primary path (`if True:` at line 1064). The hierarchical path already emits file_change; adding it to the streaming loop fills the gap. This means file_change events now fire for the first time in the common execution path.
-- **Reused `revert_git_checkpoint` from premium_features.py.** Already had the right logic (`git revert --no-edit`) + commit hash validation. No need to duplicate.
-- **app.js CRLF→LF change.** Python's `content.replace()` write on Windows converted LF→CRLF; git diff shows whole file as changed. Content is correct (tests pass). Git will normalize on next touch.
-- **LOC budget: at ~200.** Per-file auto-commit (`_git_commit_file` + streaming loop integration + endpoint) accounts for ~80 LOC prod; 120 LOC for 6 tests + app.js handler. Decided to ship the full feature including the frontend rather than a half-finished implementation.
+- **AI-21 marked Done without new code:** All three acceptance-criteria components (plan-first toggle in UI, API param, agent logic) were already implemented in commit 2d9744d. Per playbook, same approach as prior pre-impl discoveries (AI-26, AI-19).
+- **Picked AI-23 over AI-13 (higher priority):** AI-13 (Private Context Bridge) has no `needs-design` label but requires reading open browser tabs via browser MCP — no infrastructure for that exists in the codebase. Implementing it would require new browser automation code that can't be tested automatically in this run. AI-23 had clear scope and fully testable acceptance criteria.
+- **`usage_update` emission only in hierarchical path this run:** Filed AI-32 for the native-tools path follow-up rather than expanding scope mid-feature. Token badge will update during hierarchical tasks; native-tools tasks need AI-32.
+- **Anthropic beta header `interleaved-thinking-2025-05-14`:** Required for extended thinking API per Anthropic docs as of 2025-05.
 
 ## Skipped / blocked / NEEDS HUMAN
 - none
 
 ## Risk flags for this push
-- `app/agent.py`: `_git_commit_file` calls `subprocess.run` synchronously (in `asyncio.to_thread`). If git is not on PATH, returns None silently. No production path affected if git is absent.
-- `static/app.js`: CRLF→LF change makes the whole file appear changed in diff. Content is verified correct by test suite.
-- `POST /api/tasks/{task_id}/git/revert`: Uses `revert_git_checkpoint` which runs `git revert --no-edit` — can fail on conflicts (returns 409). User sees failure message; no data loss.
+- `app/providers.py` `_chat_anthropic`: `_THINKING_BUDGETS` dict defined locally inside the method on each call (minor inefficiency, but avoids module-level state). No production path changes when `thinking_budget == "off"` — the `payload["thinking"]` key is only added conditionally.
+- `app/agent.py`: `provider.thinking_budget = thinking_budget` sets an attr on the provider after creation. Idempotent and safe.
+- New `usage_update` SSE event: purely additive; existing clients that don't handle it will silently ignore it.
 
 ## Health snapshot
-- Full suite: **205 passed, 0 failed, 1 skipped**  (Δ vs last run: +6 passed / -1 failed)
-- Open Todo issues: 9 (Δ: -1 AI-20 shipped; AI-1/2/3/4 are onboarding placeholders)
-- In Progress / blocked / needs-design: 0 / 0 / 3 (AI-5, AI-14, AI-18)
-- Lines shipped this run: ~200  /  Last 7 runs avg: ~120
-- Trend: **healthy** — suite green after UIA commit repairs, AI-20 shipped
-- Haiku research last contributed: 2026-05-26
+- Full suite: **210 passed, 1 skipped, 0 failed**  (Δ vs last run: +5 passed)
+- Open Todo issues: 7  (AI-5/14/18 needs-design; AI-13 pickable; AI-1/2/3/4 onboarding)  (Δ: -1 AI-23 Done, -1 AI-21 Done)
+- In Progress / blocked / needs-design: 0 / 0 / 3
+- Lines shipped this run: ~149  /  Last 7 runs avg: ~155
+- Trend: **healthy** — suite green, AI-23 shipped, queue shrinking
+- Haiku research last contributed: 2026-05-20 (on feature/new-updates; newer notes on separate branch)
 
 ## Next run will likely tackle
-- **AI-21:** Planning mode — cheap upfront plan before execution (Medium priority, ~60-80 LOC)
-- **AI-31:** Include task_id in auto-commit message (~2 LOC, quick win — promote Backlog→Todo)
+- **AI-13:** Private Context Bridge (High priority, no needs-design) — requires surveying what browser-tab reading capability exists; may need to add a `read_browser_tabs()` helper using existing MCP browser tools
+- **AI-32:** Emit usage_update in native-tools streaming path (~3 LOC, quick follow-up to AI-23)

@@ -1351,3 +1351,61 @@ Verify AI-26 (ALLOWED_MODELS glob may be pre-implemented), then AI-7 (Watch & Ac
 ## Next run will likely tackle
 - **AI-21:** Planning mode (Medium priority, ~60-80 LOC)
 - **AI-31:** Include task_id in auto-commit message (~2 LOC, promote Backlog→Todo)
+
+---
+
+# PM Brief — 2026-05-30 (automated run)
+
+**Starting commit:** `b63ad01`  →  **Ending commit:** `594efdb`
+**Run duration:** ~40 min  |  **LOC budget used:** ~149/200
+**Run type:** feature (AI-23 shipped, AI-21 pre-impl discovered)
+
+## What I did
+- Synced `feature/new-updates` — already up to date at b63ad01.
+- Read last 5 PM briefs, standing policy, and RESEARCH_NOTES (latest: 2026-05-20; newer research is on a separate branch).
+- Ran full `pytest -q` — **205 passed, 1 skipped, 0 failed** baseline (green).
+- UI smoke: GET / → 200, /healthz → openrouter+google ok; server killed cleanly.
+- Audited AI-21 (Planning mode) — fully pre-implemented (commit 2d9744d). Marked Done.
+- Picked and shipped AI-23 (Thinking budget toggle + cost badge).
+- Filed AI-32: emit usage_update in native-tools streaming path.
+- Board hygiene: 0 blocked, no stale issues.
+
+## Tests
+- Unit/integration: **210 passed, 1 skipped, 0 failed** (25.5s)
+- UI smoke: GET / → 200, /healthz ok; no orphan processes
+
+## Repaired
+- none (baseline was already green)
+
+## Shipped
+- **AI-23:** Thinking budget toggle + live token cost badge — thinking_budget (off/standard/extended) flows through API → agent → PlannerProvider; Anthropic extended thinking path with interleaved block handling; usage_update SSE; Thinking select in UI; live .usage-badge chip on history items. 6 new tests. (commit 594efdb)
+
+## Polished (unsolicited)
+- none
+
+## New issues filed
+- **AI-32:** Emit usage_update in native-tools streaming path (~3 LOC, Medium, Backlog).
+
+## Decisions I made (and why)
+- **AI-21 pre-impl:** plan_first was fully implemented in commit 2d9744d. Marked Done, no new code needed.
+- **Picked AI-23 over AI-13:** AI-13 (High priority) requires browser-tab reading infrastructure not present in codebase; can't test automatically. AI-23 had clear testable scope.
+- **usage_update only in hierarchical path:** Filed AI-32 for the native-tools follow-up rather than expanding scope.
+
+## Skipped / blocked / NEEDS HUMAN
+- none
+
+## Risk flags for this push
+- `_chat_anthropic`: `thinking` param only added when budget != "off" — no change to default path.
+- New `usage_update` SSE: additive, existing clients ignore it.
+
+## Health snapshot
+- Full suite: **210 passed, 1 skipped, 0 failed**  (Δ vs last run: +5 passed)
+- Open Todo issues: 7  (Δ: -2 Done)
+- In Progress / blocked / needs-design: 0 / 0 / 3
+- Lines shipped this run: ~149  /  Last 7 runs avg: ~155
+- Trend: **healthy**
+- Haiku research last contributed: 2026-05-20 (on feature/new-updates)
+
+## Next run will likely tackle
+- **AI-13:** Private Context Bridge (High priority) — survey browser-tab reading capability
+- **AI-32:** Emit usage_update in native-tools path (~3 LOC, quick win)
