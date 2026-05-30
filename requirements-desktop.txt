@@ -2,3 +2,6 @@
 # Install with: pip install -r requirements-desktop.txt
 -r requirements.txt
 pywebview>=4.4
+# PySide6 — the floating glass capsule UI (app/widget/qt_shell.py) and the
+# virtual-cursor / app-edge-glow overlay. Pulls in Qt incl. QtSvg for icons.
+PySide6>=6.6.0

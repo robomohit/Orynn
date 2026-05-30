@@ -1,12 +1,10 @@
 import argparse
-import webview
 import threading
 import uvicorn
 import time
 import os
 import sys
 from app.main import app
-from app.desktop_bridge import DesktopBridge
 
 PORT = int(os.getenv("AI_COMPUTER_PORT", "8000"))
 
@@ -47,6 +45,8 @@ if __name__ == "__main__":
         sys.exit(qt_widget_main(PORT))
 
     # ── Full dashboard (pywebview) ──
+    import webview
+    from app.desktop_bridge import DesktopBridge
     bridge = DesktopBridge()
     icon_path = os.path.join(os.path.dirname(__file__), "ai_computer_app_icon_1777005021291.png")
     window = webview.create_window(

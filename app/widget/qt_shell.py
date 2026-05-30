@@ -19,7 +19,6 @@ import sys
 import threading
 import time
 from ctypes import wintypes
-import pywinstyles
 
 # ── Windows DWM glass / pill-shape helpers ───────────────────────────────────
 # Why we don't use pywinstyles here:

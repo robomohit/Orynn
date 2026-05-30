@@ -36,14 +36,10 @@ OPENROUTER_API_KEY=sk-or-v1-...   # free tier — recommended
 
 ### 3. Launch
 
-**Windows:** double-click `start.bat`
+**Windows:** double-click **`start.bat`** — the floating glass capsule appears at the top of your screen.
 
-**Mac / Linux:**
-```bash
-chmod +x start.sh && ./start.sh
-```
-
-Then open **http://localhost:8080** in your browser.
+- Press **`Ctrl+Shift+Space`** any time to show/hide it.
+- Prefer a browser dashboard instead? Run **`start_web.bat`** and open **http://localhost:8080**.
 
 ---
 
@@ -52,28 +48,28 @@ Then open **http://localhost:8080** in your browser.
 | Mode | What it does |
 |---|---|
 | **Coding** | Writes, edits, and runs code. No screenshots — fast and accurate. |
-| **Browser** | Controls a headless Chrome browser via accessibility tree. Fills forms, navigates sites, reads pages. |
-| **Desktop** | Full mouse + keyboard control with live screenshot previews. |
+| **Browser** | Controls a headless Chrome browser via the accessibility tree. Fills forms, navigates sites, reads pages. |
+| **Desktop** | Drives native + Electron apps (Notepad, Discord, VS Code, Spotify…) through **Windows UI Automation** — by control name, **no screenshots, no pixel guessing**. Glows the edge of the app it's working in so you can see what it's doing. |
 
 The mode is **auto-detected** from your goal, or you can pick it manually.
 
 ---
 
-## Desktop App (optional)
+## The floating capsule (main product)
 
-Run as a native window instead of a browser tab:
+`start.bat` launches the native glass capsule (`run_desktop.py`) — a frameless,
+translucent, always-on-top window with real Windows Acrylic blur that adapts to
+light/dark backdrops. Type a goal, watch the agent work with a live action
+ticker and an aqua glow around the target app.
 
 ```bash
-# Windows
-pip install -r requirements-desktop.txt
-python run_desktop.py
-
-# Mac / Linux
-pip3 install -r requirements-desktop.txt
-python3 run_desktop.py
+# Manual launch / dashboard window:
+python run_desktop.py              # floating capsule
+python run_desktop.py --dashboard  # full dashboard in a native window
 ```
 
-Requires `pywebview` (installed automatically by `requirements-desktop.txt`).
+> Desktop control (UI Automation) is **Windows-only**. Coding and browser modes
+> run on Windows, macOS, and Linux via the web dashboard (`start_web.bat`).
 
 ---
 
