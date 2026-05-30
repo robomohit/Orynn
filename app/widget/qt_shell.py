@@ -1113,6 +1113,7 @@ def main(port: int = 8000) -> int:
             # and after drags. 0.0 = dark bg, 1.0 = light bg.
             self._bg_light = 0.0
             self._animating = False           # True during grow/shrink tween
+            self._setup_mode = False          # first-run: input captures API key
             # Discrete light/dark theme for the CONTENT (chips, icons, card
             # text). Flipped with hysteresis so the chrome stays legible: over
             # a bright backdrop the whole capsule becomes a light glass with
@@ -1974,9 +1975,86 @@ def main(port: int = 8000) -> int:
                 self.input.setPlaceholderText("Start a task…")
 
         # --- task flow ---
+        # ── First-run onboarding ────────────────────────────────────────────
+        def _check_setup(self) -> None:
+            """On boot, ask the server whether any provider key is configured.
+            If not, switch the capsule into a friendly key-entry mode."""
+            try:
+                import httpx
+                with httpx.Client(timeout=3.0) as c:
+                    c.post(f"{BASE}/api/session")
+                    r = c.get(f"{BASE}/api/setup/status")
+                if r.status_code == 200 and not r.json().get("configured"):
+                    self._enter_setup_mode()
+            except Exception:
+                pass  # offline / server not ready — stay in normal mode
+
+        def _enter_setup_mode(self) -> None:
+            self._setup_mode = True
+            self.input.setPlaceholderText(
+                "Paste your free OpenRouter key, then press Enter…")
+            self._spawn_widget({
+                "title": "Welcome to AI Computer",
+                "icon": "sparkles",
+                "text": ("Let's get you set up. Paste a free OpenRouter API key "
+                         "below and press Enter — that's it.\n\n"
+                         "Grab one in ~30 seconds at openrouter.ai/keys "
+                         "(no credit card needed)."),
+                "buttons": [{"label": "Get a free key", "style": "secondary",
+                             "action": "open_url",
+                             "payload": "https://openrouter.ai/keys"}],
+            })
+            self._adjust()
+
+        def _save_provider_key(self, key: str) -> None:
+            self.action_label.setText("Saving your key…")
+            try:
+                import httpx
+                with httpx.Client(timeout=8.0) as c:
+                    c.post(f"{BASE}/api/session")
+                    r = c.post(f"{BASE}/api/setup/provider-key",
+                               json={"provider": "openrouter", "key": key})
+                if r.status_code == 200:
+                    self._setup_mode = False
+                    self.input.setPlaceholderText("Start a task…")
+                    self._clear_widgets()
+                    self._spawn_widget({
+                        "title": "You're all set",
+                        "icon": "sparkles",
+                        "text": "Key saved. Type a goal above to begin — try "
+                                "“open notepad and write me a haiku”.",
+                    })
+                else:
+                    detail = ""
+                    try:
+                        detail = r.json().get("detail", "")
+                    except Exception:
+                        detail = r.text[:160]
+                    self._spawn_widget({
+                        "title": "That key didn't work",
+                        "icon": "alert",
+                        "text": (detail or "Please check the key and try again.")
+                                + "\n\nPaste it again below and press Enter.",
+                    })
+                self._adjust()
+            except Exception as exc:
+                self._spawn_widget({
+                    "title": "Couldn't reach the server",
+                    "icon": "alert",
+                    "text": str(exc)[:160],
+                })
+                self._adjust()
+
         def _submit(self) -> None:
             user_text = self.input.text().strip()
             if not user_text or self._busy:
+                return
+
+            # First-run onboarding: the input captures the API key, not a task.
+            if self._setup_mode:
+                if len(user_text) >= 8:
+                    self.input.clear()
+                    self._save_provider_key(user_text)
                 return
 
             # Compose the final goal text — prepend any pure-text context
@@ -2803,6 +2881,10 @@ def main(port: int = 8000) -> int:
                 self._bg_timer = QTimer(self)
                 self._bg_timer.timeout.connect(self._sample_bg)
                 self._bg_timer.start(1500)
+            # First-run onboarding check (once) — shortly after the window shows.
+            if not getattr(self, "_setup_check_done", False):
+                self._setup_check_done = True
+                QTimer.singleShot(600, self._check_setup)
             # spring entry — fade + slide
             self.setWindowOpacity(0.0)
             self._intro = QPropertyAnimation(self, b"windowOpacity")

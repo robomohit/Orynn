@@ -722,6 +722,60 @@ async def healthz():
     _healthz_cache["result"] = result
     return result
 
+
+def _upsert_env_var(name: str, value: str) -> None:
+    """Create/update a KEY=value line in .env AND set it live in os.environ so
+    it takes effect without a restart. Used by the first-run key setup."""
+    env_path = Path(".env")
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    out, found = [], False
+    for ln in lines:
+        if (not ln.lstrip().startswith("#")
+                and re.match(rf"\s*{re.escape(name)}\s*=", ln)):
+            out.append(f"{name}={value}")
+            found = True
+        else:
+            out.append(ln)
+    if not found:
+        out.append(f"{name}={value}")
+    env_path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    os.environ[name] = value
+
+
+class _ProviderKeyBody(BaseModel):
+    provider: str
+    key: str
+
+
+@app.post("/api/setup/provider-key", dependencies=[Depends(verify_token)])
+async def set_provider_key(body: _ProviderKeyBody):
+    """First-run onboarding: save a provider API key to .env + live env so the
+    agent works immediately, no manual file editing. (User's own local config.)"""
+    prov = (body.provider or "").strip().lower()
+    key = (body.key or "").strip()
+    env_name = _HEALTHZ_PROVIDERS.get(prov)
+    if not env_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider '{body.provider}'. Use one of: "
+                   f"{', '.join(_HEALTHZ_PROVIDERS)}")
+    if len(key) < 8:
+        raise HTTPException(status_code=400, detail="That key looks too short.")
+    try:
+        await asyncio.to_thread(_upsert_env_var, env_name, key)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not save key: {exc}")
+    _healthz_cache["ts"] = 0.0  # force a fresh status read
+    return {"ok": True, "provider": prov, "env": env_name}
+
+
+@app.get("/api/setup/status", dependencies=[Depends(verify_token)])
+async def setup_status():
+    """Whether onboarding is complete (at least one provider key present)."""
+    have = {n: bool(os.environ.get(v)) for n, v in _HEALTHZ_PROVIDERS.items()}
+    return {"configured": any(have.values()), "providers": have}
+
+
 @app.get("/api/skills")
 async def get_skills():
     return {"skills": skill_manager.get_all_skills()}
