@@ -199,6 +199,43 @@ async def test_run_action_streams_run_command(workspace, monkeypatch):
     assert seen == ["hello\n", "world\n"]
 
 
+def test_focus_window_survives_foreground_lock(workspace, monkeypatch):
+    """Windows refuses SetForegroundWindow under foreground-lock (raises
+    pywintypes.error). focus_window must NOT hard-fail — the window is activated
+    anyway and UIA targets by title. Regression for the calc task where
+    focus_window wrongly reported 'failed'."""
+    import sys
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+
+    def _set_fg(hwnd):
+        raise RuntimeError("(0, 'SetForegroundWindow', 'foreground lock')")
+
+    fake_win32gui = types.SimpleNamespace(
+        EnumWindows=lambda cb, acc: cb(21, acc),
+        IsWindowVisible=lambda hwnd: True,
+        GetWindowText=lambda hwnd: "Calculator",
+        IsIconic=lambda hwnd: False,
+        ShowWindow=lambda hwnd, flag: None,
+        BringWindowToTop=lambda hwnd: None,
+        SetForegroundWindow=_set_fg,        # refused by the OS
+        GetForegroundWindow=lambda: 999,    # something else is foreground
+    )
+    fake_client = types.SimpleNamespace(
+        Dispatch=lambda name: types.SimpleNamespace(AppActivate=lambda title: True))
+    fake_win32com = types.SimpleNamespace(client=fake_client)
+
+    monkeypatch.setitem(sys.modules, "win32gui", fake_win32gui)
+    monkeypatch.setitem(sys.modules, "win32com", fake_win32com)
+    monkeypatch.setitem(sys.modules, "win32com.client", fake_client)
+    monkeypatch.setattr(tools_module, "win32process", None)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+
+    result = t.focus_window("Calc")
+    assert result.ok is True
+    assert "Calculator" in result.output
+    assert t._isolated_app == "Calculator"
+
+
 def test_wait_for_window_returns_visible_match(workspace, monkeypatch):
     t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
 

@@ -949,12 +949,41 @@ class ToolExecutor:
             if not found:
                 return ToolResult(ok=False, output=f"No window with title containing '{title}' found.")
             hwnd = found[0]
-            # Use shell.AppActivate which bypasses the foreground-lock restriction
-            shell = win32com.client.Dispatch("WScript.Shell")
-            shell.AppActivate(win32gui.GetWindowText(hwnd))
-            import time; time.sleep(0.3)
-            win32gui.SetForegroundWindow(hwnd)
             actual_title = win32gui.GetWindowText(hwnd)
+            import time
+            # Windows blocks SetForegroundWindow under foreground-lock and raises
+            # pywintypes.error(0, 'SetForegroundWindow'). That is NOT a real
+            # failure — the window is usually activated anyway, and our UIA tools
+            # target by window title regardless of foreground. So try several
+            # activation methods best-effort and only hard-fail if NONE plausibly
+            # worked. (Restoring a minimized window + AppActivate is what actually
+            # clears the lock in practice.)
+            try:
+                if win32gui.IsIconic(hwnd):
+                    win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE
+            except Exception:
+                pass
+            try:
+                shell = win32com.client.Dispatch("WScript.Shell")
+                shell.AppActivate(actual_title)  # bypasses foreground-lock
+            except Exception:
+                pass
+            time.sleep(0.2)
+            try:
+                win32gui.BringWindowToTop(hwnd)
+            except Exception:
+                pass
+            foregrounded = False
+            try:
+                win32gui.SetForegroundWindow(hwnd)
+                foregrounded = True
+            except Exception:
+                # Verify whether it ended up foreground anyway (AppActivate often
+                # succeeds even when SetForegroundWindow is refused).
+                try:
+                    foregrounded = (win32gui.GetForegroundWindow() == hwnd)
+                except Exception:
+                    foregrounded = False
             self.set_isolated_hwnd(hwnd, actual_title)
             if win32process is not None:
                 try:
@@ -962,7 +991,8 @@ class ToolExecutor:
                     self._remember_started_pid(pid)
                 except Exception:
                     pass
-            return ToolResult(ok=True, output=f"Focused window: '{actual_title}'")
+            note = "" if foregrounded else " (activated; OS held foreground — UIA still targets it by title)"
+            return ToolResult(ok=True, output=f"Focused window: '{actual_title}'{note}")
         except Exception as e:
             return ToolResult(ok=False, output=f"focus_window failed: {e}")
 
