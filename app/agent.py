@@ -55,6 +55,11 @@ APPROVAL_WAIT_TIMEOUT_SECONDS = float(os.environ.get("APPROVAL_WAIT_TIMEOUT_SECO
 PERMISSION_WAIT_TIMEOUT_SECONDS = float(os.environ.get("PERMISSION_WAIT_TIMEOUT_SECONDS", "300"))
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "25"))
 BROWSER_MAX_STEPS = int(os.environ.get("BROWSER_MAX_STEPS", "35"))
+# Desktop/computer tasks click individual controls (one step each), read each
+# outcome back to verify, and may need to undo+redo to recover from a misstep —
+# so they legitimately need MORE budget than a generic agent task, not less. 25
+# was cutting off correct recoveries mid-way (e.g. a chained calculation).
+DESKTOP_MAX_STEPS = int(os.environ.get("DESKTOP_MAX_STEPS", "40"))
 
 _SCREENSHOT_ACTIONS = {
     ActionType.mouse_click,
@@ -1371,9 +1376,18 @@ class AgentService:
                         "name, uia_wait, or electron_unlock, and if still stuck say so plainly in finish. NEVER "
                         "claim a task succeeded without having read the concrete result back; a confident but "
                         "wrong 'done' is the worst possible outcome.\n"
-                        "- For Calculator/math: enter operands and operators in the right ORDER — first number, "
-                        "then the operator, then the second number, then Equals (47 × 89 = press 4,7,×,8,9,=). "
-                        "Then read the display back and report the number it shows.\n"
+                        "- For Calculator/math: CLICK the on-screen buttons by their accessible names (One, Two, "
+                        "Plus, 'Multiply by', Equals, Clear) with uia_click — do NOT uia_type into the "
+                        "Calculator, it has no editable text field, and never invent control names like "
+                        "'Button::Digit 1'. Enter things in the right ORDER: digits, then operator, then digits, "
+                        "then Equals. 47 × 89 → click Four,Seven,'Multiply by',Eight,Nine,Equals (reads 4183). "
+                        "Chained (12+8)×5 → One,Two,Plus,Eight,Equals (reads 20), then 'Multiply by',Five,Equals "
+                        "(reads 100). Read the display back and report the number.\n"
+                        "- RECOVER, don't surrender: if your verified outcome is wrong or incomplete (e.g. you "
+                        "clicked Clear by mistake and the display is 0), do the steps again correctly — do NOT "
+                        "finish with a vague apology like 'I misunderstood' or 'next time'. Either deliver the "
+                        "correct result, or finish by stating plainly the actual value you see and that it "
+                        "doesn't match the goal. A defeatist non-answer is a failure.\n"
                         "- PREFER uia_find / uia_click / uia_type over screenshot + mouse_click. They are far "
                         "faster, cheaper (no image to the model), and self-heal via OCR before any pixel "
                         "guess. Reserve manual screenshot + coordinate clicks for genuinely visual targets "
@@ -1482,7 +1496,11 @@ class AgentService:
                 _write_cache: dict[str, str] = {}  # path → content of recently written files
                 _last_uia_failed = False
                 xml_fallback_steps = 0
-                max_steps = BROWSER_MAX_STEPS if _is_browser_use else AGENT_MAX_STEPS
+                max_steps = (
+                    BROWSER_MAX_STEPS if _is_browser_use
+                    else DESKTOP_MAX_STEPS if _is_computer_desktop
+                    else AGENT_MAX_STEPS
+                )
 
                 for step in range(max_steps):
                     if self.is_killed(task_id):
