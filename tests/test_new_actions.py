@@ -227,6 +227,9 @@ def test_bash_gui_launch_waits_for_window_and_tracks_pid(workspace, monkeypatch)
     t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
     t.set_isolated_hwnd(None, "Notepad")
 
+    # Pin the precondition: no existing Notepad window, so this exercises the
+    # launch+wait path (not the single-instance reuse shortcut).
+    monkeypatch.setattr(t, "_iter_matching_windows", lambda title: [])
     monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: types.SimpleNamespace(pid=999))
     monkeypatch.setattr(
         t,
