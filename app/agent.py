@@ -173,7 +173,7 @@ def _should_capture_post_action(action: Action, result: ToolResult, is_desktop: 
 _FILE_WRITE_TYPES = frozenset({"write_file", "text_create", "text_str_replace", "text_insert"})
 
 
-def _git_commit_file(file_path: str, workspace: Path, action_type: str) -> Optional[str]:
+def _git_commit_file(file_path: str, workspace: Path, action_type: str, task_id: str = "") -> Optional[str]:
     """Auto-commit one file to git. Returns short hash or None (non-git / nothing staged / hook blocked)."""
     try:
         ws = workspace.expanduser().resolve()
@@ -184,7 +184,8 @@ def _git_commit_file(file_path: str, workspace: Path, action_type: str) -> Optio
             return None
         abs_path = file_path if os.path.isabs(file_path) else str(ws / file_path)
         subprocess.run(["git", "add", abs_path], cwd=str(ws), capture_output=True, check=False)
-        msg = f"[ai-computer] {action_type}: {os.path.basename(file_path)}"
+        subject = f"[ai-computer] {action_type}: {os.path.basename(file_path)}"
+        msg = f"{subject}\n\ntask: {task_id[:8]}" if task_id else subject
         commit = subprocess.run(
             ["git", "commit", "-m", msg], cwd=str(ws), capture_output=True, text=True, check=False
         )
@@ -1269,6 +1270,7 @@ class AgentService:
                     })
                     await asyncio.to_thread(self.memory.summarize_session, task_id, goal, complete, reason, mode)
                     await asyncio.to_thread(self.memory.add, "task_outcome", f"Outcome: {complete}. Goal: {goal}. Reason: {reason}")
+                    await self._emit(task_id, "usage_update", {"total_tokens": provider.total_tokens})
                     asyncio.create_task(asyncio.to_thread(self.memory.maybe_auto_consolidate))
                     return
                 except Exception as planning_err:
@@ -1917,7 +1919,7 @@ class AgentService:
                                 "content": args.get("content") or args.get("file_text") or "",
                             })
                             _commit_hash = await asyncio.to_thread(
-                                _git_commit_file, _fpath, tools.workspace, action_type
+                                _git_commit_file, _fpath, tools.workspace, action_type, task_id
                             )
                             if _commit_hash:
                                 await self._emit(task_id, "file_commit", {

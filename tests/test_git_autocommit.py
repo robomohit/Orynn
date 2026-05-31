@@ -90,7 +90,7 @@ async def test_write_file_emits_file_commit_in_coding_mode(workspace, monkeypatc
     monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
     monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
     monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
-    monkeypatch.setattr("app.agent._git_commit_file", lambda path, ws, action: "deadbeef")
+    monkeypatch.setattr("app.agent._git_commit_file", lambda path, ws, action, task_id="": "deadbeef")
 
     class FakeProvider:
         total_tokens = 0
@@ -138,7 +138,7 @@ async def test_write_file_no_file_commit_when_not_git(workspace, monkeypatch):
     monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
     monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
     monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
-    monkeypatch.setattr("app.agent._git_commit_file", lambda path, ws, action: None)  # non-git
+    monkeypatch.setattr("app.agent._git_commit_file", lambda path, ws, action, task_id="": None)  # non-git
 
     class FakeProvider:
         total_tokens = 0
@@ -182,3 +182,65 @@ def test_file_write_types_set():
     assert "text_create" in _FILE_WRITE_TYPES
     assert "text_str_replace" in _FILE_WRITE_TYPES
     assert "text_insert" in _FILE_WRITE_TYPES
+
+
+def test_git_commit_file_includes_task_id_in_message(workspace, monkeypatch):
+    """Commit message body includes task_id[:8] prefix for audit trail (AI-31)."""
+    commit_messages = []
+
+    def fake_run(args, **kwargs):
+        m = MagicMock()
+        if "--is-inside-work-tree" in args:
+            m.returncode = 0
+        elif "add" in args:
+            m.returncode = 0
+        elif "commit" in args:
+            # Capture the -m argument
+            idx = args.index("-m")
+            commit_messages.append(args[idx + 1])
+            m.returncode = 0
+            m.stdout = "1 file changed"
+        elif "--short" in args:
+            m.returncode = 0
+            m.stdout = "abc1234"
+        else:
+            m.returncode = 0
+            m.stdout = ""
+        return m
+
+    monkeypatch.setattr("app.agent.subprocess.run", fake_run)
+    result = _git_commit_file("app/foo.py", workspace, "write_file", "mytask-abc123")
+    assert result == "abc1234"
+    assert len(commit_messages) == 1
+    assert "task: mytask-a" in commit_messages[0], "task_id[:8] must appear in commit message"
+
+
+def test_git_commit_file_no_task_id_uses_subject_only(workspace, monkeypatch):
+    """Commit message is plain subject when no task_id is provided (backward compat)."""
+    commit_messages = []
+
+    def fake_run(args, **kwargs):
+        m = MagicMock()
+        if "--is-inside-work-tree" in args:
+            m.returncode = 0
+        elif "add" in args:
+            m.returncode = 0
+        elif "commit" in args:
+            idx = args.index("-m")
+            commit_messages.append(args[idx + 1])
+            m.returncode = 0
+            m.stdout = "1 file changed"
+        elif "--short" in args:
+            m.returncode = 0
+            m.stdout = "deadbeef"
+        else:
+            m.returncode = 0
+            m.stdout = ""
+        return m
+
+    monkeypatch.setattr("app.agent.subprocess.run", fake_run)
+    result = _git_commit_file("out.py", workspace, "write_file")
+    assert result == "deadbeef"
+    assert len(commit_messages) == 1
+    assert "\n" not in commit_messages[0], "no multi-line message when task_id is absent"
+    assert commit_messages[0] == "[ai-computer] write_file: out.py"

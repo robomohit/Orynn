@@ -157,3 +157,32 @@ async def test_hierarchical_parallel_plan_runs_disjoint_write_scopes_concurrentl
     await s.run_task("parallel-plan", "refactor", mode="computer")
 
     assert peak_active >= 2
+
+
+@pytest.mark.asyncio
+async def test_hierarchical_plan_emits_usage_update(monkeypatch, workspace):
+    """usage_update must be emitted when hierarchical plan completes (AI-32)."""
+    s = AgentService(workspace, log_emitter=log_emitter)
+
+    plan = HierarchicalPlan(
+        reasoning="r",
+        sub_tasks=[SubTask(id="s1", description="d1", actions=[Action(id="a1", type=ActionType.wait_action, args={"seconds": 0})])],
+        overall_complete=False,
+    )
+    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
+    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
+    monkeypatch.setattr("app.providers.PlannerProvider.evaluate", lambda *a, **k: {"complete": True, "reason": "done"})
+    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
+
+    emitted_events = []
+    _orig_emit = s._emit
+
+    async def capture_emit(task_id, event, data):
+        emitted_events.append(event)
+        return await _orig_emit(task_id, event, data)
+
+    monkeypatch.setattr(s, "_emit", capture_emit)
+
+    await s.run_task("t-usage", "refactor", mode="computer")
+
+    assert "usage_update" in emitted_events, "usage_update must be emitted at hierarchical plan completion"
