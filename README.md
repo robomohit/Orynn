@@ -101,6 +101,19 @@ USE_CHROMA=1
 | `GROQ_API_KEY` | Llama (Groq) | Free tier available |
 | `AGENT_API_KEY` | Internal auth | Auto-generated if blank |
 
+### Desktop reliability (optional)
+
+Desktop control runs on the **free** UIA tier by default. The free models are
+fast and handle single/moderate tasks well, but can derail on long multi-step
+sequences. For maximum reliability, opt in to a stronger model **for desktop
+tasks only** — free stays the default everywhere else:
+
+```bash
+DESKTOP_MODEL=claude-3-5-sonnet-20241022   # or gpt-4o, or any OpenRouter id
+```
+
+Leave it blank to stay fully free.
+
 ---
 
 ## Keyboard Shortcuts

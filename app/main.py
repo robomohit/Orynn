@@ -1662,10 +1662,15 @@ async def create_task(body: TaskIn):
                 selected_model = "openrouter/qwen/qwen3-coder:free"
             elif _detected_mode in ("computer", "computer_isolated"):
                 # Desktop control via UI Automation is text-only (no vision):
-                # use the fast, accurate tool-calling UIA tier. (When an image
+                # default to the fast, accurate free tool-calling UIA tier.
+                # OPT-IN RELIABILITY: power users can set DESKTOP_MODEL to a
+                # stronger model (e.g. anthropic/claude-3.5-sonnet, openai/gpt-4o,
+                # or any OpenRouter id) for rock-solid long multi-step sequences —
+                # the free 20b can derail on those. Free stays the default; this
+                # only kicks in when the user explicitly opts in. (When an image
                 # is attached the widget sends an explicit vision model, which
                 # takes this branch out of play since body.model is set.)
-                selected_model = "tier:uia"
+                selected_model = os.environ.get("DESKTOP_MODEL", "").strip() or "tier:uia"
             else:
                 selected_model = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
         elif os.environ.get("ANTHROPIC_API_KEY"):
