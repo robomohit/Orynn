@@ -3563,37 +3563,41 @@ def main(port: int = 8000) -> int:
             # one premium light-glass object (content flips to dark via
             # _apply_palette). This is where the light background shines.
             if self._light_mode:
-                # 1) bright cool-white tint (acrylic supplies the frost beneath)
+                # 1) EVEN cool-white tint — clear glass, consistent top-to-bottom
+                #    (no milky band). Low alpha so the desktop reads through sharp.
                 tint = QLinearGradient(0, 0, 0, h)
-                tint.setColorAt(0.0, QColor(255, 255, 255, int(150 * ascale)))
-                tint.setColorAt(0.5, QColor(247, 249, 252, int(165 * ascale)))
-                tint.setColorAt(1.0, QColor(236, 240, 248, int(182 * ascale)))
+                tint.setColorAt(0.0, QColor(255, 255, 255, 116))
+                tint.setColorAt(0.5, QColor(248, 250, 253, 124))
+                tint.setColorAt(1.0, QColor(238, 242, 249, 132))
                 p.fillPath(path, tint)
-                # 2) glossy top sheen — bright sheet of light near the top
+                # 2) whisper of top gloss — just a hint, never an opaque sheet
                 sheen = QLinearGradient(0, 0, 0, h)
-                sheen.setColorAt(0.00, QColor(255, 255, 255, 170))
-                sheen.setColorAt(0.16, QColor(255, 255, 255, 60))
-                sheen.setColorAt(0.42, QColor(255, 255, 255, 0))
+                sheen.setColorAt(0.00, QColor(255, 255, 255, 60))
+                sheen.setColorAt(0.18, QColor(255, 255, 255, 14))
+                sheen.setColorAt(0.40, QColor(255, 255, 255, 0))
                 p.fillPath(path, sheen)
                 # 3) soft cool inner shadow at the very bottom for slab depth
                 p.save(); p.setClipPath(path)
-                lo = QLinearGradient(0, h * 0.7, 0, h)
+                lo = QLinearGradient(0, h * 0.72, 0, h)
                 lo.setColorAt(0.0, QColor(70, 84, 110, 0))
-                lo.setColorAt(1.0, QColor(70, 84, 110, 34))
-                p.fillRect(QRectF(0, h * 0.7, w, h * 0.3), lo)
+                lo.setColorAt(1.0, QColor(70, 84, 110, 26))
+                p.fillRect(QRectF(0, h * 0.72, w, h * 0.28), lo)
                 p.restore()
-                # 4) bright inner top highlight line (glass edge catching light)
+                # 4) crisp inner top highlight line — the glass edge catching light
                 p.save(); p.setClipPath(path)
                 hl = QPainterPath()
                 hl.addRoundedRect(1.4, 1.4, w - 2.8, h - 2.8, r, r)
-                p.setPen(QPen(QColor(255, 255, 255, 200), 1.2))
+                hl_g = QLinearGradient(0, 0, 0, h * 0.5)
+                hl_g.setColorAt(0.0, QColor(255, 255, 255, 190))
+                hl_g.setColorAt(1.0, QColor(255, 255, 255, 0))
+                p.setPen(QPen(hl_g, 1.1))
                 p.setBrush(Qt.NoBrush); p.drawPath(hl)
                 p.restore()
-                # 5) crisp cool outer rim — clean definition on a light backdrop
+                # 5) crisp cool outer rim — clean glass definition on the desktop
                 edge = QLinearGradient(0, 0, 0, h)
-                edge.setColorAt(0.0, QColor(120, 132, 152, 120))
-                edge.setColorAt(0.5, QColor(96, 110, 134, 95))
-                edge.setColorAt(1.0, QColor(72, 86, 112, 120))
+                edge.setColorAt(0.0, QColor(150, 162, 182, 150))
+                edge.setColorAt(0.5, QColor(120, 134, 158, 110))
+                edge.setColorAt(1.0, QColor(96, 110, 136, 140))
                 p.setPen(QPen(edge, 1.0)); p.setBrush(Qt.NoBrush)
                 p.drawPath(path)
                 p.end()
