@@ -105,74 +105,36 @@ class _MARGINS(ctypes.Structure):
 
 
 _DWMWA_WINDOW_CORNER_PREFERENCE = 33
-_DWMWA_SYSTEMBACKDROP_TYPE = 38
-_DWMWCP_ROUND = 2
-_DWMSBT_TRANSIENTWINDOW = 3  # acrylic
+_DWMWCP_DONOTROUND = 1
 
-# Flipped True once the Win11 acrylic backdrop is confirmed applied — then we
-# stop using SetWindowRgn entirely (DWM rounds the corners with anti-aliasing).
-MODERN_GLASS_OK = False
-MODERN_CORNER_RADIUS = 10   # matches DWMWCP_ROUND's ~8px AA corner
-
-
-def _apply_modern_glass(hwnd: int) -> bool:
-    """Win11 22H2+ : real frosted acrylic + smooth AA rounded corners via DWM,
-    with NO GDI region (so no jagged edge). Returns True if the acrylic backdrop
-    took, so callers can skip the legacy region clip."""
-    try:
-        dwm = ctypes.windll.dwmapi
-        hw = wintypes.HWND(hwnd)
-        # 1) Anti-aliased rounded corners — replaces the jagged SetWindowRgn.
-        corner = ctypes.c_int(_DWMWCP_ROUND)
-        dwm.DwmSetWindowAttribute(hw, _DWMWA_WINDOW_CORNER_PREFERENCE,
-                                  ctypes.byref(corner), ctypes.sizeof(corner))
-        # 2) Extend the glass sheet across the whole window.
-        margins = _MARGINS(-1, -1, -1, -1)
-        dwm.DwmExtendFrameIntoClientArea(hw, ctypes.byref(margins))
-        # 3) Real acrylic system backdrop (Win11 build 22621+). Returns S_OK (0)
-        #    only where supported — that's our signal to drop the region clip.
-        backdrop = ctypes.c_int(_DWMSBT_TRANSIENTWINDOW)
-        res = dwm.DwmSetWindowAttribute(hw, _DWMWA_SYSTEMBACKDROP_TYPE,
-                                        ctypes.byref(backdrop), ctypes.sizeof(backdrop))
-        return int(res) == 0
-    except Exception:
-        return False
+# ── CLEAR GLASS mode ─────────────────────────────────────────────────────────
+# Big rounded "pill" corners + see-through (NOT frosted). We rely entirely on
+# Qt's anti-aliased paintEvent for the rounded shape (smooth at ANY radius) and
+# the window's per-pixel alpha (WA_TranslucentBackground) for see-through. So we
+# apply NO GDI region (that's what jagged the corners) and NO acrylic blur (the
+# user wants clear glass, not frost). The desktop shows through the painted
+# tint's alpha, sharp and unblurred.
+CLEAR_CORNER_RADIUS = 40    # generous pill rounding; Qt AA keeps it smooth
 
 
 def _apply_pill_glass(hwnd: int, w: int, h: int, radius: int) -> None:
-    """Shape the capsule as frosted glass. Prefers modern DWM acrylic (smooth);
-    falls back to the legacy acrylic + GDI region clip on Win10 / pre-22H2."""
+    """Clear-glass shaping: strip any region/blur so the corners are defined
+    purely by Qt's anti-aliased paint. Smooth at any radius, fully see-through."""
     if w <= 0 or h <= 0:
         return
-    global MODERN_GLASS_OK
-    # ── Preferred: real Win11 acrylic with anti-aliased corners, no region ──
-    if _apply_modern_glass(hwnd):
-        MODERN_GLASS_OK = True
-        try:  # make sure no stale region is still clipping (would re-jag the edge)
-            ctypes.windll.user32.SetWindowRgn(wintypes.HWND(hwnd), None, True)
+    try:
+        user32 = ctypes.windll.user32
+        # Remove any stale rounded region (a region would re-introduce the hard,
+        # jagged edge and also clip Qt's smooth AA corners).
+        user32.SetWindowRgn(wintypes.HWND(hwnd), None, True)
+        # Tell DWM not to round either — Qt owns the corner shape.
+        try:
+            corner = ctypes.c_int(_DWMWCP_DONOTROUND)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd), _DWMWA_WINDOW_CORNER_PREFERENCE,
+                ctypes.byref(corner), ctypes.sizeof(corner))
         except Exception:
             pass
-        return
-    # ── Legacy fallback (Win10 / pre-22H2): old acrylic clipped by a region ──
-    r = min(radius, h // 2, MAX_CORNER_RADIUS)
-    try:
-        gdi = ctypes.windll.gdi32
-        user32 = ctypes.windll.user32
-        dwm = ctypes.windll.dwmapi
-
-        clip_rgn = gdi.CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2)
-        user32.SetWindowRgn(wintypes.HWND(hwnd), clip_rgn, True)
-
-        # Prefer the strong acrylic frost (clipped to the pill by SetWindowRgn).
-        # Fall back to the weak DWM region-blur if acrylic is unavailable.
-        if not _apply_acrylic(hwnd):
-            blur_rgn = gdi.CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2)
-            bb = _DWM_BLURBEHIND()
-            bb.dwFlags = _DWM_BB_ENABLE | _DWM_BB_BLURREGION
-            bb.fEnable = 1
-            bb.hRgnBlur = blur_rgn
-            bb.fTransitionOnMaximized = 0
-            dwm.DwmEnableBlurBehindWindow(wintypes.HWND(hwnd), ctypes.byref(bb))
     except Exception:
         pass
 
@@ -183,13 +145,10 @@ def _round_window(hwnd: int, w: int, h: int, radius: int = 28) -> None:
 
 
 def _clip_region(hwnd: int, w: int, h: int, radius: int) -> None:
-    """Fast rounded-rect window clip ONLY (no acrylic re-apply). Used per-frame
-    during the grow/shrink animation so the rounded shape tracks the changing
-    height without the cost/flicker of re-applying the acrylic backdrop."""
-    if w <= 0 or h <= 0:
-        return
-    if MODERN_GLASS_OK:
-        return  # DWM rounds the corners with AA — no GDI region needed (or wanted)
+    """No-op in clear-glass mode. The rounded shape is painted by Qt with
+    anti-aliasing (smooth at any height), so there's no region to track during
+    the grow/shrink animation — and applying one would re-jag the corners."""
+    return
     r = min(radius, h // 2, MAX_CORNER_RADIUS)
     try:
         gdi = ctypes.windll.gdi32
@@ -3472,29 +3431,33 @@ def main(port: int = 8000) -> int:
             between dark and light. The input pill is already light in both."""
             if light:
                 ic = "#1A1D24"                       # dark icons/text
-                chip_text = "rgba(28,32,42,235)"
-                chip_bg = "rgba(20,24,32,16)"
-                chip_bd = "rgba(20,24,32,48)"
-                chip_hbg = "rgba(91,224,208,150)"
-                chip_hbd = "rgba(40,150,140,210)"
+                chip_text = "rgba(28,32,42,245)"
+                # Clear glass shows the desktop through it, so the chips carry
+                # their OWN opaque-ish surface to stay crisp + readable.
+                chip_bg = "rgba(255,255,255,205)"
+                chip_bd = "rgba(20,24,32,55)"
+                chip_hbg = "rgba(91,224,208,200)"
+                chip_hbd = "rgba(40,150,140,230)"
                 chip_ht = "#06231f"
-                tb_hbg = "rgba(20,24,32,20)"
+                tb_hbg = "rgba(255,255,255,150)"
                 tb_hbd = "rgba(20,24,32,45)"
-                tb_chk = "rgba(20,24,32,32)"
+                tb_chk = "rgba(91,224,208,150)"
                 ticker = "rgba(38,46,58,235)"
                 reply_c = "#1A2230"
                 reply_bd = "rgba(20,24,32,0.16)"
             else:
                 ic = "#F0F2F8"                       # light icons/text
-                chip_text = "rgba(240,242,248,225)"
-                chip_bg = "rgba(255,255,255,30)"
-                chip_bd = "rgba(255,255,255,55)"
-                chip_hbg = "rgba(91,224,208,80)"
-                chip_hbd = "rgba(91,224,208,180)"
+                chip_text = "rgba(244,246,250,245)"
+                # Clear DARK glass: chips carry a denser dark surface so labels
+                # stay readable over whatever shows through.
+                chip_bg = "rgba(34,40,52,150)"
+                chip_bd = "rgba(255,255,255,70)"
+                chip_hbg = "rgba(91,224,208,150)"
+                chip_hbd = "rgba(91,224,208,210)"
                 chip_ht = "#062925"
-                tb_hbg = "rgba(255,255,255,32)"
-                tb_hbd = "rgba(255,255,255,60)"
-                tb_chk = "rgba(255,255,255,48)"
+                tb_hbg = "rgba(255,255,255,55)"
+                tb_hbd = "rgba(255,255,255,75)"
+                tb_chk = "rgba(91,224,208,90)"
                 ticker = ACCENT
                 reply_c = "#FFFFFF"
                 reply_bd = "rgba(255,255,255,0.15)"
@@ -3585,12 +3548,12 @@ def main(port: int = 8000) -> int:
             p = QPainter(self)
             p.setRenderHint(QPainter.Antialiasing)
             w, h = self.width(), self.height()
-            # Over real DWM acrylic (modern Win11), match its ~8px AA corner and
-            # paint only a thin translucent veneer so the frost reads through.
-            # On legacy (no real OS blur) the painted tint IS the glass material.
-            modern = MODERN_GLASS_OK
-            r = MODERN_CORNER_RADIUS if modern else min(h / 2, w / 2, MAX_CORNER_RADIUS)
-            ascale = 0.42 if modern else 1.0
+            # CLEAR GLASS: big anti-aliased pill corners + see-through. No OS blur
+            # behind, so the painted tint IS the glass — kept semi-transparent so
+            # the desktop reads through it (sharp, not frosted). ascale<1 thins
+            # the tint toward clear glass.
+            r = min(h / 2, w / 2, CLEAR_CORNER_RADIUS)
+            ascale = 0.86
             inset = 0.5
             path = QPainterPath()
             path.addRoundedRect(inset, inset, w - 1, h - 1, r, r)
