@@ -88,11 +88,13 @@
     <div class="modal settings-modal">
       <div class="settings-head">
         <h3>Settings</h3>
-        <button class="t-close" id="settings-close" type="button" aria-label="Close settings">✕</button>
+        <button class="t-close" id="settings-close" type="button" aria-label="Close settings">
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
       <div class="settings-body">
         <div class="settings-group">
-          <div class="selector-label">Model</div>
+          <label class="selector-label" for="model-id">Model</label>
           <select id="model-id"></select>
         </div>
 
@@ -141,7 +143,7 @@
         </div>
 
         <div class="settings-group" style="display:none">
-          <div class="selector-label">Mode</div>
+          <label class="selector-label" for="mode-id">Mode</label>
           <select id="mode-id">
             <option value="auto">Auto detect</option>
             <option value="coding">Coding</option>
@@ -152,7 +154,7 @@
           </select>
         </div>
         <div class="selector-wrap" id="isolated-app-wrap" style="display:none">
-          <div class="selector-label">Target App (Locked)</div>
+          <label class="selector-label" for="isolated-app-id">Target App (Locked)</label>
           <input id="isolated-app-id" type="text" placeholder="e.g. Chrome, Notepad…">
           <p style="font-size:var(--fs-label);color:var(--muted-2);margin-top:6px;line-height:1.4">The agent will only see and control this app.</p>
         </div>
