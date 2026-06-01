@@ -712,6 +712,9 @@ def main(port: int = 8000) -> int:
     set_api_base(BASE)
     WIDTH = 640
     RADIUS = 999     # huge → clipped to height/2 → true pill
+    # Transparent padding around the glass where the soft drop shadow is painted.
+    # The window is (WIDTH + 2*SHADOW_PAD) wide; the visible glass stays WIDTH.
+    SHADOW_PAD = 18
     ACCENT = "#5BE0D0"
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -1509,7 +1512,7 @@ def main(port: int = 8000) -> int:
             self.setWindowFlags(flags)
             self.setAttribute(Qt.WA_TranslucentBackground, True)
             self.setAttribute(Qt.WA_NoSystemBackground, True)
-            self.setFixedWidth(WIDTH)
+            self.setFixedWidth(WIDTH + 2 * SHADOW_PAD)
             self.setMinimumHeight(60)
             self._drag = None
             self._busy = False
@@ -1559,7 +1562,10 @@ def main(port: int = 8000) -> int:
             self.setStyleSheet("#main_container { background: transparent; }")
 
             outer = QVBoxLayout(self)
-            outer.setContentsMargins(18, 16, 18, 16)
+            # Add SHADOW_PAD on every side so content stays inside the glass and
+            # the outer transparent band holds the drop shadow.
+            outer.setContentsMargins(18 + SHADOW_PAD, 14 + SHADOW_PAD,
+                                     18 + SHADOW_PAD, 16 + SHADOW_PAD)
             outer.setSpacing(12)
 
             # =========================================================
@@ -3552,8 +3558,31 @@ def main(port: int = 8000) -> int:
             # behind, so the painted tint IS the glass — kept semi-transparent so
             # the desktop reads through it (sharp, not frosted). ascale<1 thins
             # the tint toward clear glass.
-            r = min(h / 2, w / 2, CLEAR_CORNER_RADIUS)
+            # The glass is inset by SHADOW_PAD; the outer transparent band holds
+            # the drop shadow so the capsule floats above the desktop.
+            pad = SHADOW_PAD
+            gw, gh = w - 2 * pad, h - 2 * pad        # visible glass size
+            r = min(gh / 2, gw / 2, CLEAR_CORNER_RADIUS)
             ascale = 0.86
+
+            # ── Soft drop shadow ── layered translucent strokes nudged downward,
+            # so the capsule reads as a glass slab lifted off the desktop. Painted
+            # in WINDOW coords (before we translate to the glass origin).
+            p.save()
+            for spread, alpha in ((pad * 1.7, 7), (pad * 1.1, 12),
+                                  (pad * 0.6, 18), (pad * 0.3, 26)):
+                sh = QPainterPath()
+                sh.addRoundedRect(pad + 0.5, pad + 4.5, gw - 1, gh - 1, r, r)
+                p.setPen(QPen(QColor(16, 24, 42, alpha), spread))
+                p.setBrush(Qt.NoBrush)
+                p.drawPath(sh)
+            p.restore()
+
+            # Shift the origin to the glass top-left and rebind w/h to the glass
+            # size, so ALL the material code below (which uses w, h, path) paints
+            # on the glass exactly as before — no other changes needed.
+            p.translate(pad, pad)
+            w, h = gw, gh
             inset = 0.5
             path = QPainterPath()
             path.addRoundedRect(inset, inset, w - 1, h - 1, r, r)
