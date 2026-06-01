@@ -3380,10 +3380,12 @@ def main(port: int = 8000) -> int:
                 except Exception:
                     pass
             anim = QPropertyAnimation(self, b"geometry", self)
-            # Slightly longer for big jumps, snappy for small ones.
+            # Slightly longer for big jumps, snappy for small ones. OutQuint gives
+            # a soft, premium settle (fast start, gentle landing) — reads as the
+            # capsule "unfolding" rather than snapping.
             dist = abs(to_h - from_h)
-            anim.setDuration(max(160, min(340, 140 + dist // 3)))
-            anim.setEasingCurve(QEasingCurve.OutCubic)
+            anim.setDuration(max(220, min(440, 180 + dist // 3)))
+            anim.setEasingCurve(QEasingCurve.OutQuint)
             anim.setStartValue(QRect(g.x(), g.y(), g.width(), from_h))
             anim.setEndValue(QRect(g.x(), g.y(), g.width(), to_h))
 
@@ -3586,13 +3588,20 @@ def main(port: int = 8000) -> int:
             gw, gh = w - 2 * pad, h - 2 * pad        # visible glass size
             r = min(gh / 2, gw / 2, CLEAR_CORNER_RADIUS)
             ascale = 0.86
+            # While the window is animating its height (grow/shrink), the glass is
+            # repainted every frame — so use a CHEAPER paint (fewer shadow/edge
+            # passes) to keep the expand buttery, then render full detail when it
+            # settles (resizeEvent → finish calls update()).
+            fast = getattr(self, "_animating", False)
 
             # ── Soft drop shadow ── layered translucent strokes nudged downward,
             # so the capsule reads as a glass slab lifted off the desktop. Painted
             # in WINDOW coords (before we translate to the glass origin).
             p.save()
-            for spread, alpha in ((pad * 1.7, 7), (pad * 1.1, 12),
-                                  (pad * 0.6, 18), (pad * 0.3, 26)):
+            shadow_passes = (((pad * 0.6, 18), (pad * 0.3, 26)) if fast else
+                             ((pad * 1.7, 7), (pad * 1.1, 12),
+                              (pad * 0.6, 18), (pad * 0.3, 26)))
+            for spread, alpha in shadow_passes:
                 sh = QPainterPath()
                 sh.addRoundedRect(pad + 0.5, pad + 4.5, gw - 1, gh - 1, r, r)
                 p.setPen(QPen(QColor(16, 24, 42, alpha), spread))
@@ -3692,7 +3701,9 @@ def main(port: int = 8000) -> int:
             #    on light so it never reads as a hard seam.
             p.save()
             p.setClipPath(path)
-            for width_px, alpha in ((7.0, 26), (4.0, 50), (2.2, 95), (1.0, 165)):
+            _rim_passes = (((2.2, 95), (1.0, 165)) if fast else
+                           ((7.0, 26), (4.0, 50), (2.2, 95), (1.0, 165)))
+            for width_px, alpha in _rim_passes:
                 a = L(alpha, alpha * 0.18)
                 rim = QLinearGradient(0, 0, 0, h)
                 rim.setColorAt(0.0, QColor(255, 255, 255, int(min(255, a + 80))))
