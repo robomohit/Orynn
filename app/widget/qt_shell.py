@@ -92,17 +92,68 @@ def _apply_acrylic(hwnd: int, tint_abgr: int = 0x252028_00) -> bool:
 MAX_CORNER_RADIUS = 32  # rounded-rectangle look, not a pill
 
 
-def _apply_pill_glass(hwnd: int, w: int, h: int, radius: int) -> None:
-    """Clip the window AND its DWM blur to a rounded-rectangle shape.
+# ── Modern Win11 (22H2+) glass: real acrylic backdrop + anti-aliased rounded
+# corners, all managed by DWM. This is the GOOD path — the legacy
+# SetWindowRgn approach below clips with a 1-bit GDI region, which produces a
+# hard, jagged ("sharp second border") edge, and the old
+# ACCENT_ENABLE_ACRYLICBLURBEHIND acrylic was disabled by Microsoft on newer
+# Win11 builds (so the capsule lost its transparency and fell back to an opaque
+# painted tint). DWM's system backdrop fixes both at once.
+class _MARGINS(ctypes.Structure):
+    _fields_ = [("cxLeftWidth", ctypes.c_int), ("cxRightWidth", ctypes.c_int),
+                ("cyTopHeight", ctypes.c_int), ("cyBottomHeight", ctypes.c_int)]
 
-    Two regions are created: one for SetWindowRgn (clips Qt drawing) and a
-    SECOND identical region handed to DwmEnableBlurBehindWindow (clips the
-    OS-level blur backdrop). They must be separate HRGNs because each API
-    takes ownership of its handle.
-    """
+
+_DWMWA_WINDOW_CORNER_PREFERENCE = 33
+_DWMWA_SYSTEMBACKDROP_TYPE = 38
+_DWMWCP_ROUND = 2
+_DWMSBT_TRANSIENTWINDOW = 3  # acrylic
+
+# Flipped True once the Win11 acrylic backdrop is confirmed applied — then we
+# stop using SetWindowRgn entirely (DWM rounds the corners with anti-aliasing).
+MODERN_GLASS_OK = False
+MODERN_CORNER_RADIUS = 10   # matches DWMWCP_ROUND's ~8px AA corner
+
+
+def _apply_modern_glass(hwnd: int) -> bool:
+    """Win11 22H2+ : real frosted acrylic + smooth AA rounded corners via DWM,
+    with NO GDI region (so no jagged edge). Returns True if the acrylic backdrop
+    took, so callers can skip the legacy region clip."""
+    try:
+        dwm = ctypes.windll.dwmapi
+        hw = wintypes.HWND(hwnd)
+        # 1) Anti-aliased rounded corners — replaces the jagged SetWindowRgn.
+        corner = ctypes.c_int(_DWMWCP_ROUND)
+        dwm.DwmSetWindowAttribute(hw, _DWMWA_WINDOW_CORNER_PREFERENCE,
+                                  ctypes.byref(corner), ctypes.sizeof(corner))
+        # 2) Extend the glass sheet across the whole window.
+        margins = _MARGINS(-1, -1, -1, -1)
+        dwm.DwmExtendFrameIntoClientArea(hw, ctypes.byref(margins))
+        # 3) Real acrylic system backdrop (Win11 build 22621+). Returns S_OK (0)
+        #    only where supported — that's our signal to drop the region clip.
+        backdrop = ctypes.c_int(_DWMSBT_TRANSIENTWINDOW)
+        res = dwm.DwmSetWindowAttribute(hw, _DWMWA_SYSTEMBACKDROP_TYPE,
+                                        ctypes.byref(backdrop), ctypes.sizeof(backdrop))
+        return int(res) == 0
+    except Exception:
+        return False
+
+
+def _apply_pill_glass(hwnd: int, w: int, h: int, radius: int) -> None:
+    """Shape the capsule as frosted glass. Prefers modern DWM acrylic (smooth);
+    falls back to the legacy acrylic + GDI region clip on Win10 / pre-22H2."""
     if w <= 0 or h <= 0:
         return
-    # Cap at MAX_CORNER_RADIUS so tall capsules don't become pills.
+    global MODERN_GLASS_OK
+    # ── Preferred: real Win11 acrylic with anti-aliased corners, no region ──
+    if _apply_modern_glass(hwnd):
+        MODERN_GLASS_OK = True
+        try:  # make sure no stale region is still clipping (would re-jag the edge)
+            ctypes.windll.user32.SetWindowRgn(wintypes.HWND(hwnd), None, True)
+        except Exception:
+            pass
+        return
+    # ── Legacy fallback (Win10 / pre-22H2): old acrylic clipped by a region ──
     r = min(radius, h // 2, MAX_CORNER_RADIUS)
     try:
         gdi = ctypes.windll.gdi32
@@ -137,6 +188,8 @@ def _clip_region(hwnd: int, w: int, h: int, radius: int) -> None:
     height without the cost/flicker of re-applying the acrylic backdrop."""
     if w <= 0 or h <= 0:
         return
+    if MODERN_GLASS_OK:
+        return  # DWM rounds the corners with AA — no GDI region needed (or wanted)
     r = min(radius, h // 2, MAX_CORNER_RADIUS)
     try:
         gdi = ctypes.windll.gdi32
@@ -727,6 +780,12 @@ def main(port: int = 8000) -> int:
                 target=self._run, args=(goal, attach or {}), daemon=True
             ).start()
 
+        def recover_active(self) -> None:
+            """Attach the capsule to an already-running backend task after restart."""
+            if self.current_task_id:
+                return
+            threading.Thread(target=self._recover_active, daemon=True).start()
+
         # ── Free-OpenRouter model picker ──
         # Verified-working free vision models, in fallback order. If the
         # first errors out (rate limited / 404), the next is tried.
@@ -944,6 +1003,279 @@ def main(port: int = 8000) -> int:
                 return client.post(f"{BASE}/api/tasks", json=payload)
             return response
 
+        def _emit_approval_widget(self, tid: str, ev: dict) -> None:
+            action = ev.get("action") if isinstance(ev.get("action"), dict) else {}
+            action_type = str(action.get("type") or "action")
+            action_id = str(ev.get("action_id") or "")
+            reason = str(ev.get("reason") or action.get("explanation") or "This action needs approval.")
+            args = action.get("args") if isinstance(action.get("args"), dict) else {}
+            detail = reason
+            if args:
+                try:
+                    detail += "\n\n" + json.dumps(args, indent=2)[:1200]
+                except Exception:
+                    pass
+            label = action_type.replace("_", " ").title()
+            self.statusChanged.emit("Waiting for approval...")
+            self.widgetRequested.emit({
+                "title": f"Approve {label}?",
+                "icon": "alert",
+                "text": detail,
+                "buttons": [
+                    {
+                        "label": "Deny",
+                        "style": "danger",
+                        "action": "/api/approvals",
+                        "payload": {"task_id": tid, "action_id": action_id, "approve": False},
+                    },
+                    {
+                        "label": "Approve",
+                        "style": "primary",
+                        "action": "/api/approvals",
+                        "payload": {"task_id": tid, "action_id": action_id, "approve": True},
+                    },
+                ],
+            })
+
+        def _emit_permission_widget(self, tid: str, ev: dict) -> None:
+            scope = str(ev.get("scope") or "access")
+            action_id = str(ev.get("action_id") or "")
+            detail = str(ev.get("reason") or ev.get("explanation") or f"The agent needs {scope}.")
+            self.statusChanged.emit("Waiting on permission...")
+            self.widgetRequested.emit({
+                "title": f"Allow {scope}?",
+                "icon": "alert",
+                "text": detail,
+                "buttons": [
+                    {
+                        "label": "Deny",
+                        "style": "danger",
+                        "action": "/api/permissions",
+                        "payload": {"task_id": tid, "action_id": action_id, "grant": False, "scope": scope},
+                    },
+                    {
+                        "label": "Allow",
+                        "style": "primary",
+                        "action": "/api/permissions",
+                        "payload": {"task_id": tid, "action_id": action_id, "grant": True, "scope": scope},
+                    },
+                ],
+            })
+
+        def _emit_trust_timeout_widget(self, ev: dict) -> None:
+            is_approval = ev.get("type") == "approval_timeout"
+            seconds = ev.get("timeout_seconds")
+            wait = f" within {seconds}s" if isinstance(seconds, (int, float)) else ""
+            title = "Approval timed out" if is_approval else "Permission timed out"
+            self.widgetRequested.emit({
+                "title": title,
+                "icon": "alert",
+                "text": f"No response was received{wait}. The agent stopped that action.",
+            })
+
+        def _is_terminal_status(self, status: str | None) -> bool:
+            return str(status or "").lower() in {"done", "complete", "failed", "error", "cancelled"}
+
+        def _task_id_from_record(self, record: dict) -> str:
+            return str(record.get("task_id") or record.get("id") or "")
+
+        def _task_goal_from_record(self, record: dict, log: list[dict] | None = None) -> str:
+            for ev in log or []:
+                if ev.get("type") == "task_created" and ev.get("goal"):
+                    return str(ev.get("goal"))
+            context = record.get("context") if isinstance(record.get("context"), dict) else {}
+            return str(record.get("goal") or context.get("goal") or "Running task")
+
+        def _latest_active_record(self, client):
+            try:
+                r = client.get(f"{BASE}/api/active-tasks")
+                if r.status_code >= 400:
+                    return None
+                records = [
+                    rec for rec in r.json().get("tasks", [])
+                    if self._task_id_from_record(rec)
+                    and not self._is_terminal_status(rec.get("status"))
+                ]
+            except Exception as exc:
+                print(f"[capsule] active-task check failed: {exc}", flush=True)
+                return None
+            if not records:
+                return None
+            records.sort(key=lambda rec: str(rec.get("created_at") or ""))
+            return records[-1]
+
+        def _pending_trust_event(self, log: list[dict]):
+            pending: dict[str, dict] = {}
+            for ev in log:
+                t = ev.get("type")
+                aid = str(ev.get("action_id") or "")
+                if t in ("approval_required", "permission_required") and aid:
+                    pending[aid] = ev
+                    continue
+                if aid and t in ("action_start", "action_result", "approval_timeout", "permission_timeout"):
+                    pending.pop(aid, None)
+                if "__plan__" in pending and t in ("plan", "subtask", "action_start"):
+                    pending.pop("__plan__", None)
+                if t in ("done", "complete", "error", "failed", "cancelled"):
+                    pending.clear()
+            return list(pending.values())[-1] if pending else None
+
+        def _recovery_state_from_log(self, log: list[dict]) -> dict:
+            action_type_by_id: dict[str, str] = {}
+            last_agent_text = ""
+            for ev in log:
+                if ev.get("type") == "action_start" and ev.get("action_id"):
+                    action_type_by_id[str(ev.get("action_id"))] = str(ev.get("action_type") or "")
+                elif ev.get("type") == "agent" and ev.get("text"):
+                    last_agent_text = str(ev.get("text") or "")
+            return {
+                "source_urls": [],
+                "url_re": re.compile(r"https?://[^\s<>\"'`)]+"),
+                "last_agent_text": last_agent_text,
+                "action_type_by_id": action_type_by_id,
+            }
+
+        def _emit_recovered_snapshot(self, tid: str, record: dict, log: list[dict], state: dict) -> None:
+            goal = self._task_goal_from_record(record, log)
+            mode = record.get("mode") or ""
+            paused = bool(record.get("paused")) or str(record.get("status") or "").lower() == "paused"
+            self.widgetRequested.emit({
+                "title": "Reconnected to running task",
+                "icon": "sparkles",
+                "text": f"{goal[:700]}\n\nTask id: {tid[:12]}{f' · {mode}' if mode else ''}",
+            })
+
+            last_status = next((ev for ev in reversed(log) if ev.get("type") == "status" and ev.get("message")), None)
+            last_action = next((ev for ev in reversed(log) if ev.get("type") in ("action_start", "tool")), None)
+            if last_action:
+                if last_action.get("type") == "action_start":
+                    name = str(last_action.get("action_type") or "?")
+                    args = str(last_action.get("args_summary") or "")[:120]
+                    overlay = last_action.get("overlay") if isinstance(last_action.get("overlay"), dict) else {}
+                    self.toolUsed.emit(name, args, overlay)
+                else:
+                    self.toolUsed.emit(str(last_action.get("name") or "?"), str(last_action.get("args") or "")[:120], {})
+            elif last_status:
+                self.statusChanged.emit(str(last_status.get("message") or "Reconnected."))
+
+            pending = self._pending_trust_event(log)
+            if pending:
+                if pending.get("type") == "approval_required":
+                    self._emit_approval_widget(tid, pending)
+                elif pending.get("type") == "permission_required":
+                    self._emit_permission_widget(tid, pending)
+            elif paused:
+                self.statusChanged.emit("Task paused.")
+            else:
+                self.statusChanged.emit("Reconnected to running task.")
+
+        def _handle_task_event(self, tid: str, ev: dict, state: dict) -> bool:
+            t = ev.get("type")
+            url_re = state["url_re"]
+            source_urls = state["source_urls"]
+            if t == "status":
+                msg = ev.get("message", "")
+                if msg:
+                    self.statusChanged.emit(msg)
+            elif t == "widget":
+                self.widgetRequested.emit(ev)
+            elif t == "agent":
+                txt = ev.get("text") or ""
+                last_agent_text = state.get("last_agent_text", "")
+                if txt and txt != last_agent_text:
+                    if txt.startswith(last_agent_text):
+                        self.agentDelta.emit(txt[len(last_agent_text):])
+                    else:
+                        self.agentDelta.emit(txt)
+                    state["last_agent_text"] = txt
+            elif t == "approval_required":
+                self._emit_approval_widget(tid, ev)
+            elif t == "permission_required":
+                self._emit_permission_widget(tid, ev)
+            elif t in ("approval_timeout", "permission_timeout"):
+                self._emit_trust_timeout_widget(ev)
+            elif t == "action_start":
+                name = str(ev.get("action_type") or "?")
+                args = str(ev.get("args_summary") or "")[:120]
+                aid = ev.get("action_id")
+                if aid:
+                    state["action_type_by_id"][str(aid)] = name
+                overlay = ev.get("overlay") if isinstance(ev.get("overlay"), dict) else {}
+                self.toolUsed.emit(name, args, overlay)
+                for u in url_re.findall(args):
+                    if u not in source_urls:
+                        source_urls.append(u)
+            elif t == "action_result":
+                aid = str(ev.get("action_id") or "")
+                name = state["action_type_by_id"].get(aid, "")
+                out = str(ev.get("output", ""))[:600]
+                overlay = ev.get("overlay") if isinstance(ev.get("overlay"), dict) else {}
+                if name and out:
+                    self.toolResult.emit(name, out, overlay)
+            elif t == "tool":
+                name = str(ev.get("name") or "?")
+                args = str(ev.get("args") or "")[:120]
+                self.toolUsed.emit(name, args, {})
+                for u in url_re.findall(args):
+                    if u not in source_urls:
+                        source_urls.append(u)
+            elif t in ("done", "complete"):
+                reason = ev.get("reason") or "Done."
+                for u in url_re.findall(reason):
+                    if u not in source_urls:
+                        source_urls.append(u)
+                self.finished.emit(reason, source_urls[:8])
+                self.runningChanged.emit(False)
+                return True
+            elif t in ("error", "failed", "cancelled"):
+                reason = ev.get("reason") or ev.get("message") or ""
+                self.finished.emit(reason or "That task failed.", [])
+                self.runningChanged.emit(False)
+                return True
+            return False
+
+        def _poll_recovered_task(self, client, tid: str, seen: int, state: dict) -> None:
+            deadline = time.time() + 600
+            while time.time() < deadline:
+                time.sleep(0.6)
+                try:
+                    log = client.get(f"{BASE}/api/tasks/{tid}/log").json().get("log", [])
+                except Exception:
+                    continue
+                for ev in log[seen:]:
+                    if self._handle_task_event(tid, ev, state):
+                        return
+                seen = len(log)
+            self.finished.emit("Still working - taking longer than expected.", [])
+            self.runningChanged.emit(False)
+
+        def _recover_active(self) -> None:
+            try:
+                import httpx
+            except Exception:
+                return
+            for attempt in range(10):
+                if self.current_task_id:
+                    return
+                try:
+                    with httpx.Client(timeout=8.0) as c:
+                        c.post(f"{BASE}/api/session")
+                        record = self._latest_active_record(c)
+                        if not record or self.current_task_id:
+                            return
+                        tid = self._task_id_from_record(record)
+                        log = c.get(f"{BASE}/api/tasks/{tid}/log").json().get("log", [])
+                        self.current_task_id = tid
+                        state = self._recovery_state_from_log(log)
+                        self.runningChanged.emit(True)
+                        self._emit_recovered_snapshot(tid, record, log, state)
+                        self._poll_recovered_task(c, tid, len(log), state)
+                        return
+                except Exception as exc:
+                    if attempt >= 9:
+                        print(f"[capsule] active-task recovery failed: {exc}", flush=True)
+                    time.sleep(1.0)
+
         def _run(self, goal: str, attach: dict) -> None:
             try:
                 import httpx
@@ -953,6 +1285,10 @@ def main(port: int = 8000) -> int:
             tid = "cap-" + secrets.token_hex(5)
             self.current_task_id = tid
             payload = self._build_payload(tid, goal, attach)
+            try:
+                _df.save_pending_task(goal, payload.get("mode", "auto"), tid)
+            except Exception:
+                pass
 
             try:
                 with httpx.Client(timeout=30.0) as c:
@@ -1010,6 +1346,12 @@ def main(port: int = 8000) -> int:
                                     else:
                                         self.agentDelta.emit(txt)
                                     last_agent_text = txt
+                            elif t == "approval_required":
+                                self._emit_approval_widget(tid, ev)
+                            elif t == "permission_required":
+                                self._emit_permission_widget(tid, ev)
+                            elif t in ("approval_timeout", "permission_timeout"):
+                                self._emit_trust_timeout_widget(ev)
                             elif t == "action_start":
                                 # The dashboard's event format. Each agent
                                 # tool call surfaces as action_start with
@@ -2237,16 +2579,33 @@ def main(port: int = 8000) -> int:
         # ── First-run onboarding ────────────────────────────────────────────
         def _check_setup(self) -> None:
             """On boot, ask the server whether any provider key is configured.
-            If not, switch the capsule into a friendly key-entry mode."""
+            If not, switch the capsule into a friendly key-entry mode. Also apply
+            the user's saved voice preference so the capsule starts the way they
+            left it. Runs on the GUI thread (QTimer), so widget calls are safe."""
+            prefs = None
             try:
                 import httpx
                 with httpx.Client(timeout=3.0) as c:
                     c.post(f"{BASE}/api/session")
                     r = c.get(f"{BASE}/api/setup/status")
+                    try:
+                        pr = c.get(f"{BASE}/api/preferences")
+                        if pr.status_code == 200:
+                            prefs = pr.json().get("preferences") or {}
+                    except Exception:
+                        prefs = None
                 if r.status_code == 200 and not r.json().get("configured"):
                     self._enter_setup_mode()
             except Exception:
                 pass  # offline / server not ready — stay in normal mode
+            # Honor the saved voice preference (talk-to-it / it-talks-back).
+            try:
+                if prefs and (prefs.get("speak_replies") or prefs.get("voice_input")):
+                    if not self.voice_btn.isChecked():
+                        self.voice_btn.setChecked(True)
+                        self._toggle_voice_mode()
+            except Exception:
+                pass
 
         def _enter_setup_mode(self) -> None:
             self._setup_mode = True
@@ -2576,6 +2935,23 @@ def main(port: int = 8000) -> int:
                 # Many of these are transient; show a calm placeholder
                 self.status.setText("Switching models…")
                 self._set_capsule_state("planning", "Switching models...")
+                return
+            if ("waiting for approval" in lower
+                    or "waiting on permission" in lower
+                    or "needs approval" in lower):
+                clean = msg.strip()
+                self.status.setText(clean[:90])
+                self._set_capsule_state("waiting_approval", clean[:90])
+                return
+            if "paused" in lower:
+                clean = msg.strip()
+                self.status.setText(clean[:90])
+                self._set_capsule_state("paused", clean[:90])
+                return
+            if "resumed" in lower:
+                clean = msg.strip()
+                self.status.setText(clean[:90])
+                self._set_capsule_state("acting", clean[:90])
                 return
             for noise in self._NOISY_STATUS:
                 if noise.lower() in lower:
@@ -3209,7 +3585,12 @@ def main(port: int = 8000) -> int:
             p = QPainter(self)
             p.setRenderHint(QPainter.Antialiasing)
             w, h = self.width(), self.height()
-            r = min(h / 2, w / 2, MAX_CORNER_RADIUS)
+            # Over real DWM acrylic (modern Win11), match its ~8px AA corner and
+            # paint only a thin translucent veneer so the frost reads through.
+            # On legacy (no real OS blur) the painted tint IS the glass material.
+            modern = MODERN_GLASS_OK
+            r = MODERN_CORNER_RADIUS if modern else min(h / 2, w / 2, MAX_CORNER_RADIUS)
+            ascale = 0.42 if modern else 1.0
             inset = 0.5
             path = QPainterPath()
             path.addRoundedRect(inset, inset, w - 1, h - 1, r, r)
@@ -3221,9 +3602,9 @@ def main(port: int = 8000) -> int:
             if self._light_mode:
                 # 1) bright cool-white tint (acrylic supplies the frost beneath)
                 tint = QLinearGradient(0, 0, 0, h)
-                tint.setColorAt(0.0, QColor(255, 255, 255, 150))
-                tint.setColorAt(0.5, QColor(247, 249, 252, 165))
-                tint.setColorAt(1.0, QColor(236, 240, 248, 182))
+                tint.setColorAt(0.0, QColor(255, 255, 255, int(150 * ascale)))
+                tint.setColorAt(0.5, QColor(247, 249, 252, int(165 * ascale)))
+                tint.setColorAt(1.0, QColor(236, 240, 248, int(182 * ascale)))
                 p.fillPath(path, tint)
                 # 2) glossy top sheen — bright sheet of light near the top
                 sheen = QLinearGradient(0, 0, 0, h)
@@ -3266,9 +3647,9 @@ def main(port: int = 8000) -> int:
 
             # 1) Tint — same dark glass colour, but denser over a light backdrop.
             tint = QLinearGradient(0, 0, 0, h)
-            tint.setColorAt(0.0, QColor(60, 68, 84, int(L(78, 156))))
-            tint.setColorAt(0.5, QColor(40, 46, 58, int(L(96, 178))))
-            tint.setColorAt(1.0, QColor(26, 30, 40, int(L(120, 205))))
+            tint.setColorAt(0.0, QColor(60, 68, 84, int(L(78, 156) * ascale)))
+            tint.setColorAt(0.5, QColor(40, 46, 58, int(L(96, 178) * ascale)))
+            tint.setColorAt(1.0, QColor(26, 30, 40, int(L(120, 205) * ascale)))
             p.fillPath(path, tint)
 
             # 2a) Broad top specular sheen — fades out over light backdrops.
@@ -3357,6 +3738,9 @@ def main(port: int = 8000) -> int:
             if not getattr(self, "_setup_check_done", False):
                 self._setup_check_done = True
                 QTimer.singleShot(600, self._check_setup)
+            if not getattr(self, "_active_recover_check_done", False):
+                self._active_recover_check_done = True
+                QTimer.singleShot(950, self.runner.recover_active)
             # spring entry — fade + slide
             self.setWindowOpacity(0.0)
             self._intro = QPropertyAnimation(self, b"windowOpacity")
