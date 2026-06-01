@@ -3353,16 +3353,19 @@ def main(port: int = 8000) -> int:
         def _adjust(self) -> None:
             # Compute the target height from the layout, then SMOOTHLY animate
             # the capsule to it (Perplexity-style dynamic growth) instead of
-            # snapping. The rounded window region tracks each frame.
-            self.adjustSize()
+            # snapping. NOTE: do NOT call adjustSize() here — it resizes the
+            # window instantly, which makes cur_h == target_h so the animation
+            # below is skipped (the abrupt "snap" expand). layout().activate()
+            # reflows the children + refreshes sizeHint WITHOUT resizing.
+            cur_h = self.height()
             try:
+                self.layout().activate()
                 hint = self.layout().sizeHint()
                 target_h = max(self.minimumHeight(), hint.height())
             except Exception:
                 QTimer.singleShot(0, self._reshape)
                 return
-            cur_h = self.height()
-            if target_h == cur_h:
+            if abs(target_h - cur_h) <= 1:
                 QTimer.singleShot(0, self._reshape)
                 return
             self._animate_height(cur_h, target_h)
@@ -3467,7 +3470,7 @@ def main(port: int = 8000) -> int:
                 ticker = "rgba(38,46,58,235)"
                 reply_c = "#11151D"
                 reply_bd = "rgba(20,24,32,0.14)"
-                reply_bg = "rgba(255,255,255,0.66)"
+                reply_bg = "rgba(250,251,253,0.90)"
             else:
                 ic = "#F0F2F8"                       # light icons/text
                 chip_text = "rgba(244,246,250,245)"
@@ -3484,7 +3487,7 @@ def main(port: int = 8000) -> int:
                 ticker = ACCENT
                 reply_c = "#F4F6FA"
                 reply_bd = "rgba(255,255,255,0.12)"
-                reply_bg = "rgba(24,28,38,0.62)"
+                reply_bg = "rgba(22,26,35,0.84)"
             # recipe chips
             chip_qss = (
                 "QPushButton{"

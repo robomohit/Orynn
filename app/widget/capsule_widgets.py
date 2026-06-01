@@ -149,12 +149,14 @@ def set_card_palette(light: bool) -> None:
     if light:
         CARD_TITLE = "#10131A"; CARD_SUB = "#5B6472"
         CARD_BODY = "#283340"; CARD_MORE = "#7A828F"
-        CARD_BG = "rgba(255,255,255,0.72)"
-        CARD_BD = "rgba(20,24,32,0.14)"
+        # Content cards sit on clear glass, so they're near-solid for crisp text
+        # over ANY backdrop (just a hint of translucency keeps them glassy).
+        CARD_BG = "rgba(250,251,253,0.92)"
+        CARD_BD = "rgba(20,24,32,0.13)"
     else:
         CARD_TITLE = "#FFFFFF"; CARD_SUB = "#6B7280"
         CARD_BODY = "#D1D5DB"; CARD_MORE = "#4B5563"
-        CARD_BG = "rgba(24,28,38,0.62)"
+        CARD_BG = "rgba(22,26,35,0.85)"
         CARD_BD = "rgba(255,255,255,0.12)"
 
 _FILE_ICON_MAP = {
@@ -187,8 +189,15 @@ class CapsuleCard(QWidget):
         self._opacity_fx = QGraphicsOpacityEffect(self)
         self._opacity_fx.setOpacity(0.0)
         self.setGraphicsEffect(self._opacity_fx)
+        # CRITICAL: a plain QWidget subclass ignores its stylesheet `background`
+        # unless WA_StyledBackground is enabled. Without this the card stayed
+        # fully transparent on the clear-glass body (text bled into the desktop).
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        # Style by objectName so the surface applies to the card ONLY (not its
+        # child labels/buttons) and works for the DynamicWidget subclass too.
+        self.setObjectName("capsuleCard")
         self.setStyleSheet(
-            "CapsuleCard{"
+            "#capsuleCard{"
             f"  background: {CARD_BG};"
             f"  border: 1px solid {CARD_BD};"
             "  border-radius: 14px;"
