@@ -136,17 +136,26 @@ CARD_TITLE = "#FFFFFF"
 CARD_SUB = "#6B7280"
 CARD_BODY = "#D1D5DB"
 CARD_MORE = "#4B5563"
+# Card SURFACE — the capsule body is now clear see-through glass, so cards must
+# carry their OWN opaque-enough surface or the desktop bleeds through the text.
+CARD_BG = "rgba(28,32,42,0.55)"
+CARD_BD = "rgba(255,255,255,0.10)"
 
 
 def set_card_palette(light: bool) -> None:
-    """Switch card text between dark-mode (white) and light-mode (near-black)."""
-    global CARD_TITLE, CARD_SUB, CARD_BODY, CARD_MORE
+    """Switch card text + surface between dark-mode and light-mode so answer/
+    result cards stay legible on the clear-glass body over any backdrop."""
+    global CARD_TITLE, CARD_SUB, CARD_BODY, CARD_MORE, CARD_BG, CARD_BD
     if light:
         CARD_TITLE = "#10131A"; CARD_SUB = "#5B6472"
         CARD_BODY = "#283340"; CARD_MORE = "#7A828F"
+        CARD_BG = "rgba(255,255,255,0.72)"
+        CARD_BD = "rgba(20,24,32,0.14)"
     else:
         CARD_TITLE = "#FFFFFF"; CARD_SUB = "#6B7280"
         CARD_BODY = "#D1D5DB"; CARD_MORE = "#4B5563"
+        CARD_BG = "rgba(24,28,38,0.62)"
+        CARD_BD = "rgba(255,255,255,0.12)"
 
 _FILE_ICON_MAP = {
     "pdf": "file-text", "doc": "file-text", "docx": "file-text",
@@ -180,8 +189,8 @@ class CapsuleCard(QWidget):
         self.setGraphicsEffect(self._opacity_fx)
         self.setStyleSheet(
             "CapsuleCard{"
-            "  background: rgba(255,255,255,0.03);"
-            "  border: 1px solid rgba(255,255,255,0.06);"
+            f"  background: {CARD_BG};"
+            f"  border: 1px solid {CARD_BD};"
             "  border-radius: 14px;"
             "}"
         )
@@ -438,12 +447,14 @@ class DynamicWidget(CapsuleCard):
         if action == "dismiss":
             self.animate_out(); return
         if action == "open_folder":
-            path = payload.get("path", payload.get("folder_path", ""))
+            payload_obj = payload if isinstance(payload, dict) else {"path": str(payload or "")}
+            path = payload_obj.get("path", payload_obj.get("folder_path", ""))
             if path:
                 subprocess.Popen(["explorer", path])
             return
         if action == "open_url":
-            url = payload.get("url", "")
+            payload_obj = payload if isinstance(payload, dict) else {"url": str(payload or "")}
+            url = payload_obj.get("url", "")
             if url:
                 import webbrowser; webbrowser.open(url)
             return
@@ -462,7 +473,9 @@ class DynamicWidget(CapsuleCard):
         try:
             import httpx
             url = f"{_API_BASE}{endpoint}"
-            r = httpx.post(url, json=payload, timeout=30)
+            with httpx.Client(timeout=30) as client:
+                client.post(f"{_API_BASE}/api/session")
+                r = client.post(url, json=payload)
             result = r.json() if r.status_code < 400 else {"error": r.text}
 
             if "error" in result:

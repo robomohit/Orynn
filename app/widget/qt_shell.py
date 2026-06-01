@@ -2714,6 +2714,7 @@ def main(port: int = 8000) -> int:
             for ms in (550, 900, 1400):
                 QTimer.singleShot(ms, self._fit_widget_scroll)
                 QTimer.singleShot(ms, self._adjust)
+            return widget
 
         def _fit_widget_scroll(self) -> None:
             """Grow widget_scroll to fit content (capped at ~65% screen)."""
@@ -2829,12 +2830,27 @@ def main(port: int = 8000) -> int:
             self._adjust()
 
         def _show_context_details(self) -> None:
+            # Toggle: pressing Details again dismisses the card instead of
+            # stacking a duplicate (the double-press bug).
+            existing = getattr(self, "_details_widget", None)
+            if existing is not None:
+                try:
+                    self._remove_widget(existing)
+                except Exception:
+                    pass
+                self._details_widget = None
+                return
             detail = self._last_action_phrase or self.status.text() or "Ready."
-            self._spawn_widget({
+            w = self._spawn_widget({
                 "title": f"{self._capsule_scope()} · {self.phase_chip.text()}",
                 "icon": "sparkles",
                 "text": detail,
             })
+            self._details_widget = w
+            if w is not None:
+                # Clear the ref if the card is dismissed via its own ✕.
+                w.dismissed.connect(
+                    lambda *_: setattr(self, "_details_widget", None))
 
         def _pause_or_resume(self) -> None:
             tid = getattr(self, "_current_task_id", None)
@@ -3449,8 +3465,9 @@ def main(port: int = 8000) -> int:
                 tb_hbd = "rgba(20,24,32,45)"
                 tb_chk = "rgba(91,224,208,150)"
                 ticker = "rgba(38,46,58,235)"
-                reply_c = "#1A2230"
-                reply_bd = "rgba(20,24,32,0.16)"
+                reply_c = "#11151D"
+                reply_bd = "rgba(20,24,32,0.14)"
+                reply_bg = "rgba(255,255,255,0.66)"
             else:
                 ic = "#F0F2F8"                       # light icons/text
                 chip_text = "rgba(244,246,250,245)"
@@ -3465,8 +3482,9 @@ def main(port: int = 8000) -> int:
                 tb_hbd = "rgba(255,255,255,75)"
                 tb_chk = "rgba(91,224,208,90)"
                 ticker = ACCENT
-                reply_c = "#FFFFFF"
-                reply_bd = "rgba(255,255,255,0.15)"
+                reply_c = "#F4F6FA"
+                reply_bd = "rgba(255,255,255,0.12)"
+                reply_bg = "rgba(24,28,38,0.62)"
             # recipe chips
             chip_qss = (
                 "QPushButton{"
@@ -3526,10 +3544,11 @@ def main(port: int = 8000) -> int:
             except Exception:
                 pass
             try:
+                # Clear-glass body → the reply needs its own readable surface.
                 self.reply.setStyleSheet(
-                    f"QLabel{{color:{reply_c}; background:transparent; "
-                    f"border-top: 1px solid {reply_bd}; "
-                    "padding: 18px 5px 5px 5px; margin-top: 5px;}}")
+                    f"QLabel{{color:{reply_c}; background:{reply_bg}; "
+                    f"border: 1px solid {reply_bd}; border-radius: 14px; "
+                    "padding: 14px 16px; margin-top: 6px;}}")
             except Exception:
                 pass
             # answer/widget cards created from here on use this palette
