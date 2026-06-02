@@ -257,6 +257,10 @@ def test_control_trace_surface_present():
     assert 'id="topbar-control-layer"' in html
     assert "const controlLayerClass" in js
     assert "const setControlSurface" in js
+    assert "const setControlProfileSurface" in js
+    assert "event.type === 'control_profile'" in js
+    assert "setControlProfileSurface(event)" in js
+    assert "setLiveStatus('Control route'" in js
     assert "setControlSurface({" in js
     assert ".topbar-control" in css
     assert ".topbar-control.uia" in css
@@ -269,7 +273,54 @@ def test_control_trace_surface_present():
     assert 'id="btn-control-report"' in html
     assert "showControlReport" in js
     assert "/control-trace" in js
+    assert "summary.profile_route" in js
+    assert "summary.used_profile_route" in js
+    assert "summary.route_changed" in js
+    assert "report.profiles || []" in js
     assert "control-report-grid" in css
+
+
+def test_trust_timeout_events_update_waiting_cards():
+    js = (_STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "event.type === 'approval_timeout' || event.type === 'permission_timeout'" in js
+    assert "setActionState(entry, 'Timed out', 'fail')" in js
+    assert "Approval timed out" in js
+    assert "Permission timed out" in js
+    assert "$('approval')?.classList.remove('show')" in js
+    assert "$('permission')?.classList.remove('show')" in js
+
+
+def test_dashboard_recovers_active_task_after_reload():
+    js = (_STATIC / "app.js").read_text(encoding="utf-8")
+    css = (_STATIC / "style.css").read_text(encoding="utf-8")
+
+    assert "const recoverActiveTask" in js
+    assert "/api/active-tasks?cb=" in js
+    assert "await recoverActiveTask()" in js
+    assert "loadTaskLog(activeId, events, item, { live: true, record, silent: true })" in js
+    assert "streamCursor = streamCursorAfter(events)" in js
+    assert "showLiveTaskControls(record || { status: 'running' }, meta)" in js
+    assert "restorePendingTrustModal(pendingTrustRequest(events), taskId)" in js
+    assert "events.forEach((e) => processTaskEvent(e, { replay: true, taskId, suppressToasts: true }))" in js
+    assert "setDesktopSessionActive(!queued && isDesktopMode(meta.mode)" in js
+    assert "openStream(activeId)" in js
+    assert "toast('Reconnected to running task.'" in js
+    assert ".history-dot.paused::after" in css
+
+
+def test_reconnect_only_reopens_unresolved_trust_prompts():
+    js = (_STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "const pendingTrustRequest" in js
+    assert "const restorePendingTrustModal" in js
+    assert "pending.delete(id)" in js
+    assert "pending.delete('__plan__')" in js
+    assert "if (type === 'done' || type === 'error' || type === 'cancelled') pending.clear()" in js
+    assert "wrap.dataset.trustControls = '1'" in js
+    assert "pWrap.dataset.trustControls = '1'" in js
+    assert "clearTrustControls(entry, event.action_id || '')" in js
+    assert "clearTrustControls(actionCards.__plan__, '__plan__')" in js
 
 
 def test_liquid_glass_capsule_widget_present():
@@ -296,6 +347,7 @@ def test_liquid_glass_capsule_widget_present():
     assert "deriveCapsuleState" in js
     assert "renderCapsuleState({ state: capState" in js
     assert "capsuleControlLayer" in js
+    assert "setControlProfileSurface" in js
     assert "overlayControlLayer" in js
     assert "control_layer" in js
     # capsule CSS + widget-shell overrides
@@ -400,6 +452,72 @@ def test_desktop_launcher_has_frameless_widget_mode():
     assert "_last_control_layer" in qt_shell
     assert "_last_control_reason" in qt_shell
     assert "_pause_or_resume" in qt_shell
+
+
+def test_qt_capsule_surfaces_trust_prompts():
+    root = STATIC_HTML.parents[0].parent
+    qt_shell = (root / "app" / "widget" / "qt_shell.py").read_text(encoding="utf-8")
+    capsule_widgets = (root / "app" / "widget" / "capsule_widgets.py").read_text(encoding="utf-8")
+
+    assert "def _emit_approval_widget" in qt_shell
+    assert "def _emit_permission_widget" in qt_shell
+    assert "def _emit_trust_timeout_widget" in qt_shell
+    assert 't == "approval_required"' in qt_shell
+    assert 't == "permission_required"' in qt_shell
+    assert 't in ("approval_timeout", "permission_timeout")' in qt_shell
+    assert '"/api/approvals"' in qt_shell
+    assert '"/api/permissions"' in qt_shell
+    assert '"approve": True' in qt_shell
+    assert '"grant": True' in qt_shell
+    assert "Waiting for approval..." in qt_shell
+    assert "Waiting on permission..." in qt_shell
+    assert '"waiting_approval"' in qt_shell
+    assert 'client.post(f"{_API_BASE}/api/session")' in capsule_widgets
+
+
+def test_qt_capsule_recovers_active_tasks_on_restart():
+    root = STATIC_HTML.parents[0].parent
+    qt_shell = (root / "app" / "widget" / "qt_shell.py").read_text(encoding="utf-8")
+    capsule_widgets = (root / "app" / "widget" / "capsule_widgets.py").read_text(encoding="utf-8")
+
+    assert "def recover_active" in qt_shell
+    assert "def _recover_active" in qt_shell
+    assert 'f"{BASE}/api/active-tasks"' in qt_shell
+    assert "def _latest_active_record" in qt_shell
+    assert "def _emit_recovered_snapshot" in qt_shell
+    assert "def _poll_recovered_task" in qt_shell
+    assert "def _handle_task_event" in qt_shell
+    assert "controlProfile = Signal(dict)" in qt_shell
+    assert "self.runner.controlProfile.connect(self._on_control_profile)" in qt_shell
+    assert 't == "control_profile"' in qt_shell
+    assert "def _on_control_profile" in qt_shell
+    assert "for attempt in range(10)" in qt_shell
+    assert "Reconnected to running task" in qt_shell
+    assert "_pending_trust_event(log)" in qt_shell
+    assert "self.current_task_id = tid" in qt_shell
+    assert "self.runningChanged.emit(True)" in qt_shell
+    assert "QTimer.singleShot(950, self.runner.recover_active)" in qt_shell
+    assert "_df.save_pending_task(goal, payload.get(\"mode\", \"auto\"), tid)" in qt_shell
+    assert 'payload if isinstance(payload, dict) else {"url": str(payload or "")}' in capsule_widgets
+
+
+def test_qt_capsule_prefers_task_event_stream_with_poll_fallback():
+    root = STATIC_HTML.parents[0].parent
+    qt_shell = (root / "app" / "widget" / "qt_shell.py").read_text(encoding="utf-8")
+
+    assert "def _stream_task_events" in qt_shell
+    assert "keepalive_timeout_seconds=15" in qt_shell
+    assert 'client.stream("GET", url, timeout=None)' in qt_shell
+    assert 'line.startswith("data:")' in qt_shell
+    assert "json.loads(line[5:].strip())" in qt_shell
+    assert "cursor = max(cursor, int(ev.get(\"seq\")) + 1)" in qt_shell
+    assert "self._handle_task_event(tid, ev, state)" in qt_shell
+    assert "Live stream interrupted - falling back..." in qt_shell
+    assert "outcome, active_tid, cursor = self._stream_task_events(c, tid, cursor, state)" in qt_shell
+    assert "self._poll_recovered_task(c, active_tid, cursor, state)" in qt_shell
+    assert "outcome, stream_tid, stream_cursor = self._stream_task_events(" in qt_shell
+    assert "c, stream_tid, stream_cursor, stream_state, payload=payload)" in qt_shell
+    assert "seen = stream_cursor" in qt_shell
 
 
 def test_live_reasoning_not_filtered_by_step_announcement(monkeypatch):

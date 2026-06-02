@@ -106,6 +106,302 @@ async def test_isolated_mode_passes_app_title_to_tool_executor(monkeypatch, work
     assert captured == {"hwnd": 1234, "app_title": "Notepad"}
 
 
+@pytest.mark.asyncio
+async def test_desktop_control_profile_is_injected_before_first_model_turn(monkeypatch, workspace):
+    import app.widget.desktop_features as df
+
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent._get_hwnd_for_title", lambda title: 2222)
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(df, "app_window_rect",
+                        lambda app: {"left": 10, "top": 20, "width": 900, "height": 700})
+    monkeypatch.setattr(df, "count_app_controls", lambda app, cap=80: 3)
+    monkeypatch.setattr(df, "ocr_available", lambda: True)
+    monkeypatch.setattr(df, "electron_hint_for_app",
+                        lambda app: {"exe": r"C:\\Discord\\Discord.exe",
+                                     "tip": "Discord is an Electron app - unlock it."})
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "tier:uia"
+        first_message = ""
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.first_message = messages[0]["content"]
+            assert screenshot_b64 is None
+            yield {"type": "tool_call", "id": "call-1", "name": "finish", "args": {"reason": "done"}, "thought": ""}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    events = []
+
+    async def capture_event(task_id, event_type, data):
+        events.append((event_type, data))
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", capture_event)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task(
+        "task-control-profile",
+        "Open Discord and read the latest message",
+        mode="computer_isolated",
+        isolated_app="Discord",
+        model="tier:uia",
+    )
+
+    assert "Desktop control readiness:" in provider.first_message
+    assert "Primary route: Electron unlock" in provider.first_message
+    assert "UIA controls visible now: 3" in provider.first_message
+    assert "OCR fallback: available" in provider.first_message
+    assert "electron_unlock" in provider.first_message
+    profile_events = [data for event, data in events if event == "control_profile"]
+    assert profile_events
+    assert profile_events[-1]["primary_route"] == "Electron unlock"
+    assert profile_events[-1]["electron_hint"]["exe"].endswith("Discord.exe")
+
+
+@pytest.mark.asyncio
+async def test_text_only_desktop_tool_schemas_hide_visual_fallback_tools(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "tier:uia"
+        tool_names = set()
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            assert screenshot_b64 is None
+            self.tool_names = {tool["function"]["name"] for tool in tools}
+            yield {"type": "tool_call", "id": "call-1", "name": "finish", "args": {"reason": "done"}, "thought": ""}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-text-only-tools", "Use Calculator", mode="computer", model="tier:uia")
+
+    assert {"uia_find", "uia_click", "uia_type", "uia_wait", "electron_unlock"} <= provider.tool_names
+    assert {"focus_window", "wait_for_window", "finish"} <= provider.tool_names
+    assert {
+        "screenshot",
+        "mouse_click",
+        "keyboard_type",
+        "computer",
+        "pixel_color_at",
+        "ui_critique",
+        "screen_context",
+    }.isdisjoint(provider.tool_names)
+
+
+@pytest.mark.asyncio
+async def test_text_only_desktop_screen_context_stays_for_explicit_screen_goal(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "tier:uia"
+        tool_names = set()
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            assert screenshot_b64 is None
+            self.tool_names = {tool["function"]["name"] for tool in tools}
+            yield {"type": "tool_call", "id": "call-1", "name": "finish", "args": {"reason": "done"}, "thought": ""}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-screen-context-tools", "Look at my screen and explain what is open", mode="computer", model="tier:uia")
+
+    assert "screen_context" in provider.tool_names
+    assert {"uia_find", "uia_wait", "finish"} <= provider.tool_names
+    assert {"screenshot", "mouse_click", "computer", "pixel_color_at", "ui_critique"}.isdisjoint(provider.tool_names)
+
+
+@pytest.mark.asyncio
+async def test_vision_desktop_tool_schemas_keep_visual_fallback_tools(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: True)
+    monkeypatch.setattr("app.agent._capture_screenshot_b64", lambda sw, sh: "vision-shot")
+    monkeypatch.setattr("app.agent._get_active_window_rect", lambda sw, sh: None)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "openrouter/openai/gpt-4o"
+        tool_names = set()
+        screenshots_seen = []
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.screenshots_seen.append(screenshot_b64)
+            self.tool_names = {tool["function"]["name"] for tool in tools}
+            yield {"type": "tool_call", "id": "call-1", "name": "finish", "args": {"reason": "done"}, "thought": ""}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-vision-tools", "Click the highlighted button", mode="computer", model="openrouter/openai/gpt-4o")
+
+    assert provider.screenshots_seen == ["vision-shot"]
+    assert {"screenshot", "mouse_click", "keyboard_type", "computer"} <= provider.tool_names
+    assert {"uia_find", "uia_click", "electron_unlock"} <= provider.tool_names
+
+
+@pytest.mark.asyncio
+async def test_screen_context_emits_screenshot_and_updates_vision_context(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: True)
+    monkeypatch.setattr("app.agent._capture_screenshot_b64", lambda sw, sh: "initial-shot")
+    monkeypatch.setattr("app.agent._get_active_window_rect", lambda sw, sh: None)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "openrouter/openai/gpt-4o"
+
+        def __init__(self):
+            self.turn = 0
+            self.screenshots_seen = []
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.turn += 1
+            self.screenshots_seen.append(screenshot_b64)
+            if self.turn == 1:
+                yield {"type": "tool_call", "id": "call-1", "name": "screen_context", "args": {}, "thought": "inspect"}
+                return
+            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def fake_run_action(action, sw=1280, sh=800, on_stream=None):
+        if action.type == ActionType.screen_context:
+            return ToolResult(ok=True, output="Screen captured.\n\nExtracted text from screen:\nReady", base64_image="context-shot")
+        return ToolResult(ok=True, output=action.args.get("reason", "ok"))
+
+    monkeypatch.setattr(service.tools, "run_action", fake_run_action)
+
+    events = []
+
+    async def capture_event(task_id, event_type, data):
+        events.append((event_type, data))
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", capture_event)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-screen-context-vision", "Look at my screen and explain what is open", mode="computer", model="openrouter/openai/gpt-4o")
+
+    assert provider.screenshots_seen == ["initial-shot", "context-shot"]
+    screenshots = [data["data"] for event, data in events if event == "screenshot"]
+    assert "initial-shot" in screenshots
+    assert "context-shot" in screenshots
+
+
+@pytest.mark.asyncio
+async def test_atomic_text_only_desktop_planning_prompt_omits_visual_fallback_guidance(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "tier:uia"
+        prompt = ""
+
+        def _call_llm(self, system, prompt, screenshot_b64=None):
+            assert screenshot_b64 is None
+            self.prompt = prompt
+            return json.dumps({
+                "reasoning": "finish directly",
+                "execution_mode": "serial",
+                "sub_tasks": [{
+                    "id": "step-1",
+                    "description": "Finish",
+                    "depends_on": [],
+                    "actions": [{
+                        "id": "finish-1",
+                        "type": "finish",
+                        "args": {"reason": "done"},
+                        "explanation": "Finish",
+                    }],
+                }],
+            })
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-atomic-uia-prompt", "Use Discord", mode="computer", model="tier:uia")
+
+    assert "uia_find:" in provider.prompt
+    assert "electron_unlock:" in provider.prompt
+    assert "screenshot:" not in provider.prompt
+    assert "mouse_click:" not in provider.prompt
+    assert "computer:" not in provider.prompt
+    assert "pixel_color_at:" not in provider.prompt
+    assert "ui_critique:" not in provider.prompt
+    assert "screen_context:" not in provider.prompt
+
+
 def test_providers_module_exposes_asyncio():
     import app.providers as providers
 
@@ -133,6 +429,18 @@ def test_control_layer_is_declared_on_start_overlays():
         Action(id="a3", type=ActionType.electron_unlock, args={"exe": "Discord"})
     )
     assert electron_overlay["control_layer"] == "Electron unlock"
+
+    sequence_overlay = _overlay_for_action_start(
+        Action(
+            id="a4",
+            type=ActionType.uia_click_sequence,
+            args={"targets": ["One", "Two", "Plus", "Three", "Equals"], "app": "Calculator"},
+        )
+    )
+    assert sequence_overlay["control_layer"] == "UIA exact"
+    assert sequence_overlay["kind"] == "click"
+    assert sequence_overlay["label"] == "Clicking 5 controls in sequence"
+    assert sequence_overlay["target"] == "One, Two, Plus, Three, +1 more"
 
 
 @pytest.mark.asyncio
@@ -310,6 +618,131 @@ async def test_text_only_desktop_model_skips_automatic_screenshots(monkeypatch, 
 
     assert capture_calls["count"] == 0
     assert provider.screenshots_seen == [None, None]
+
+
+@pytest.mark.asyncio
+async def test_text_only_desktop_route_guards_premature_pixel_click(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+
+    class FakeProvider:
+        total_tokens = 0
+
+        def __init__(self):
+            self.turn = 0
+            self.last_observation = ""
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.turn += 1
+            if self.turn == 1:
+                yield {
+                    "type": "tool_call",
+                    "id": "call-1",
+                    "name": "mouse_click",
+                    "args": {"x": 50, "y": 60},
+                    "thought": "click it",
+                }
+                return
+            self.last_observation = messages[-1]["content"]
+            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    calls = []
+
+    async def fake_run_action(action, sw=1280, sh=800, on_stream=None):
+        calls.append(action.type)
+        return ToolResult(ok=True, output="ok", base64_image=None, data=None)
+
+    monkeypatch.setattr(service.tools, "run_action", fake_run_action)
+
+    events = []
+
+    async def capture_event(task_id, event_type, data):
+        events.append((event_type, data))
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", capture_event)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-desktop-guard", "Click and verify", mode="computer", model="tier:uia")
+
+    assert calls == [ActionType.finish]
+    assert "[control-route guard]" in provider.last_observation
+    guarded = [data for event, data in events if event == "action_result" and data["action_type"] == "mouse_click"]
+    assert guarded
+    assert guarded[-1]["ok"] is False
+    assert guarded[-1]["overlay"]["control_layer"] == "UIA guard"
+    assert guarded[-1]["overlay"]["fallback_reason"] == "premature_visual_action"
+
+
+@pytest.mark.asyncio
+async def test_text_only_desktop_route_guards_unadvertised_screen_context(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+
+        def __init__(self):
+            self.turn = 0
+            self.last_observation = ""
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.turn += 1
+            if self.turn == 1:
+                yield {"type": "tool_call", "id": "call-1", "name": "screen_context", "args": {}, "thought": "look"}
+                return
+            self.last_observation = messages[-1]["content"]
+            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    calls = []
+
+    async def fake_run_action(action, sw=1280, sh=800, on_stream=None):
+        calls.append(action.type)
+        return ToolResult(ok=True, output="ok", base64_image="unexpected-shot")
+
+    monkeypatch.setattr(service.tools, "run_action", fake_run_action)
+
+    events = []
+
+    async def capture_event(task_id, event_type, data):
+        events.append((event_type, data))
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", capture_event)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-screen-context-guard", "Use Calculator", mode="computer", model="tier:uia")
+
+    assert calls == [ActionType.finish]
+    assert "[control-route guard]" in provider.last_observation
+    guarded = [data for event, data in events if event == "action_result" and data["action_type"] == "screen_context"]
+    assert guarded
+    assert guarded[-1]["ok"] is False
+    assert guarded[-1]["overlay"]["control_layer"] == "UIA guard"
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 _log = logging.getLogger(__name__)
 
@@ -1877,13 +1877,14 @@ class PlannerProvider:
         memory_context: Optional[str] = None,
         mode: str = "computer",
         system_prompt_extension: Optional[str] = None,
+        exclude_actions: Optional[Iterable[Any]] = None,
     ) -> HierarchicalPlan:
         prompt = f"Goal: {goal}\n\nFor simple one-action tasks, use exactly 1 sub-task. For complex tasks, decompose into 2-8 sequential sub-tasks with concrete actions."
         if memory_context:
             prompt = f"Relevant past experience:\n{memory_context[:1500]}\n\n{prompt}"
         
         packs = get_mode_packs(mode)
-        tool_guidance = get_tool_guidance(packs)
+        tool_guidance = get_tool_guidance(packs, exclude_actions=exclude_actions)
         
         if mode == "coding":
             system = CODING_SYSTEM_PROMPT.format(tool_guidance=tool_guidance)
@@ -1912,9 +1913,10 @@ class PlannerProvider:
         post_screenshot_b64: Optional[str] = None,
         mode: str = "computer",
         system_prompt_extension: Optional[str] = None,
+        exclude_actions: Optional[Iterable[Any]] = None,
     ) -> Dict[str, Any]:
         packs = get_mode_packs(mode)
-        tool_guidance = get_tool_guidance(packs)
+        tool_guidance = get_tool_guidance(packs, exclude_actions=exclude_actions)
         
         if mode == "coding":
             prompt = (

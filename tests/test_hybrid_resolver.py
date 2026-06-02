@@ -277,6 +277,43 @@ def test_uia_click_sequence_stops_on_miss(monkeypatch, tmp_path):
     assert res.data["clicked"] == 1  # only Two landed before the miss
 
 
+def test_uia_click_sequence_adds_electron_hint_on_hard_miss(monkeypatch, tmp_path):
+    import app.widget.desktop_features as df
+
+    monkeypatch.setattr(df, "invoke_ui_element",
+                        lambda q, a: {"ok": False, "error": "no UIA control matched"})
+    monkeypatch.setattr(df, "ocr_find_in_app", lambda q, a: {"ok": False})
+    monkeypatch.setattr(df, "app_window_rect",
+                        lambda a: {"left": 0, "top": 0, "width": 0, "height": 0})
+    monkeypatch.setattr(df, "electron_hint_for_app",
+                        lambda app: {"exe": r"C:\\Discord\\Discord.exe",
+                                     "tip": "Discord is an Electron app - unlock it."})
+
+    res = _ex(tmp_path).uia_click_sequence(["Messages", "Send"], "Discord")
+    assert res.ok is False
+    assert res.data["electron_hint"]["exe"].endswith("Discord.exe")
+    assert res.data["overlay"]["fallback_reason"] == "uia_no_match"
+    assert "Electron app" in res.output
+
+
+def test_uia_wait_adds_electron_hint_on_timeout(monkeypatch, tmp_path):
+    import app.widget.desktop_features as df
+
+    monkeypatch.setattr(df, "wait_for_ui_element",
+                        lambda q, a, t: {"ok": False, "error": "timed out waiting"})
+    monkeypatch.setattr(df, "app_window_rect",
+                        lambda a: {"left": 0, "top": 0, "width": 0, "height": 0})
+    monkeypatch.setattr(df, "electron_hint_for_app",
+                        lambda app: {"exe": r"C:\\Slack\\slack.exe",
+                                     "tip": "Slack is an Electron app - unlock it."})
+
+    res = _ex(tmp_path).uia_wait("Message composer", "Slack", timeout=0.01)
+    assert res.ok is False
+    assert res.data["electron_hint"]["exe"].endswith("slack.exe")
+    assert res.data["overlay"]["fallback_reason"] == "uia_wait_timeout"
+    assert "Electron app" in res.output
+
+
 def test_uia_type_reports_verification(monkeypatch, tmp_path):
     import app.widget.desktop_features as df
 

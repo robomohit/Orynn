@@ -2128,12 +2128,28 @@ def _build_control_trace_report(task_id: str, events: List[Dict[str, Any]]) -> D
     entries: List[Dict[str, Any]] = []
     layers: Dict[str, int] = {}
     tools: Dict[str, int] = {}
+    profiles: List[Dict[str, Any]] = []
     fallbacks = 0
     misses = 0
     failures = 0
     successes = 0
 
     for event in events:
+        if event.get("type") == "control_profile":
+            profile = {
+                "seq": event.get("seq"),
+                "ts": event.get("ts"),
+                "target_app": event.get("target_app") or "",
+                "primary_route": event.get("primary_route") or "",
+                "uia_control_count": int(event.get("uia_control_count") or 0),
+                "ocr_available": bool(event.get("ocr_available")),
+                "model_vision": bool(event.get("model_vision")),
+                "window_found": bool(event.get("window_found")),
+                "isolated": bool(event.get("isolated")),
+                "electron_hint": event.get("electron_hint") if isinstance(event.get("electron_hint"), dict) else None,
+            }
+            profiles.append(profile)
+            continue
         if event.get("type") not in {"intent", "action_start", "action_result"}:
             continue
         overlay = event.get("overlay")
@@ -2180,9 +2196,23 @@ def _build_control_trace_report(task_id: str, events: List[Dict[str, Any]]) -> D
     primary_layer = ""
     if layers:
         primary_layer = sorted(layers.items(), key=lambda item: (-item[1], item[0]))[0][0]
+    profile = profiles[-1] if profiles else {}
+    profile_route = str(profile.get("primary_route") or "")
+    used_profile_route = bool(profile_route and any(layer == profile_route for layer in layers))
+    route_changed = bool(profile_route and primary_layer and primary_layer != profile_route)
     summary = {
         "total_events": len(events),
         "trace_events": len(entries),
+        "profile_events": len(profiles),
+        "profile_route": profile_route,
+        "profile_target_app": profile.get("target_app") or "",
+        "profile_uia_control_count": profile.get("uia_control_count", 0),
+        "profile_ocr_available": bool(profile.get("ocr_available")),
+        "profile_window_found": bool(profile.get("window_found")),
+        "profile_model_vision": bool(profile.get("model_vision")),
+        "profile_has_electron_hint": isinstance(profile.get("electron_hint"), dict),
+        "used_profile_route": used_profile_route,
+        "route_changed": route_changed,
         "primary_layer": primary_layer,
         "layers": layers,
         "tools": tools,
@@ -2194,7 +2224,7 @@ def _build_control_trace_report(task_id: str, events: List[Dict[str, Any]]) -> D
         "used_screenshot_fallback": any("screenshot" in layer.lower() or "fallback" in layer.lower() for layer in layers),
         "used_electron_unlock": any("electron unlock" in layer.lower() for layer in layers),
     }
-    return {"task_id": task_id, "summary": summary, "entries": entries}
+    return {"task_id": task_id, "summary": summary, "profiles": profiles, "entries": entries}
 
 
 @app.get("/api/tasks/{task_id}/control-trace", dependencies=[Depends(verify_token)])

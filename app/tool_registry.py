@@ -1,6 +1,6 @@
 from __future__ import annotations
 import re
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Iterable
 from .models import ActionType
 
 TOOL_DESCRIPTIONS = {
@@ -83,12 +83,19 @@ TOOL_PACKS = {
     "editing_extras": [ActionType.diff_files],
 }
 
-def get_tool_guidance(packs: List[str]) -> str:
+def _excluded_actions(exclude_actions: Optional[Iterable[ActionType]] = None) -> set[ActionType]:
+    return set(exclude_actions or [])
+
+
+def get_tool_guidance(packs: List[str], exclude_actions: Optional[Iterable[ActionType]] = None) -> str:
     guidance = []
     seen_actions = set()
+    excluded = _excluded_actions(exclude_actions)
     for pack in packs:
         if pack in TOOL_PACKS:
             for action_type in TOOL_PACKS[pack]:
+                if action_type in excluded:
+                    continue
                 if action_type not in seen_actions and action_type in TOOL_DESCRIPTIONS:
                     guidance.append(f"- {TOOL_DESCRIPTIONS[action_type]}")
                     seen_actions.add(action_type)
@@ -142,11 +149,14 @@ def _json_schema_from_description(action_type: ActionType, description: str) -> 
     }
 
 
-def get_tool_schemas(packs: List[str]) -> List[Dict[str, Any]]:
+def get_tool_schemas(packs: List[str], exclude_actions: Optional[Iterable[ActionType]] = None) -> List[Dict[str, Any]]:
     schemas: List[Dict[str, Any]] = []
     seen_actions = set()
+    excluded = _excluded_actions(exclude_actions)
     for pack in packs:
         for action_type in TOOL_PACKS.get(pack, []):
+            if action_type in excluded:
+                continue
             if action_type in seen_actions or action_type not in TOOL_DESCRIPTIONS:
                 continue
             schemas.append(_json_schema_from_description(action_type, TOOL_DESCRIPTIONS[action_type]))

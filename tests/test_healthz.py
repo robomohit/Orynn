@@ -455,7 +455,15 @@ async def test_mcp_watchdog_marks_dead_when_pending_calls_get_no_response():
 
 def test_active_tasks_returns_non_terminal_only(monkeypatch):
     from app.models import AgentContext, TaskRecord
-    running = TaskRecord(id="t1", status="running", context=AgentContext(goal="do stuff"), goal="do stuff", mode="coding", model="gpt-4")
+    running = TaskRecord(
+        id="t1",
+        status="running",
+        context=AgentContext(goal="do stuff", isolated_app="Notepad"),
+        goal="do stuff",
+        mode="computer_isolated",
+        model="gpt-4",
+        paused=True,
+    )
     done = TaskRecord(id="t2", status="done", context=AgentContext(goal="finished"), goal="finished", mode="coding", model="gpt-4")
     monkeypatch.setattr(_m, "_tasks", {"t1": running, "t2": done})
     client = _client(monkeypatch)
@@ -465,6 +473,11 @@ def test_active_tasks_returns_non_terminal_only(monkeypatch):
     ids = [t["task_id"] for t in data["tasks"]]
     assert "t1" in ids
     assert "t2" not in ids
+    active = data["tasks"][0]
+    assert active["status"] == "paused"
+    assert active["paused"] is True
+    assert active["isolated_app"] == "Notepad"
+    assert active["context"]["isolated_app"] == "Notepad"
 
 
 def test_create_task_queues_when_active_limit_reached(monkeypatch):
@@ -563,6 +576,16 @@ def test_task_control_trace_report_summarizes_overlays(monkeypatch, tmp_path):
     monkeypatch.setattr(_m.log_emitter, "log_dir", tmp_path)
     _m.log_emitter._seqs.pop("trace-task", None)
     _m.log_emitter._offsets.pop("trace-task", None)
+    _m.log_emitter.emit("trace-task", "control_profile", {
+        "target_app": "Notepad",
+        "primary_route": "UIA exact",
+        "uia_control_count": 42,
+        "ocr_available": True,
+        "model_vision": False,
+        "window_found": True,
+        "isolated": True,
+        "electron_hint": None,
+    })
     _m.log_emitter.emit("trace-task", "action_start", {
         "action_id": "a1",
         "action_type": "uia_find",
@@ -604,9 +627,42 @@ def test_task_control_trace_report_summarizes_overlays(monkeypatch, tmp_path):
     assert resp.status_code == 200
     body = resp.json()
     assert body["summary"]["primary_layer"] == "UIA exact"
+    assert body["summary"]["profile_route"] == "UIA exact"
+    assert body["summary"]["profile_target_app"] == "Notepad"
+    assert body["summary"]["profile_uia_control_count"] == 42
+    assert body["summary"]["profile_ocr_available"] is True
+    assert body["summary"]["profile_window_found"] is True
+    assert body["summary"]["profile_events"] == 1
+    assert body["summary"]["used_profile_route"] is True
+    assert body["summary"]["route_changed"] is False
     assert body["summary"]["used_uia"] is True
     assert body["summary"]["trace_events"] == 2
+    assert body["profiles"][0]["primary_route"] == "UIA exact"
     assert body["entries"][1]["rect"] == {"left": 10, "top": 20, "width": 300, "height": 40}
+
+
+def test_permission_endpoint_records_scope_grants(monkeypatch):
+    _m.service.permissions.clear("perm-task")
+    client = _client(monkeypatch)
+
+    grant = client.post(
+        "/api/permissions",
+        headers={"Authorization": "Bearer testtoken"},
+        json={"task_id": "perm-task", "action_id": "a1", "grant": True, "scope": "shell"},
+    )
+    assert grant.status_code == 200
+    listed = client.get("/api/permissions/perm-task", headers={"Authorization": "Bearer testtoken"})
+    assert listed.status_code == 200
+    assert listed.json()["granted"] == ["shell"]
+
+    deny = client.post(
+        "/api/permissions",
+        headers={"Authorization": "Bearer testtoken"},
+        json={"task_id": "perm-task", "action_id": "a2", "grant": False, "scope": "shell"},
+    )
+    assert deny.status_code == 200
+    listed = client.get("/api/permissions/perm-task", headers={"Authorization": "Bearer testtoken"})
+    assert listed.json()["granted"] == []
 
 
 @pytest.mark.asyncio

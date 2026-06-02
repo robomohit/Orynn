@@ -100,6 +100,7 @@ _UIA_ACTION_TYPES = {
 
 _VISUAL_DESKTOP_ACTION_TYPES = {
     ActionType.screenshot,
+    ActionType.screen_context,
     ActionType.mouse_click,
     ActionType.double_click,
     ActionType.right_click,
@@ -112,6 +113,40 @@ _VISUAL_DESKTOP_ACTION_TYPES = {
     ActionType.find_on_screen,
     ActionType.computer,
 }
+
+_TEXT_ONLY_DESKTOP_TOOL_EXCLUDES = _VISUAL_DESKTOP_ACTION_TYPES | {
+    ActionType.ocr_image,
+    ActionType.pixel_color_at,
+    ActionType.ui_critique,
+}
+
+
+def _goal_requests_screen_context(goal: str) -> bool:
+    text = (goal or "").lower()
+    screen_terms = (
+        "look at my screen",
+        "see my screen",
+        "explain my screen",
+        "explain screen",
+        "summarize my screen",
+        "summarize this page",
+        "what am i looking at",
+        "what is on my screen",
+        "what's on my screen",
+        "current screen",
+        "this screen",
+        "screen context",
+    )
+    return any(term in text for term in screen_terms)
+
+
+def _tool_excludes_for_control_route(mode: str, model_sees: bool, goal: str = "") -> set[ActionType]:
+    if mode in ("computer", "computer_isolated") and not model_sees:
+        excluded = set(_TEXT_ONLY_DESKTOP_TOOL_EXCLUDES)
+        if _goal_requests_screen_context(goal):
+            excluded.discard(ActionType.screen_context)
+        return excluded
+    return set()
 
 _POINT_TAG_RE = re.compile(r"\[POINT:(?P<body>[^\]]+)\]", re.IGNORECASE)
 _ORIGINAL_PLANNER_PROVIDER = PlannerProvider
@@ -211,7 +246,22 @@ def _overlay_for_action_start(action: Action, *, visual_fallback: bool = False) 
     args = action.args if isinstance(action.args, dict) else {}
     if action.type in _UIA_ACTION_TYPES:
         query = str(args.get("query") or "").strip()
-        if action.type == ActionType.uia_click:
+        if action.type == ActionType.uia_click_sequence:
+            raw_targets = args.get("targets") or args.get("queries") or args.get("query") or []
+            if isinstance(raw_targets, str):
+                targets = [t.strip() for t in raw_targets.split(",") if t.strip()]
+            else:
+                targets = [str(t).strip() for t in (raw_targets or []) if str(t).strip()]
+            target = ", ".join(targets[:4])
+            if len(targets) > 4:
+                target += f", +{len(targets) - 4} more"
+            label = (
+                f"Clicking {len(targets)} controls in sequence"
+                if targets else "Clicking controls in sequence"
+            )
+            kind = "click"
+            query = target
+        elif action.type == ActionType.uia_click:
             label = f"Locating {query} to click" if query else "Locating control to click"
             kind = "click"
         elif action.type == ActionType.uia_type:
@@ -338,6 +388,174 @@ def _overlay_from_result(result: ToolResult) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _desktop_control_profile(
+    app_hint: str = "",
+    *,
+    isolated: bool = False,
+    model_sees: bool = False,
+) -> Dict[str, Any]:
+    """Cheap local routing profile for desktop tasks before the first model turn."""
+    target = (app_hint or "").strip()
+    profile: Dict[str, Any] = {
+        "target_app": target,
+        "isolated": bool(isolated),
+        "model_vision": bool(model_sees),
+        "window_found": False,
+        "app_rect": None,
+        "uia_control_count": 0,
+        "ocr_available": False,
+        "electron_hint": None,
+    }
+    try:
+        from .widget.desktop_features import (
+            app_window_rect,
+            count_app_controls,
+            electron_hint_for_app,
+            ocr_available,
+        )
+        if target:
+            try:
+                rect = app_window_rect(target)
+                if isinstance(rect, dict):
+                    norm_rect = {
+                        "left": int(rect.get("left", 0)),
+                        "top": int(rect.get("top", 0)),
+                        "width": int(rect.get("width", 0)),
+                        "height": int(rect.get("height", 0)),
+                    }
+                    profile["app_rect"] = norm_rect
+                    profile["window_found"] = norm_rect["width"] > 0 and norm_rect["height"] > 0
+            except Exception:
+                pass
+            try:
+                profile["uia_control_count"] = int(count_app_controls(target, cap=80) or 0)
+            except Exception:
+                pass
+            try:
+                profile["electron_hint"] = electron_hint_for_app(target)
+            except Exception:
+                pass
+        try:
+            profile["ocr_available"] = bool(ocr_available())
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    count = int(profile.get("uia_control_count") or 0)
+    if target and count >= 12:
+        route = "UIA exact"
+    elif target and profile.get("electron_hint"):
+        route = "Electron unlock"
+    elif not target:
+        route = "UIA exact"
+    elif profile.get("ocr_available"):
+        route = "OCR fallback"
+    elif model_sees:
+        route = "Screenshot fallback"
+    else:
+        route = "UIA degraded"
+    profile["primary_route"] = route
+    return profile
+
+
+def _desktop_control_profile_text(profile: Dict[str, Any]) -> str:
+    if not profile:
+        return ""
+    target = profile.get("target_app") or "not fixed (full desktop)"
+    route = profile.get("primary_route") or "UIA exact"
+    count = int(profile.get("uia_control_count") or 0)
+    ocr = "available" if profile.get("ocr_available") else "unavailable"
+    vision = "available" if profile.get("model_vision") else "skipped for this text-only/UIA route"
+    lines = [
+        "",
+        "Desktop control readiness:",
+        f"- Target app: {target}",
+        f"- Primary route: {route}",
+        f"- UIA controls visible now: {count}",
+        f"- OCR fallback: {ocr}",
+        f"- Screenshot/vision fallback: {vision}",
+    ]
+    if profile.get("target_app") and not profile.get("window_found"):
+        lines.append("- Target window is not attached yet; open/focus it, then use uia_wait.")
+    hint = profile.get("electron_hint")
+    if isinstance(hint, dict):
+        exe = hint.get("exe") or profile.get("target_app") or "the app"
+        lines.append(
+            "- Electron note: if uia_find/uia_wait returns no controls, call "
+            f"electron_unlock with {exe} before using screenshot coordinates."
+        )
+    return "\n".join(lines)
+
+
+def _desktop_control_profile_status(profile: Dict[str, Any]) -> str:
+    route = profile.get("primary_route") or "UIA exact"
+    target = profile.get("target_app") or "desktop"
+    count = int(profile.get("uia_control_count") or 0)
+    ocr = "OCR ready" if profile.get("ocr_available") else "OCR unavailable"
+    return f"Desktop control route: {route} for {target} ({count} UIA controls, {ocr})."
+
+
+def _goal_explicitly_allows_visual_action(goal: str, action: Action) -> bool:
+    text = (goal or "").lower()
+    if action.type == ActionType.screen_context:
+        return _goal_requests_screen_context(goal)
+    if action.type == ActionType.screenshot:
+        return any(term in text for term in ("screenshot", "screen shot", "capture the screen"))
+    if action.type == ActionType.computer:
+        sub = str(action.args.get("action") or "").strip().lower()
+        if sub in {"wait", "cursor_position"}:
+            return True
+        if sub == "screenshot":
+            return any(term in text for term in ("screenshot", "screen shot", "capture the screen"))
+    coordinate_terms = ("coordinate", "coords", "pixel", "at x", "x=", "y=")
+    if any(term in text for term in coordinate_terms):
+        return True
+    return bool(re.search(r"\b\d{2,4}\s*,\s*\d{2,4}\b", text))
+
+
+def _should_guard_premature_visual_action(
+    action: Action,
+    *,
+    goal: str,
+    is_desktop: bool,
+    model_sees: bool,
+    last_uia_failed: bool,
+) -> bool:
+    if not is_desktop or model_sees or last_uia_failed:
+        return False
+    if action.type not in _VISUAL_DESKTOP_ACTION_TYPES:
+        return False
+    if _goal_explicitly_allows_visual_action(goal, action):
+        return False
+    return True
+
+
+def _visual_route_guard_message(action: Action) -> str:
+    return (
+        "[control-route guard] Skipped premature screenshot/pixel fallback "
+        f"({action.type.value}). This run is using the fast text-only UIA route, "
+        "so first use uia_find/uia_wait with the target app, then uia_click, "
+        "uia_type, or uia_click_sequence by visible control name. Use screenshot "
+        "or coordinate clicks only after a UIA/OCR miss, or when the user "
+        "explicitly asks for a screenshot or coordinates."
+    )
+
+
+def _visual_route_guard_overlay(action: Action) -> Dict[str, Any]:
+    return {
+        "type": "status",
+        "tool": action.type.value,
+        "kind": "guard",
+        "phase": "blocked",
+        "label": "Skipped premature screenshot fallback",
+        "target": _summarize_args(action.type.value, action.args),
+        "fallback_reason": "premature_visual_action",
+        "control_layer": "UIA guard",
+        "control_reason": "text-only desktop route requires UIA/OCR before pixel fallback",
+    }
+
+
 def _extract_point_tag(text: str) -> tuple[str, Optional[Dict[str, Any]]]:
     match = _POINT_TAG_RE.search(text or "")
     if not match:
@@ -375,6 +593,8 @@ class SubTaskWorker:
         complexity: str = "complex",
         system_prompt_extension: Optional[str] = None,
         auto_approve: bool = False,
+        model_sees: bool = True,
+        goal: str = "",
     ):
         self.worker_id = worker_id
         self.task_id = task_id
@@ -388,6 +608,8 @@ class SubTaskWorker:
         self.max_actions = 20 # sub-task limit
         self.system_prompt_extension = system_prompt_extension
         self.auto_approve = bool(auto_approve)
+        self.model_sees = bool(model_sees)
+        self.goal = goal or sub_task.description
 
     async def _emit(self, event: str, data: Dict[str, Any]):
         data["worker_id"] = self.worker_id
@@ -418,6 +640,8 @@ class SubTaskWorker:
         is_computer_use = self.mode == "computer_use"
         tools = self.agent_service._get_task_tools(self.task_id)
         is_isolated = self.mode == "computer_isolated" or bool(tools.resolve_isolated_hwnd())
+        is_desktop = self.mode in ("computer", "computer_isolated")
+        last_uia_failed = False
 
         try:
             for action_data in self.sub_task.actions:
@@ -440,6 +664,62 @@ class SubTaskWorker:
 
                 self.action_count += 1
                 action = Action(**action_data.model_dump())
+
+                if _should_guard_premature_visual_action(
+                    action,
+                    goal=self.goal,
+                    is_desktop=is_desktop,
+                    model_sees=self.model_sees,
+                    last_uia_failed=last_uia_failed,
+                ):
+                    guard_obs = _visual_route_guard_message(action)
+                    if is_isolated:
+                        try:
+                            hung_info = tools.current_target_hung_info()
+                        except Exception:
+                            hung_info = None
+                        if hung_info:
+                            title_hint = (hung_info.get("title") or "target app").replace('"', "'")
+                            guard_obs = (
+                                f"{guard_obs}\n\n[hung-app hint] The target window "
+                                f"'{title_hint}' appears not responding. Consider "
+                                f"force_close_window {{\"title\": \"{title_hint}\", "
+                                "\"force\": true}} and then relaunch it."
+                            )
+                    guard_overlay = _visual_route_guard_overlay(action)
+                    arg_summary = _summarize_args(action.type.value, action.args)
+                    await self._emit("status", {
+                        "message": "Keeping this planned run on the UIA route before using screenshot fallback.",
+                    })
+                    await self._emit("action_start", {
+                        "action_id": action.id,
+                        "action_type": action.type.value,
+                        "explanation": action.explanation,
+                        "args_summary": arg_summary,
+                        "overlay": guard_overlay,
+                    })
+                    await self._emit("action_result", {
+                        "action_id": action.id,
+                        "ok": False,
+                        "output": guard_obs,
+                        "action_type": action.type.value,
+                        "args_summary": arg_summary,
+                        "overlay": guard_overlay,
+                    })
+                    results.append(guard_obs)
+                    guarded_action = action.model_dump()
+                    guarded_action["ok"] = False
+                    actions_taken.append(guarded_action)
+                    history.append(f"[{self.worker_id}] Guarded: {action.type.value} -> {guard_obs}")
+                    self.sub_task.status = TaskStatus.failed
+                    self.sub_task.error = guard_obs
+                    await self._emit("subtask", {
+                        "subtask_id": self.sub_task.id,
+                        "status": "failed",
+                        "reason": guard_obs,
+                    })
+                    return False
+
                 decision = self.agent_service.safety.evaluate(action, safe_mode=not (is_coding or self.auto_approve))
 
                 _start_overlay = _overlay_for_action_start(action)
@@ -459,22 +739,18 @@ class SubTaskWorker:
                 })
 
                 # Permission & Approval logic (reusing AgentService helpers)
-                needed_scope = scope_for_action(action.type.value, action.args)
-                if needed_scope and not self.agent_service.permissions.is_granted(self.task_id, needed_scope.value):
-                    if is_coding or self.auto_approve:
-                        granted = True
-                    else:
-                        await self._emit("permission_required", {
-                            "action_id": action.id,
-                            "scope": needed_scope.value,
-                            "reason": f"Action '{action.type.value}' needs '{needed_scope.value}' access.",
-                        })
-                        granted = await self.agent_service._wait_for_permission(self.task_id, action.id)
-                        if not granted:
-                            raise RuntimeError(f"Permission denied for {needed_scope.value}")
-                    self.agent_service.permissions.grant(self.task_id, needed_scope.value)
+                granted, denied_scope = await self.agent_service._ensure_permission_for_action(
+                    self.task_id,
+                    action,
+                    auto_grant=is_coding or self.auto_approve,
+                    emit=self._emit,
+                    args_summary=_summarize_args(action.type.value, action.args),
+                )
+                if not granted:
+                    raise RuntimeError(f"Permission denied for {denied_scope or 'requested scope'}")
 
                 if action.requires_approval or decision.requires_approval:
+                    self.agent_service._prepare_approval_wait(self.task_id, action.id)
                     await self._emit("approval_required", {
                         "action_id": action.id,
                         "action": action.model_dump(),
@@ -508,7 +784,9 @@ class SubTaskWorker:
                     res = ToolResult(ok=False, output=f"Worker Error: {str(e)}")
 
                 results.append(res.output)
-                actions_taken.append(action.model_dump())
+                action_record = action.model_dump()
+                action_record["ok"] = bool(res.ok)
+                actions_taken.append(action_record)
                 await asyncio.to_thread(self.agent_service.memory.add_action_result, self.task_id, action.id, res.output)
                 history.append(f"[{self.worker_id}] Action: {action.type.value} -> {res.output}")
 
@@ -534,6 +812,11 @@ class SubTaskWorker:
                     })
                     return success
 
+                if action.type in _UIA_ACTION_TYPES:
+                    last_uia_failed = not res.ok
+                elif action.type in _VISUAL_DESKTOP_ACTION_TYPES:
+                    last_uia_failed = False
+
                 # Special Mode Handling (Screenshots, File Changes)
                 if is_coding:
                     if action.type.value in ("write_file", "text_create", "text_str_replace", "text_insert"):
@@ -543,8 +826,9 @@ class SubTaskWorker:
                             "content": action.args.get("content", action.args.get("file_text", "")),
                         })
                 elif not is_computer_use:
-                    if action.type in _SCREENSHOT_ACTIONS or action.type == ActionType.screenshot:
-                        if is_isolated:
+                    if action.type in _SCREENSHOT_ACTIONS or action.type in {ActionType.screenshot, ActionType.screen_context}:
+                        is_context_capture = action.type == ActionType.screen_context
+                        if is_isolated and not is_context_capture:
                             from .providers import _capture_hwnd_screenshot_b64
                             hwnd = tools.resolve_isolated_hwnd()
                             screenshot = res.base64_image or _capture_hwnd_screenshot_b64(hwnd)
@@ -560,7 +844,8 @@ class SubTaskWorker:
             # Reflection — skip when atomic OR all actions succeeded (C4: no extra LLM call on success)
             _had_failures = self.consecutive_fails > 0 or (bool(results) and not actions_taken[-1].get("ok", True) if actions_taken else False)
             if self.complexity != "atomic" and _had_failures:
-                reflect_screenshot = None if (is_coding or is_computer_use) else _capture_screenshot_b64(self.screen_width, self.screen_height)
+                reflect_screenshot = None if (is_coding or is_computer_use or not self.model_sees) else _capture_screenshot_b64(self.screen_width, self.screen_height)
+                reflect_excludes = _tool_excludes_for_control_route(self.mode, self.model_sees, self.goal)
                 reflection = await self.agent_service._run_with_phase_updates(
                     self.task_id,
                     f"Worker {self.worker_id} reflecting...",
@@ -572,6 +857,7 @@ class SubTaskWorker:
                     reflect_screenshot,
                     self.mode,
                     system_prompt_extension=self.system_prompt_extension,
+                    exclude_actions=reflect_excludes,
                 )
                 success = reflection.get("success", True)
                 reason = reflection.get("reason")
@@ -586,13 +872,33 @@ class SubTaskWorker:
                             args=retry_data.get("args", {}),
                             explanation=retry_data.get("explanation", "Retry action"),
                         )
+                        if _should_guard_premature_visual_action(
+                            retry_action,
+                            goal=self.goal,
+                            is_desktop=is_desktop,
+                            model_sees=self.model_sees,
+                            last_uia_failed=last_uia_failed,
+                        ):
+                            guard_obs = _visual_route_guard_message(retry_action)
+                            retry_results.append(guard_obs)
+                            guarded_retry = retry_action.model_dump()
+                            guarded_retry["ok"] = False
+                            retry_taken.append(guarded_retry)
+                            history.append(f"[{self.worker_id}] Guarded retry: {retry_action.type.value} -> {guard_obs}")
+                            break
                         retry_res = await asyncio.wait_for(
                             tools.run_action(retry_action, sw=self.screen_width, sh=self.screen_height),
                             timeout=300.0 if is_coding else 120.0,
                         )
                         retry_results.append(retry_res.output)
-                        retry_taken.append(retry_action.model_dump())
+                        retry_record = retry_action.model_dump()
+                        retry_record["ok"] = bool(retry_res.ok)
+                        retry_taken.append(retry_record)
                         history.append(f"[{self.worker_id}] Retry: {retry_action.type.value} -> {retry_res.output}")
+                        if retry_action.type in _UIA_ACTION_TYPES:
+                            last_uia_failed = not retry_res.ok
+                        elif retry_action.type in _VISUAL_DESKTOP_ACTION_TYPES:
+                            last_uia_failed = False
                     retry_reflection = await self.agent_service._run_with_phase_updates(
                         self.task_id,
                         f"Worker {self.worker_id} reflecting on retry...",
@@ -604,6 +910,7 @@ class SubTaskWorker:
                         reflect_screenshot,
                         self.mode,
                         system_prompt_extension=self.system_prompt_extension,
+                        exclude_actions=reflect_excludes,
                     )
                     success = retry_reflection.get("success", True)
                     reason = retry_reflection.get("reason", reason)
@@ -946,6 +1253,7 @@ class AgentService:
                     f"{i + 1}. {item.get('description', '')}"
                     for i, item in enumerate(plan_payload.get("sub_tasks", []))
                 )
+                self._prepare_approval_wait(task_id, "__plan__")
                 await self._emit(task_id, "approval_required", {
                     "action_id": "__plan__",
                     "action": {"type": "plan_review", "args": {"plan_text": plan_text}},
@@ -1095,6 +1403,23 @@ class AgentService:
                 is_isolated = False
                 await self._emit(task_id, "mode", {"mode": mode, "isolated": False})
 
+            _model_sees = is_vision_model(getattr(provider, "model", model))
+            control_context = ""
+            if mode in ("computer", "computer_isolated"):
+                control_app = isolated_app if is_isolated else (infer_isolated_app_name(goal) or "")
+                control_profile = await asyncio.to_thread(
+                    _desktop_control_profile,
+                    control_app,
+                    isolated=is_isolated,
+                    model_sees=_model_sees,
+                )
+                control_context = _desktop_control_profile_text(control_profile)
+                await self._emit(task_id, "control_profile", control_profile)
+                await self._emit(task_id, "status", {
+                    "message": _desktop_control_profile_status(control_profile),
+                    "elapsed_seconds": 0,
+                })
+
             # Classify task complexity
             complexity = classify_task_complexity(goal)
             if is_isolated:
@@ -1121,7 +1446,6 @@ class AgentService:
             # tool-calling model): a screenshot would be wasted tokens at best,
             # or break the request at worst. UIA drives the desktop blind by
             # control name, so no pixels are needed.
-            _model_sees = is_vision_model(getattr(provider, "model", model))
             if runs_in_background or is_coding_mode or not _model_sees:
                 screenshot_b64 = None
             elif isolated_hwnd:
@@ -1145,7 +1469,8 @@ class AgentService:
                     if complexity == "atomic":
                         from .providers import _extract_json, _normalize_hierarchical_plan, get_tool_guidance, get_mode_packs
                         packs = get_mode_packs(mode)
-                        prompt = f"Goal: {goal}\n\nReturn one concise JSON plan using only these tools:\n{get_tool_guidance(packs)}"
+                        plan_tool_excludes = _tool_excludes_for_control_route(mode, _model_sees, goal)
+                        prompt = f"Goal: {goal}\n\nReturn one concise JSON plan using only these tools:\n{get_tool_guidance(packs, exclude_actions=plan_tool_excludes)}"
                         raw_plan = provider._call_llm("You are a fast-path planning agent. Return only JSON.", prompt, screenshot_b64)
                         plan = HierarchicalPlan.model_validate(_normalize_hierarchical_plan(_extract_json(raw_plan)))
                     else:
@@ -1155,6 +1480,7 @@ class AgentService:
                             memory_context=mem_context,
                             mode=mode,
                             system_prompt_extension=skill_instructions or None,
+                            exclude_actions=_tool_excludes_for_control_route(mode, _model_sees, goal),
                         )
 
                     history: List[str] = []
@@ -1171,6 +1497,8 @@ class AgentService:
                             complexity=complexity,
                             system_prompt_extension=skill_instructions or None,
                             auto_approve=is_auto_approve,
+                            model_sees=_model_sees,
+                            goal=goal,
                         )
                         return await worker.run(provider, history)
 
@@ -1295,8 +1623,9 @@ class AgentService:
                 from .providers import get_tool_guidance, get_mode_packs
                 from .tool_registry import get_tool_schemas
                 packs = get_mode_packs(mode)
-                tool_guidance = get_tool_guidance(packs)
-                tool_schemas = get_tool_schemas(packs)
+                tool_excludes = _tool_excludes_for_control_route(mode, _model_sees, goal)
+                tool_guidance = get_tool_guidance(packs, exclude_actions=tool_excludes)
+                tool_schemas = get_tool_schemas(packs, exclude_actions=tool_excludes)
 
                 # ── Mode-specific system prompts ──────────────────────────────
                 _is_computer_desktop = mode in ("computer", "computer_isolated")
@@ -1495,7 +1824,7 @@ class AgentService:
                     pass
 
                 win_info = f"\nTarget window: {isolated_app}" if is_isolated else ""
-                messages = [{"role": "user", "content": f"{goal}{env_context}{auto_context}{win_info}"}]
+                messages = [{"role": "user", "content": f"{goal}{env_context}{auto_context}{control_context}{win_info}"}]
                 use_native_tools = len(tool_schemas) > 0 and inspect.isasyncgenfunction(
                     getattr(provider, "stream_chat_with_tools", None)
                 )
@@ -1504,6 +1833,7 @@ class AgentService:
                 _recent_calls: list[tuple[str, str]] = []  # (action_type, args_key) last 3 calls
                 _write_cache: dict[str, str] = {}  # path → content of recently written files
                 _last_uia_failed = False
+                _preserve_screenshot_once = False
                 xml_fallback_steps = 0
                 max_steps = (
                     BROWSER_MAX_STEPS if _is_browser_use
@@ -1534,7 +1864,9 @@ class AgentService:
 
                     # ── Refresh screenshot each step for vision desktop mode ──
                     # UIA-tier text models drive controls by name and cannot use pixels.
-                    if _is_computer_desktop and _model_sees and step > 0:
+                    if _preserve_screenshot_once:
+                        _preserve_screenshot_once = False
+                    elif _is_computer_desktop and _model_sees and step > 0:
                         isolated_hwnd = tools.resolve_isolated_hwnd() if is_isolated else None
                         if isolated_hwnd:
                             # Isolated mode: crop to just the target window
@@ -1850,12 +2182,76 @@ class AgentService:
                         messages.append({"role": "user", "content": f"Invalid action type: {action_type}. Use only the provided tools."})
                         continue
 
+                    if _should_guard_premature_visual_action(
+                        act,
+                        goal=goal,
+                        is_desktop=_is_computer_desktop,
+                        model_sees=_model_sees,
+                        last_uia_failed=_last_uia_failed,
+                    ):
+                        _guard_obs = _visual_route_guard_message(act)
+                        if is_isolated:
+                            try:
+                                hung_info = tools.current_target_hung_info()
+                            except Exception:
+                                hung_info = None
+                            if hung_info:
+                                title_hint = (hung_info.get("title") or isolated_app or "target app").replace('"', "'")
+                                _guard_obs = (
+                                    f"{_guard_obs}\n\n[hung-app hint] The target window "
+                                    f"'{title_hint}' appears not responding. Consider "
+                                    f"force_close_window {{\"title\": \"{title_hint}\", "
+                                    "\"force\": true}} and then relaunch it."
+                                )
+                                await self._emit(task_id, "status", {
+                                    "message": f"Target app '{title_hint}' appears hung. Consider closing and relaunching it.",
+                                })
+                        _guard_overlay = _visual_route_guard_overlay(act)
+                        _arg_summary = _summarize_args(act.type.value, args)
+                        await self._emit(task_id, "status", {
+                            "message": "Keeping this run on the UIA route before using screenshot fallback.",
+                        })
+                        await self._emit(task_id, "action_start", {
+                            "action_id": act.id,
+                            "action_type": act.type.value,
+                            "explanation": act.explanation,
+                            "args_summary": _arg_summary,
+                            "overlay": _guard_overlay,
+                        })
+                        await self._emit(task_id, "action_result", {
+                            "action_id": act.id,
+                            "action_type": act.type.value,
+                            "ok": False,
+                            "output": _guard_obs,
+                            "args_summary": _arg_summary,
+                            "overlay": _guard_overlay,
+                        })
+                        if use_native_tools and tool_call_id:
+                            messages.append({
+                                "role": "assistant",
+                                "content": thought_text,
+                                "tool_calls": [{
+                                    "id": tool_call_id,
+                                    "type": "function",
+                                    "function": {"name": action_type, "arguments": json.dumps(args)},
+                                }],
+                            })
+                            messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": _guard_obs})
+                        else:
+                            messages.append({
+                                "role": "assistant",
+                                "content": f"<thought>{thought_text}</thought>\n<action type=\"{action_type}\">\n{json.dumps(args)}\n</action>",
+                            })
+                            messages.append({"role": "user", "content": f"<observation>\n{_guard_obs}\n</observation>"})
+                        continue
+
                     # Approval handling
                     # M3: safety.evaluate is also called inside SubTaskWorker.run() but that is a
                     # different code path (hierarchical plan). The streaming loop here runs only when
                     # the hierarchical planner is not used or falls back — no double-evaluation occurs.
                     decision = self.safety.evaluate(act, safe_mode=not is_auto_approve)
                     if act.requires_approval or decision.requires_approval:
+                        self._prepare_approval_wait(task_id, act.id)
                         await self._emit(task_id, "approval_required", {
                             "action_id": act.id,
                             "action": act.model_dump(),
@@ -1894,6 +2290,25 @@ class AgentService:
                         "args_summary": _arg_summary,
                         **({"overlay": _start_overlay} if _start_overlay else {}),
                     })
+
+                    granted, denied_scope = await self._ensure_permission_for_action(
+                        task_id,
+                        act,
+                        auto_grant=is_auto_approve,
+                        args_summary=_arg_summary,
+                    )
+                    if not granted:
+                        reason = f"Permission denied for {denied_scope or 'requested scope'}."
+                        await self._emit(task_id, "action_result", {
+                            "action_id": act.id,
+                            "action_type": act.type.value,
+                            "ok": False,
+                            "output": reason,
+                            "args_summary": _arg_summary,
+                            **({"overlay": _start_overlay} if _start_overlay else {}),
+                        })
+                        self._finalize(task_id, "cancelled", reason)
+                        return
 
                     pre_action_screenshot = screenshot_b64
                     try:
@@ -1980,12 +2395,14 @@ class AgentService:
                         act.type == AT.screenshot
                         or (act.type == AT.computer and (act.args.get("action", "").strip().lower() == "screenshot"))
                     )
-                    if _is_computer_desktop and explicit_screenshot and res.base64_image:
+                    explicit_screen_context = act.type == AT.screen_context
+                    if _is_computer_desktop and (explicit_screenshot or explicit_screen_context) and res.base64_image:
                         if _model_sees:
                             screenshot_b64 = res.base64_image
+                            _preserve_screenshot_once = True
                         await self._emit(task_id, "screenshot", {
                             "data": res.base64_image,
-                            "isolated": bool(is_isolated and tools.resolve_isolated_hwnd()),
+                            "isolated": bool(explicit_screenshot and is_isolated and tools.resolve_isolated_hwnd()),
                             "worker_id": "planner",
                         })
                     elif _model_sees and _should_capture_post_action(act, res, _is_computer_desktop):
@@ -2094,13 +2511,17 @@ class AgentService:
         if self._on_task_complete: self._on_task_complete(task_id, status, reason)
         self._paused_tasks.discard(task_id)
         self._approvals.pop(task_id, None)
-        for key in [k for k in self._approval_overrides if k.startswith(f"{task_id}:")]:
-            self._approval_overrides.pop(key, None)
         self._permission_waits.pop(task_id, None)
+        for store in (self._approvals, self._approval_overrides, self._permission_waits):
+            for key in [k for k in store if k.startswith(f"{task_id}:")]:
+                store.pop(key, None)
         self._pause_events.pop(task_id, None)
 
+    def _prepare_approval_wait(self, task_id: str, action_id: str) -> asyncio.Future:
+        return self._approvals.setdefault(f"{task_id}:{action_id}", asyncio.Future())
+
     async def _wait_for_approval(self, task_id: str, action_id: str) -> bool:
-        fut = self._approvals.setdefault(f"{task_id}:{action_id}", asyncio.Future())
+        fut = self._prepare_approval_wait(task_id, action_id)
         try:
             return await asyncio.wait_for(fut, timeout=APPROVAL_WAIT_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
@@ -2125,6 +2546,46 @@ class AgentService:
             return False
         finally:
             self._permission_waits.pop(f"{task_id}:{action_id}", None)
+
+    async def _ensure_permission_for_action(
+        self,
+        task_id: str,
+        action: Action,
+        *,
+        auto_grant: bool = False,
+        emit: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None,
+        args_summary: str = "",
+    ) -> tuple[bool, Optional[str]]:
+        needed_scope = scope_for_action(action.type.value, action.args)
+        if not needed_scope:
+            return True, None
+        scope = needed_scope.value
+        if self.permissions.is_granted(task_id, scope):
+            return True, scope
+        if auto_grant:
+            self.permissions.grant(task_id, scope)
+            return True, scope
+        if self.permissions.is_denied(task_id, scope):
+            return False, scope
+        payload = {
+            "action_id": action.id,
+            "scope": scope,
+            "reason": f"Action '{action.type.value}' needs '{scope}' access.",
+            "action_type": action.type.value,
+            "args_summary": args_summary or _summarize_args(action.type.value, action.args),
+            "action": action.model_dump(),
+        }
+        self._permission_waits.setdefault(f"{task_id}:{action.id}", asyncio.Future())
+        if emit:
+            await emit("permission_required", payload)
+        else:
+            await self._emit(task_id, "permission_required", payload)
+        granted = await self._wait_for_permission(task_id, action.id)
+        if granted:
+            self.permissions.grant(task_id, scope)
+        else:
+            self.permissions.deny(task_id, scope)
+        return bool(granted), scope
 
     def submit_permission(self, task_id: str, action_id: str, granted: bool):
         fut = self._permission_waits.get(f"{task_id}:{action_id}")

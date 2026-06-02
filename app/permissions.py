@@ -75,6 +75,8 @@ class PermissionStore:
 
     def deny(self, task_id: str, scope: str) -> None:
         self._denied.setdefault(task_id, set()).add(scope)
+        if task_id in self._granted:
+            self._granted[task_id].discard(scope)
 
     def is_granted(self, task_id: str, scope: str) -> bool:
         return scope in self._granted.get(task_id, set())

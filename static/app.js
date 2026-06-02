@@ -709,6 +709,24 @@
     renderDesktopControlDetail();
   };
 
+  const setControlProfileSurface = (profile = {}) => {
+    if (!profile || typeof profile !== 'object') return;
+    const layer = String(profile.primary_route || '').trim();
+    if (!layer) return;
+    const count = Number(profile.uia_control_count || 0);
+    const ocr = profile.ocr_available ? 'OCR ready' : 'OCR unavailable';
+    const electron = profile.electron_hint && typeof profile.electron_hint === 'object';
+    const reason = electron
+      ? 'Electron app may need renderer accessibility unlock'
+      : `${count} UIA controls visible - ${ocr}`;
+    setControlSurface({
+      layer,
+      reason,
+      target: profile.target_app || (profile.isolated ? 'Selected app' : 'Desktop'),
+      phase: 'Ready',
+    });
+  };
+
   const setDesktopSessionActive = (active, mode = currentMode, isolatedApp = currentIsolatedApp) => {
     const banner = $('desktop-control-banner');
     if (!banner) return;
@@ -2256,6 +2274,12 @@
 
     if (event.type === 'mode') { setMode(event.mode, !!event.isolated, event.isolated_app || ''); return; }
 
+    if (event.type === 'control_profile') {
+      setControlProfileSurface(event);
+      setLiveStatus('Control route', `${event.primary_route || 'UIA exact'}${event.target_app ? ` for ${event.target_app}` : ''}`);
+      return;
+    }
+
     if (event.type === 'cowork_status') {
       currentBackgroundMode = !!event.background;
       if (!replay) appendMessage(event.message || '', 'system-note');
@@ -2828,8 +2852,12 @@
       const metrics = document.createElement('div');
       metrics.className = 'control-report-grid';
       [
+        ['Planned', summary.profile_route || 'None'],
         ['Primary', summary.primary_layer || 'None'],
+        ['Target', summary.profile_target_app || 'Desktop'],
+        ['Route match', summary.profile_route ? (summary.used_profile_route ? 'Yes' : (summary.route_changed ? 'Changed' : 'No actions')) : 'n/a'],
         ['UIA', summary.used_uia ? 'Used' : 'No'],
+        ['OCR ready', summary.profile_ocr_available ? 'Yes' : 'No'],
         ['Fallbacks', String(summary.fallbacks || 0)],
         ['Misses', String(summary.misses || 0)],
         ['Success', String(summary.successes || 0)],
@@ -2848,7 +2876,7 @@
       inner.appendChild(metrics);
       const detail = document.createElement('pre');
       detail.className = 'detail-preview control-report-json';
-      detail.textContent = JSON.stringify({ summary, entries: entries.slice(0, 24) }, null, 2);
+      detail.textContent = JSON.stringify({ summary, profiles: report.profiles || [], entries: entries.slice(0, 24) }, null, 2);
       inner.appendChild(detail);
       body.appendChild(inner);
       card.appendChild(body);

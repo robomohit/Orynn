@@ -2456,11 +2456,16 @@ class ToolExecutor:
             "app_focus" if app_rect else "status", "uia_click_sequence", "click",
             head, target=(failed or (targets[-1] if targets else "")),
             app_rect=app_rect, phase=("done" if ok else "error"),
-            control_layer=("UIA exact" if ok else "UIA miss"))
+            fallback_reason=("" if ok else "uia_no_match"),
+            control_layer=("UIA exact" if ok else "UIA miss"),
+            control_reason=(
+                "all sequence targets resolved by UIA/OCR"
+                if ok else "sequence target missing after UIA and OCR fallback"))
         out = head + "\n" + " → ".join(steps) + self._app_rect_token(app, app_rect)
         if not ok:
+            suffix = self._electron_unlock_hint(app, data)
             out += ("\nThe rest were not attempted. Re-check the name of the "
-                    "missing control with uia_find, then continue.")
+                    "missing control with uia_find, then continue." + suffix)
         return ToolResult(ok=ok, output=out, data=data)
 
     def uia_click(self, query: str, app: str = ""):
@@ -2590,7 +2595,8 @@ class ToolExecutor:
                 control_layer="UIA miss",
                 control_reason="accessible control did not appear",
             )
-            return ToolResult(ok=False, output=res.get("error", "wait timed out"), data=data)
+            suffix = self._electron_unlock_hint(app, data)
+            return ToolResult(ok=False, output=res.get("error", "wait timed out") + suffix, data=data)
         app_rect = self._app_rect_payload(app)
         target = str(res.get("name") or query or "").strip()
         tok = self._uia_rect_token({

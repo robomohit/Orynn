@@ -65,8 +65,23 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Heavy/optional things we deliberately keep out of the core bundle.
-    excludes=["playwright", "tkinter", "pytest", "chroma", "chromadb"],
+    # Heavy/optional things we deliberately keep out of the core bundle. None of
+    # these are needed to run the agent — the only consumer is the OPTIONAL
+    # semantic-memory feature (chromadb, gated behind USE_CHROMA), which drags in
+    # the entire ML stack (torch, onnxruntime, transformers, cv2, scipy…) and
+    # would balloon the build to ~1.5 GB. memory.py falls back to keyword search
+    # when chromadb isn't present, so excluding these is safe.
+    excludes=[
+        "playwright", "tkinter", "pytest",
+        # semantic-memory ML stack (optional feature)
+        "chromadb", "chroma", "sentence_transformers", "transformers",
+        "torch", "torchvision", "torchaudio",
+        "onnxruntime", "onnxruntime_tools",
+        "cv2", "scipy", "pandas", "sklearn", "scikit_learn",
+        "numba", "llvmlite", "sympy", "matplotlib", "networkx",
+        "lightning", "pytorch_lightning", "tensorboard", "tensorflow",
+        "datasets", "tokenizers", "safetensors", "accelerate",
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -81,7 +96,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,            # UPX can trip antivirus heuristics — leave off for trust
-    console=False,        # desktop app: no console window
+    console=True,         # TEMP DEBUG
     disable_windowed_traceback=False,
     icon=_icon,
 )

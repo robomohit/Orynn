@@ -732,6 +732,7 @@ def main(port: int = 8000) -> int:
         agentDelta = Signal(str)      # incremental agent text (typewriter)
         toolUsed = Signal(str, str, dict)   # tool_name, args_summary, overlay hint
         toolResult = Signal(str, str, dict) # tool_name, output_text, overlay result
+        controlProfile = Signal(dict)
 
         # Exposed so the UI can target /cancel for the current run
         current_task_id: str = ""
@@ -1097,6 +1098,16 @@ def main(port: int = 8000) -> int:
                 "action_type_by_id": action_type_by_id,
             }
 
+        def _event_cursor_from_log(self, log: list[dict]) -> int:
+            cursor = 0
+            for idx, ev in enumerate(log):
+                try:
+                    seq = int(ev.get("seq"))
+                    cursor = max(cursor, seq + 1)
+                except Exception:
+                    cursor = max(cursor, idx + 1)
+            return cursor
+
         def _emit_recovered_snapshot(self, tid: str, record: dict, log: list[dict], state: dict) -> None:
             goal = self._task_goal_from_record(record, log)
             mode = record.get("mode") or ""
@@ -1109,6 +1120,9 @@ def main(port: int = 8000) -> int:
 
             last_status = next((ev for ev in reversed(log) if ev.get("type") == "status" and ev.get("message")), None)
             last_action = next((ev for ev in reversed(log) if ev.get("type") in ("action_start", "tool")), None)
+            last_profile = next((ev for ev in reversed(log) if ev.get("type") == "control_profile"), None)
+            if last_profile:
+                self.controlProfile.emit(last_profile)
             if last_action:
                 if last_action.get("type") == "action_start":
                     name = str(last_action.get("action_type") or "?")
@@ -1139,6 +1153,8 @@ def main(port: int = 8000) -> int:
                 msg = ev.get("message", "")
                 if msg:
                     self.statusChanged.emit(msg)
+            elif t == "control_profile":
+                self.controlProfile.emit(ev)
             elif t == "widget":
                 self.widgetRequested.emit(ev)
             elif t == "agent":
@@ -1196,6 +1212,68 @@ def main(port: int = 8000) -> int:
                 return True
             return False
 
+        def _rate_limit_wait_seconds(self, reason: str) -> int:
+            m = re.search(r"retry[_ -]after[_ -]?seconds?[\":\s]*?(\d+)", reason or "", re.IGNORECASE)
+            wait = int(m.group(1)) if m else 15
+            return min(max(wait, 1), 60)
+
+        def _retry_rate_limited_task(self, client, payload: dict, reason: str) -> str | None:
+            if getattr(self, "_did_retry", False):
+                return None
+            self._did_retry = True
+            wait = self._rate_limit_wait_seconds(reason)
+            self.statusChanged.emit(f"Rate-limited - retrying in {wait}s...")
+            time.sleep(wait)
+            new_tid = "cap-" + secrets.token_hex(5)
+            self.current_task_id = new_tid
+            payload["task_id"] = new_tid
+            self.statusChanged.emit("Retrying...")
+            r = client.post(f"{BASE}/api/tasks", json=payload)
+            if r.status_code >= 400:
+                return None
+            self.runningChanged.emit(True)
+            return new_tid
+
+        def _stream_task_events(self, client, tid: str, since: int, state: dict, payload: dict | None = None):
+            cursor = max(0, int(since or 0))
+            deadline = time.time() + 600
+            try:
+                url = f"{BASE}/api/tasks/{tid}/stream?since={cursor}&keepalive_timeout_seconds=15"
+                with client.stream("GET", url, timeout=None) as response:
+                    if response.status_code >= 400:
+                        self.statusChanged.emit("Live stream unavailable - falling back...")
+                        return "fallback", tid, cursor
+                    for raw_line in response.iter_lines():
+                        if time.time() > deadline:
+                            self.finished.emit("Still working - taking longer than expected.", [])
+                            self.runningChanged.emit(False)
+                            return "terminal", tid, cursor
+                        line = raw_line.decode("utf-8", "replace") if isinstance(raw_line, bytes) else str(raw_line or "")
+                        if not line or line.startswith(":") or not line.startswith("data:"):
+                            continue
+                        try:
+                            ev = json.loads(line[5:].strip())
+                        except Exception:
+                            continue
+                        try:
+                            cursor = max(cursor, int(ev.get("seq")) + 1)
+                        except Exception:
+                            cursor += 1
+                        t = ev.get("type")
+                        if payload is not None and t in ("error", "failed", "cancelled"):
+                            reason = str(ev.get("reason") or ev.get("message") or "")
+                            lr = reason.lower()
+                            if "429" in lr or "rate-limited" in lr or "retry shortly" in lr:
+                                new_tid = self._retry_rate_limited_task(client, payload, reason)
+                                if new_tid:
+                                    return "retry", new_tid, 0
+                        if self._handle_task_event(tid, ev, state):
+                            return "terminal", tid, cursor
+            except Exception as exc:
+                print(f"[capsule] task stream failed: {exc}", flush=True)
+            self.statusChanged.emit("Live stream interrupted - falling back...")
+            return "fallback", tid, cursor
+
         def _poll_recovered_task(self, client, tid: str, seen: int, state: dict) -> None:
             deadline = time.time() + 600
             while time.time() < deadline:
@@ -1231,7 +1309,10 @@ def main(port: int = 8000) -> int:
                         state = self._recovery_state_from_log(log)
                         self.runningChanged.emit(True)
                         self._emit_recovered_snapshot(tid, record, log, state)
-                        self._poll_recovered_task(c, tid, len(log), state)
+                        cursor = self._event_cursor_from_log(log)
+                        outcome, active_tid, cursor = self._stream_task_events(c, tid, cursor, state)
+                        if outcome != "terminal":
+                            self._poll_recovered_task(c, active_tid, cursor, state)
                         return
                 except Exception as exc:
                     if attempt >= 9:
@@ -1274,16 +1355,30 @@ def main(port: int = 8000) -> int:
                           f"folder={payload.get('project_folder','-')}",
                           flush=True)
                     self.runningChanged.emit(True)
-                    seen = 0
+                    stream_state = self._recovery_state_from_log([])
+                    stream_tid = tid
+                    stream_cursor = 0
+                    while True:
+                        outcome, stream_tid, stream_cursor = self._stream_task_events(
+                            c, stream_tid, stream_cursor, stream_state, payload=payload)
+                        tid = stream_tid
+                        if outcome == "retry":
+                            stream_state = self._recovery_state_from_log([])
+                            continue
+                        if outcome == "terminal":
+                            return
+                        break
+
+                    seen = stream_cursor
                     deadline = time.time() + 600
-                    source_urls: list[str] = []
-                    URL_RE = re.compile(r"https?://[^\s<>\"'`)]+")
-                    last_agent_text = ""
+                    source_urls: list[str] = stream_state.get("source_urls", [])
+                    URL_RE = stream_state.get("url_re") or re.compile(r"https?://[^\s<>\"'`)]+")
+                    last_agent_text = stream_state.get("last_agent_text", "")
                     # action_id → action_type so we can pair action_result
                     # events back to the tool they belong to (the result
                     # event carries the REAL coordinates that the cursor
                     # overlay needs, not the args_summary template).
-                    action_type_by_id: dict[str, str] = {}
+                    action_type_by_id: dict[str, str] = stream_state.get("action_type_by_id", {})
                     while time.time() < deadline:
                         time.sleep(0.6)  # tighter poll for smoother streaming
                         try:
@@ -2063,6 +2158,7 @@ def main(port: int = 8000) -> int:
             self.runner.agentDelta.connect(self._on_agent_delta)
             self.runner.toolUsed.connect(self._on_tool_used)
             self.runner.toolResult.connect(self._on_tool_result)
+            self.runner.controlProfile.connect(self._on_control_profile)
             self.runner.statusChanged.connect(self._on_status)
             self.runner.finished.connect(self._on_finished)
             self.runner.runningChanged.connect(self._on_running)
@@ -2902,6 +2998,32 @@ def main(port: int = 8000) -> int:
             "validation error",
             "Field required",
         )
+
+        def _on_control_profile(self, profile: dict) -> None:
+            if not isinstance(profile, dict):
+                return
+            layer = str(profile.get("primary_route") or "").strip()
+            if not layer:
+                return
+            target = str(profile.get("target_app") or "Desktop").strip()
+            try:
+                count = int(profile.get("uia_control_count") or 0)
+            except Exception:
+                count = 0
+            ocr = "OCR ready" if profile.get("ocr_available") else "OCR unavailable"
+            electron = isinstance(profile.get("electron_hint"), dict)
+            reason = (
+                "Electron app may need renderer accessibility unlock"
+                if electron else f"{count} UIA controls visible - {ocr}"
+            )
+            phrase = f"{layer} for {target}" if target else layer
+            self._last_control_layer = layer[:28]
+            self._last_control_reason = reason
+            self.vision_chip.setText(layer[:28])
+            self.vision_chip.setToolTip(reason)
+            self.action_label.setText(phrase[:80])
+            self.status.setText(phrase[:90])
+            self._set_capsule_state("planning", phrase[:90])
 
         def _on_status(self, msg: str) -> None:
             if not msg:
