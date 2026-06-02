@@ -487,8 +487,9 @@ def _desktop_control_profile_text(profile: Dict[str, Any]) -> str:
     if controls:
         shown = ", ".join(controls[:24])
         lines.append(
-            f"- Clickable controls available NOW (use these EXACT names with "
-            f"uia_click/uia_type — do not guess others): {shown}"
+            f"- Clickable controls available NOW — uia_click/uia_type these EXACT "
+            f"names DIRECTLY (don't uia_find first, and don't invent other names): "
+            f"{shown}"
         )
     if profile.get("target_app") and not profile.get("window_found"):
         lines.append("- Target window is not attached yet; open/focus it, then use uia_wait.")
