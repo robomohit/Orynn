@@ -403,13 +403,14 @@ def _desktop_control_profile(
         "window_found": False,
         "app_rect": None,
         "uia_control_count": 0,
+        "controls": [],
         "ocr_available": False,
         "electron_hint": None,
     }
     try:
         from .widget.desktop_features import (
             app_window_rect,
-            count_app_controls,
+            survey_app_controls,
             electron_hint_for_app,
             ocr_available,
         )
@@ -428,7 +429,13 @@ def _desktop_control_profile(
             except Exception:
                 pass
             try:
-                profile["uia_control_count"] = int(count_app_controls(target, cap=80) or 0)
+                # ONE tree walk → control count AND the names of clickable
+                # controls. Handing the model this 'menu' up front stops it
+                # guessing control names that don't exist (big accuracy + speed
+                # win on unfamiliar apps like Settings).
+                survey = survey_app_controls(target, cap=90)
+                profile["uia_control_count"] = int(survey.get("count") or 0)
+                profile["controls"] = survey.get("controls") or []
             except Exception:
                 pass
             try:
@@ -476,6 +483,13 @@ def _desktop_control_profile_text(profile: Dict[str, Any]) -> str:
         f"- OCR fallback: {ocr}",
         f"- Screenshot/vision fallback: {vision}",
     ]
+    controls = profile.get("controls") or []
+    if controls:
+        shown = ", ".join(controls[:24])
+        lines.append(
+            f"- Clickable controls available NOW (use these EXACT names with "
+            f"uia_click/uia_type — do not guess others): {shown}"
+        )
     if profile.get("target_app") and not profile.get("window_found"):
         lines.append("- Target window is not attached yet; open/focus it, then use uia_wait.")
     hint = profile.get("electron_hint")

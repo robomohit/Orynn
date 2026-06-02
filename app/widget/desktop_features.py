@@ -301,22 +301,46 @@ def _ensure_uia_config(uia) -> None:
     _uia_configured = True
 
 
-def _uia_root(app_hint: str = ""):
-    """Return the right starting control to search.
-    - If app_hint matches a top-level window title (case-insensitive
-      substring), search that one.
-    - Else search the foreground window.
+def _uia_root(app_hint: str = "", fallback_foreground: bool = True):
+    """Return the right top-level window to search for an app.
+
+    RANKS all windows whose title contains the hint instead of taking the first
+    substring match — otherwise noise windows that merely MENTION the app steal
+    the target. The classic culprit: the "Activate Windows. Go to Settings..."
+    watermark (an empty Pane) outranks the real Settings window in raw iteration
+    order, so every UIA op silently searched an empty pane. We prefer an exact
+    title, a real WindowControl, and a window that actually has children; and we
+    hard-demote the activation watermark. Falls back to the foreground window.
     """
     import uiautomation as uia
     if app_hint:
-        hint = app_hint.lower()
+        hint = app_hint.lower().strip()
+        best, best_score = None, -1
         for top in uia.GetRootControl().GetChildren():
             try:
-                if hint in (top.Name or "").lower():
-                    return top
+                low = (top.Name or "").strip().lower()
+                if not low or hint not in low:
+                    continue
+                score = 100 if low == hint else (60 if low.startswith(hint) else 30)
+                try:
+                    if top.ControlTypeName == "WindowControl":
+                        score += 20
+                except Exception:
+                    pass
+                try:
+                    if top.GetChildren():       # has real content (not an empty pane)
+                        score += 25
+                except Exception:
+                    pass
+                if "activate windows" in low:   # the activation watermark, never a target
+                    score -= 200
+                if score > best_score:
+                    best, best_score = top, score
             except Exception:
                 continue
-    return uia.GetForegroundControl()
+        if best is not None:
+            return best
+    return uia.GetForegroundControl() if fallback_foreground else None
 
 
 def _score_match(query: str, name: str, aid: str, role: str) -> int:
@@ -516,17 +540,9 @@ def count_app_controls(app_hint: str, cap: int = 60) -> int:
     try:
         # Only count when a top-level window actually matches app_hint — do NOT
         # fall back to the foreground window (that would falsely report a closed
-        # app as "already accessible").
-        hint = (app_hint or "").lower()
-        root = None
-        if hint:
-            for top in uia.GetRootControl().GetChildren():
-                try:
-                    if hint in (top.Name or "").lower():
-                        root = top
-                        break
-                except Exception:
-                    continue
+        # app as "already accessible"). _uia_root ranks candidates so a noise
+        # window (e.g. the "Activate Windows" watermark) can't steal the match.
+        root = _uia_root(app_hint, fallback_foreground=False) if app_hint else None
         if root is None:
             return 0
         n = [0]
@@ -547,6 +563,77 @@ def count_app_controls(app_hint: str, cap: int = 60) -> int:
         return n[0]
     except Exception:
         return 0
+
+
+_INTERACTIVE_CTRL_TYPES = {
+    "ButtonControl", "ListItemControl", "TabItemControl", "MenuItemControl",
+    "HyperlinkControl", "CheckBoxControl", "RadioButtonControl", "TreeItemControl",
+    "ComboBoxControl", "SplitButtonControl", "EditControl",
+}
+
+# NOTE: deliberately NOT "system" — that's a real Settings nav item (System ›
+# About). Only the unambiguous title-bar buttons.
+_CHROME_NAMES = {"minimize", "maximize", "restore", "close"}
+
+
+def _is_chrome_control(name: str) -> bool:
+    """Window-chrome / non-label noise that shouldn't appear in the control menu:
+    title-bar buttons (Minimize/Maximize/Restore/Close, incl. 'Close Settings')
+    and bare camelCase type names with no real label ('BreadcrumbBarItemButton')."""
+    low = name.lower()
+    first = low.split(" ", 1)[0]
+    if first in _CHROME_NAMES:
+        return True
+    # A single CamelCase token with no spaces is a control-type name, not a label.
+    if " " not in name and len(name) > 8 and name[:1].isupper() and name.isalnum():
+        return True
+    return False
+
+
+def survey_app_controls(app_hint: str, cap: int = 90, max_names: int = 28) -> Dict[str, Any]:
+    """ONE UIA tree walk that returns both the control COUNT and the NAMES of the
+    interactive controls (buttons, tabs, list items, menu items, links, fields)
+    the agent can click/type by name. Handing the model this 'menu' up front stops
+    it guessing control names that don't exist (e.g. searching 'Search' in
+    Settings) — far more accurate AND faster (fewer wasted misses)."""
+    out: Dict[str, Any] = {"count": 0, "controls": []}
+    try:
+        import uiautomation as uia
+    except ImportError:
+        return out
+    _ensure_uia_config(uia)
+    try:
+        root = _uia_root(app_hint, fallback_foreground=False) if app_hint else None
+        if root is None:
+            return out
+        n = [0]
+        names: list[str] = []
+        seen: set[str] = set()
+
+        def walk(c, d=0):
+            if d > _UIA_MAX_DEPTH or n[0] >= cap or len(names) >= max_names:
+                return
+            try:
+                n[0] += 1
+                if c.ControlTypeName in _INTERACTIVE_CTRL_TYPES:
+                    nm = (c.Name or "").strip()
+                    if (nm and len(nm) <= 40 and nm.lower() not in seen
+                            and not _is_chrome_control(nm)):
+                        seen.add(nm.lower())
+                        names.append(nm)
+                for ch in c.GetChildren():
+                    if n[0] >= cap or len(names) >= max_names:
+                        break
+                    walk(ch, d + 1)
+            except Exception:
+                pass
+
+        walk(root)
+        out["count"] = n[0]
+        out["controls"] = names
+        return out
+    except Exception:
+        return out
 
 
 def is_electron_app(exe_path: str) -> bool:

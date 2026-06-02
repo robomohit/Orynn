@@ -117,7 +117,8 @@ async def test_desktop_control_profile_is_injected_before_first_model_turn(monke
     monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
     monkeypatch.setattr(df, "app_window_rect",
                         lambda app: {"left": 10, "top": 20, "width": 900, "height": 700})
-    monkeypatch.setattr(df, "count_app_controls", lambda app, cap=80: 3)
+    monkeypatch.setattr(df, "survey_app_controls",
+                        lambda app, cap=90: {"count": 3, "controls": ["Send", "Search"]})
     monkeypatch.setattr(df, "ocr_available", lambda: True)
     monkeypatch.setattr(df, "electron_hint_for_app",
                         lambda app: {"exe": r"C:\\Discord\\Discord.exe",
