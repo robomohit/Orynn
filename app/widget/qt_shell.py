@@ -3154,6 +3154,13 @@ def main(port: int = 8000) -> int:
             if otype == "uia_control":
                 rect = rect_from("rect")
                 if rect:
+                    # Steady whole-app glow UNDERNEATH the control ring, so the
+                    # user always sees WHICH app is being driven — not just small
+                    # rings jumping between controls (the "random, not around the
+                    # app" complaint). The glow heartbeat keeps it solid.
+                    app_rect = rect_from("app_rect")
+                    if app_rect:
+                        self._vcursor.show_app_focus(*app_rect, label=label)
                     self._vcursor.show_uia(*rect, label=label, kind=kind or "find")
                     return True
             if otype == "app_focus":
@@ -3201,17 +3208,18 @@ def main(port: int = 8000) -> int:
                         label = f"Ready: {tgt}" if tgt else "Ready"
                     else:
                         label = f"Found {tgt}" if tgt else "Located"
+                    # Show the whole-app glow (if present) UNDERNEATH the control
+                    # ring, so the user always sees which app is being driven.
+                    am = _re.search(r"\[app:(-?\d+),(-?\d+),(\d+),(\d+)\]", output)
+                    if am:
+                        al, at, aw, ah = (int(am.group(i)) for i in range(1, 5))
+                        self._vcursor.show_app_focus(al, at, aw, ah, label=label)
                     cm = _re.search(r"\[uia:(-?\d+),(-?\d+),(\d+),(\d+)\]", output)
                     if cm:
                         l, t, w, h = (int(cm.group(i)) for i in range(1, 5))
                         kind = ("type" if lname == "uia_type"
                                 else "find" if lname in ("uia_find", "uia_wait") else "click")
                         self._vcursor.show_uia(l, t, w, h, label=label, kind=kind)
-                    else:
-                        am = _re.search(r"\[app:(-?\d+),(-?\d+),(\d+),(\d+)\]", output)
-                        if am:
-                            l, t, w, h = (int(am.group(i)) for i in range(1, 5))
-                            self._vcursor.show_app_focus(l, t, w, h, label=label)
                 except Exception as exc:
                     print(f"[capsule] uia overlay error: {exc}", flush=True)
                 return
