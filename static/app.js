@@ -4591,3 +4591,104 @@
     document.addEventListener('DOMContentLoaded', maybeShow);
   } else { maybeShow(); }
 })();
+
+/* ---------------- Effort slider (Low / Medium / High / Max) ----------------
+   Free models can't tune reasoning, so this just trades speed for a bigger
+   model. Persists to /api/preferences as `effort`. Max goes rainbow (CSS). */
+(function initEffort(){
+  if (new URLSearchParams(location.search).get('widget')) return; // dashboard only
+  const root  = document.getElementById('effort');
+  const track = document.getElementById('effort-track');
+  const fill  = document.getElementById('effort-fill');
+  const thumb = document.getElementById('effort-thumb');
+  const nameEl= document.getElementById('effort-name');
+  const hintEl= document.getElementById('effort-hint');
+  if (!root || !track) return;
+
+  const LEVELS = ['low','medium','high','max'];
+  const META = {
+    low:    { name: 'Low',    hint: 'Fastest — a snappy small model' },
+    medium: { name: 'Medium', hint: 'Best all-round free model' },
+    high:   { name: 'High',   hint: 'Stronger — a bigger free model' },
+    max:    { name: 'Max',    hint: 'The smartest model available' },
+  };
+  const stops = Array.from(track.querySelectorAll('.effort-stop'));
+  let idx = 1;
+  let saveTimer = null;
+
+  async function ensureSession(){ try { await fetch('/api/session', {method:'POST'}); } catch(_){} }
+
+  function persist(){
+    clearTimeout(saveTimer);
+    const effort = LEVELS[idx];
+    saveTimer = setTimeout(async () => {
+      try {
+        await ensureSession();
+        await fetch('/api/preferences', { method:'POST', credentials:'include',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ preferences: { effort } }) });
+      } catch(_){}
+    }, 280);
+  }
+
+  function paint(){
+    const lvl = LEVELS[idx];
+    const pct = (idx / 3) * 100;
+    root.dataset.level = lvl;
+    fill.style.width = pct + '%';
+    thumb.style.left = pct + '%';
+    nameEl.textContent = META[lvl].name;
+    hintEl.textContent = META[lvl].hint;
+    track.setAttribute('aria-valuenow', String(idx));
+    track.setAttribute('aria-valuetext', META[lvl].name);
+    stops.forEach((s, i) => s.classList.toggle('passed', i <= idx));
+  }
+
+  function setIdx(n, save){
+    const clamped = Math.max(0, Math.min(3, n));
+    const changed = clamped !== idx;
+    idx = clamped;
+    paint();
+    if (save && changed) persist();
+  }
+
+  function idxFromX(clientX){
+    const r = track.getBoundingClientRect();
+    const ratio = (clientX - r.left) / Math.max(1, r.width);
+    return Math.round(ratio * 3);
+  }
+
+  // ── drag + click ──
+  let dragging = false;
+  track.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    try { track.setPointerCapture(e.pointerId); } catch(_){}
+    setIdx(idxFromX(e.clientX), true);
+  });
+  track.addEventListener('pointermove', (e) => { if (dragging) setIdx(idxFromX(e.clientX), true); });
+  const endDrag = () => { dragging = false; };
+  track.addEventListener('pointerup', endDrag);
+  track.addEventListener('pointercancel', endDrag);
+  stops.forEach((s) => s.addEventListener('click', (e) => { e.stopPropagation(); setIdx(Number(s.dataset.i), true); }));
+
+  // ── keyboard ──
+  track.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown')  { e.preventDefault(); setIdx(idx - 1, true); }
+    if (e.key === 'ArrowRight'|| e.key === 'ArrowUp')    { e.preventDefault(); setIdx(idx + 1, true); }
+    if (e.key === 'Home') { e.preventDefault(); setIdx(0, true); }
+    if (e.key === 'End')  { e.preventDefault(); setIdx(3, true); }
+  });
+
+  // ── load saved value ──
+  async function load(){
+    try {
+      await ensureSession();
+      const r = await fetch('/api/preferences', { credentials:'include' });
+      if (!r.ok) { paint(); return; }
+      const prefs = (await r.json()).preferences || {};
+      const saved = LEVELS.indexOf(String(prefs.effort || 'medium'));
+      setIdx(saved >= 0 ? saved : 1, false);
+    } catch(_){ paint(); }
+  }
+  load();
+})();

@@ -960,16 +960,25 @@ def _select_model_for_task(goal: str, mode: str = "auto", requested_model: Optio
         }
 
     if os.environ.get("OPENROUTER_API_KEY"):
+        from .providers import effort_model, normalize_effort
+        try:
+            from . import preferences as _prefs
+            effort = normalize_effort(_prefs.get_all().get("effort"))
+        except Exception:
+            effort = "medium"
         detected_mode = detect_task_mode(goal, requested_mode if requested_mode != "auto" else None)
         if detected_mode == "coding":
+            # Only one free coder model — effort doesn't change it.
             selected_model = "openrouter/qwen/qwen3-coder:free"
             source = "auto:openrouter:coding"
         elif detected_mode in ("computer", "computer_isolated"):
-            selected_model = os.environ.get("DESKTOP_MODEL", "").strip() or "tier:uia"
-            source = "auto:desktop:uia"
+            # A user-set DESKTOP_MODEL always wins; otherwise effort picks the tier.
+            dm = os.environ.get("DESKTOP_MODEL", "").strip()
+            selected_model = dm or effort_model(effort, detected_mode)
+            source = "auto:desktop:env" if dm else f"auto:desktop:effort:{effort}"
         else:
-            selected_model = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
-            source = "auto:openrouter:default"
+            selected_model = effort_model(effort, detected_mode)
+            source = f"auto:openrouter:effort:{effort}"
         return {
             "selected_model": selected_model,
             "model_source": source,
@@ -1322,6 +1331,7 @@ async def get_preferences():
     return {"preferences": preferences.get_all(), "options": {
         "theme": ["auto", "dark", "light"],
         "default_mode": ["auto", "coding", "computer_use", "computer"],
+        "effort": ["low", "medium", "high", "max"],
     }}
 
 

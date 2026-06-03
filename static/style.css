@@ -4255,3 +4255,137 @@
     .onb-conn-grid { grid-template-columns: 1fr; max-height: 36vh; }
     .onb-pref { align-items: flex-start; flex-direction: column; }
   }
+
+/* ───────────────────────── Effort slider ─────────────────────────
+   Low · Medium · High · Max. Free models can't tune reasoning, so the
+   slider trades speed for a bigger model. Far-right (Max) goes rainbow. */
+  .effort-q {
+    display: inline-grid; place-items: center;
+    width: 15px; height: 15px; margin-left: 5px;
+    border-radius: 50%; font-size: 10px; font-weight: 700;
+    color: var(--muted-2); border: 1px solid var(--line-2);
+    cursor: help; vertical-align: middle; transition: color .15s, border-color .15s;
+  }
+  .effort-q:hover, .effort-q:focus-visible { color: var(--accent); border-color: var(--accent); outline: none; }
+
+  .effort {
+    margin-top: 8px;
+    padding: 14px 16px 12px;
+    border-radius: var(--r);
+    background: color-mix(in oklab, var(--bg-2) 70%, transparent);
+    border: 1px solid var(--line-2);
+  }
+  .effort-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .effort-name {
+    font-size: 16px; font-weight: 700; letter-spacing: -.01em;
+    color: var(--text);
+    transition: color .3s ease;
+  }
+  .effort-hint { font-size: 12px; color: var(--muted-2); transition: color .3s ease; }
+
+  .effort-track {
+    position: relative;
+    height: 30px;
+    margin: 2px 6px 0;
+    cursor: pointer;
+    touch-action: none;
+    outline: none;
+  }
+  /* the rail */
+  .effort-track::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    height: 6px; transform: translateY(-50%);
+    border-radius: 99px;
+    background: color-mix(in oklab, var(--bg-4) 80%, var(--line));
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.28);
+  }
+  /* the aqua fill up to the thumb */
+  .effort-fill {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    height: 6px; width: 33%;
+    border-radius: 99px;
+    background: linear-gradient(90deg,
+      color-mix(in oklab, var(--accent) 55%, #4aa8ff), var(--accent));
+    box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 55%, transparent);
+    background-size: 300% 100%;
+    transition: width .42s cubic-bezier(.22,1.2,.36,1),
+                box-shadow .3s ease, filter .3s ease;
+  }
+  .effort-stop {
+    position: absolute; top: 50%; transform: translate(-50%,-50%);
+    width: 13px; height: 13px; padding: 0;
+    border-radius: 50%;
+    background: color-mix(in oklab, var(--bg-3) 90%, var(--line));
+    border: 1px solid var(--line-2);
+    cursor: pointer; z-index: 2;
+    transition: transform .2s cubic-bezier(.22,1.2,.36,1), background .2s, border-color .2s;
+  }
+  .effort-stop[data-i="0"] { left: 0; }
+  .effort-stop[data-i="1"] { left: 33.333%; }
+  .effort-stop[data-i="2"] { left: 66.666%; }
+  .effort-stop[data-i="3"] { left: 100%; }
+  .effort-stop:hover { transform: translate(-50%,-50%) scale(1.25); border-color: var(--accent); }
+  /* dots already passed by the thumb glow up subtly */
+  .effort-stop.passed { background: color-mix(in oklab, var(--accent) 45%, var(--bg-3)); border-color: transparent; }
+
+  .effort-thumb {
+    position: absolute; top: 50%; left: 33.333%;
+    width: 22px; height: 22px;
+    transform: translate(-50%,-50%);
+    border-radius: 50%; z-index: 3;
+    background: radial-gradient(circle at 35% 30%, #ffffff, var(--accent) 78%);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.35), 0 0 12px color-mix(in oklab, var(--accent) 70%, transparent);
+    transition: left .42s cubic-bezier(.22,1.2,.36,1),
+                box-shadow .3s ease, transform .18s ease;
+  }
+  .effort-track:active .effort-thumb { transform: translate(-50%,-50%) scale(1.12); }
+  .effort-track:focus-visible .effort-thumb { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent), 0 2px 8px rgba(0,0,0,.35); }
+
+  .effort-ends {
+    display: flex; justify-content: space-between;
+    margin: 12px 4px 0; font-size: 11px; color: var(--muted-2);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+
+  /* ── MAX: rainbow everything ── */
+  @keyframes effortRainbow { to { background-position: 300% 0; } }
+  @keyframes effortPulse {
+    0%,100% { box-shadow: 0 2px 10px rgba(0,0,0,.35), 0 0 16px rgba(255,90,160,.55); }
+    50%     { box-shadow: 0 2px 10px rgba(0,0,0,.35), 0 0 26px rgba(120,110,255,.75); }
+  }
+  .effort[data-level="max"] .effort-fill {
+    background: linear-gradient(90deg,#ff5f6d,#ffb347,#ffe66d,#5be0d0,#5c7cff,#c061ff,#ff5f9e);
+    background-size: 300% 100%;
+    animation: effortRainbow 2.6s linear infinite;
+    box-shadow: 0 0 16px rgba(180,120,255,.5);
+  }
+  .effort[data-level="max"] .effort-thumb {
+    background: conic-gradient(from 0deg,#ff5f6d,#ffe66d,#5be0d0,#5c7cff,#c061ff,#ff5f6d);
+    border-color: #fff;
+    animation: effortRainbow 2.6s linear infinite, effortPulse 1.8s ease-in-out infinite;
+    background-size: 300% 100%;
+  }
+  .effort[data-level="max"] .effort-name {
+    background: linear-gradient(90deg,#ff5f6d,#ffb347,#5be0d0,#5c7cff,#c061ff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: effortRainbow 3s linear infinite;
+  }
+
+  .model-advanced { margin-top: 12px; }
+  .model-advanced > summary {
+    font-size: 12px; color: var(--muted-2); cursor: pointer;
+    list-style: none; user-select: none; transition: color .15s;
+  }
+  .model-advanced > summary:hover { color: var(--text); }
+  .model-advanced > summary::-webkit-details-marker { display: none; }
+  .model-advanced[open] > summary { margin-bottom: 8px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .effort-fill, .effort-thumb, .effort-stop { transition: none; }
+    .effort[data-level="max"] .effort-fill,
+    .effort[data-level="max"] .effort-thumb,
+    .effort[data-level="max"] .effort-name { animation: none; }
+  }

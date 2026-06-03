@@ -73,6 +73,10 @@ def test_readiness_endpoint_reports_local_capabilities(monkeypatch):
 
 def test_task_preflight_detects_auto_desktop_warnings(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    # Pin effort so the desktop model selection is deterministic regardless of
+    # the developer's saved preference (medium -> the curated UIA tier).
+    import app.preferences as _prefs
+    monkeypatch.setattr(_prefs, "get_all", lambda: {"effort": "medium"})
     fake_readiness = {
         "overall": "warning",
         "score": 80,
@@ -100,7 +104,7 @@ def test_task_preflight_detects_auto_desktop_warnings(monkeypatch):
     assert data["effective_mode"] == "computer_isolated"
     assert data["isolated_app"] == "Notepad"
     assert data["selected_model"] == "tier:uia"
-    assert data["model_source"] == "auto:desktop:uia"
+    assert data["model_source"] == "auto:desktop:effort:medium"
     assert data["model_auto"] is True
     assert data["blocked"] is False
     assert data["can_override"] is True

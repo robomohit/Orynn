@@ -150,8 +150,29 @@
       </div>
       <div class="settings-body">
         <div class="settings-group">
-          <div class="selector-label">Model</div>
-          <select id="model-id"></select>
+          <div class="selector-label">Effort
+            <span class="effort-q" tabindex="0" role="img" aria-label="Effort picks a bigger model for harder tasks. Free models can't tune thinking, so this trades speed for capability.">?</span>
+          </div>
+          <div class="effort" id="effort" data-level="medium">
+            <div class="effort-head">
+              <span class="effort-name" id="effort-name">Medium</span>
+              <span class="effort-hint" id="effort-hint">Best all-round free model</span>
+            </div>
+            <div class="effort-track" id="effort-track" role="slider" tabindex="0"
+                 aria-valuemin="0" aria-valuemax="3" aria-valuenow="1" aria-label="Effort level">
+              <div class="effort-fill" id="effort-fill"></div>
+              <button class="effort-stop" type="button" data-i="0" aria-label="Low"></button>
+              <button class="effort-stop" type="button" data-i="1" aria-label="Medium"></button>
+              <button class="effort-stop" type="button" data-i="2" aria-label="High"></button>
+              <button class="effort-stop" type="button" data-i="3" aria-label="Max"></button>
+              <div class="effort-thumb" id="effort-thumb"></div>
+            </div>
+            <div class="effort-ends"><span>Faster</span><span>Smarter</span></div>
+          </div>
+          <details class="model-advanced">
+            <summary>Advanced: pick an exact model</summary>
+            <select id="model-id"></select>
+          </details>
         </div>
 
         <div class="skills-section" id="preferences-section">

@@ -19,12 +19,15 @@ DEFAULTS: dict[str, Any] = {
     "show_action_glow": True,   # aqua glow around the app being controlled
     "confirm_sensitive": True,  # always confirm before send/post/buy/delete
     "desktop_model": "",        # blank = free UIA tier; or a stronger model id
+    "effort": "medium",         # low | medium | high | max — trades speed for a
+                                # bigger model (free models have no reasoning knob)
     "onboarded": False,         # has the user finished first-run setup?
 }
 
 _ALLOWED = {
     "theme": {"auto", "dark", "light"},
     "default_mode": {"auto", "coding", "computer_use", "computer"},
+    "effort": {"low", "medium", "high", "max"},
 }
 
 

@@ -993,6 +993,49 @@ def resolve_model_tier(model: str) -> Optional[str]:
     return key if key in MODEL_TIERS else None
 
 
+# ── Effort ladder ───────────────────────────────────────────────────────────
+# OpenRouter free models don't expose a reasoning/thinking knob, so "effort"
+# can't make a model think harder — instead it trades speed for capability by
+# picking a bigger model. Low = fastest small model; Max = strongest available
+# (the rainbow stop). The mapping is mode-aware so we never swap a coder model
+# for a chat model, or break the curated tool-call-accurate desktop chain.
+EFFORT_ORDER: List[str] = ["low", "medium", "high", "max"]
+EFFORT_LABELS: Dict[str, str] = {
+    "low": "Low", "medium": "Medium", "high": "High", "max": "Max",
+}
+
+_EFFORT_MODELS_GENERAL: Dict[str, str] = {
+    "low": "openai/gpt-oss-20b:free",                  # ~3-7s, snappy
+    "medium": "tier:balanced",                          # best all-round free
+    "high": "openai/gpt-oss-120b:free",                 # strongest single free
+    "max": "nvidia/nemotron-3-super-120b-a12b:free",    # heaviest free
+}
+_EFFORT_MODELS_DESKTOP: Dict[str, str] = {
+    # Desktop control needs tool-call-accurate models — keep to the UIA-proven set.
+    "low": "tier:uia",                                  # gpt-oss-20b first (fastest)
+    "medium": "tier:uia",
+    "high": "openai/gpt-oss-120b:free",
+    "max": "nvidia/nemotron-3-super-120b-a12b:free",
+}
+
+
+def normalize_effort(effort: Optional[str]) -> str:
+    e = (effort or "medium").strip().lower()
+    return e if e in EFFORT_ORDER else "medium"
+
+
+def effort_model(effort: Optional[str], mode: str = "auto") -> str:
+    """Map an effort level + task mode to the model id the agent should use.
+
+    Coding always uses the coder-tuned free model (there's only one), so the
+    slider is a no-op there; it meaningfully changes chat and desktop tasks.
+    """
+    e = normalize_effort(effort)
+    if mode in ("computer", "computer_isolated"):
+        return _EFFORT_MODELS_DESKTOP[e]
+    return _EFFORT_MODELS_GENERAL[e]
+
+
 def _ollama_name(model: str) -> str:
     raw = (model or "").strip()
     if raw.startswith("ollama/"):
