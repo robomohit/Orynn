@@ -24,8 +24,6 @@ def test_dynamic_lists_do_not_render_untrusted_api_data_with_innerhtml():
     assert "container.innerHTML = Object.entries(providers).map" not in html
     assert "addEventListener('click', () => toggleSkill(s.id))" in html
     assert "name.textContent = s.name" in html
-    assert "name.textContent = c.label || c.id || 'Connector'" in html
-    assert "tip.textContent = c.tip || ''" in html
     assert "chip.title = `${name}: ${status}`" in html
     assert "pre.textContent = JSON.stringify(props, null, 2)" in html
 

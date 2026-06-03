@@ -14,7 +14,7 @@ Most computer-use agents take a **screenshot every step** and guess pixel coordi
 - 🪟 **UIA-first desktop control** — drives Notepad, Excel, Word, Discord, Spotify, VS Code… by control name
 - 🫧 **Floating glass capsule** — frameless, translucent, always-on-top; press `Ctrl+Shift+Space` to summon it
 - 🆓 **Runs free** — defaults to OpenRouter `:free` models end to end
-- 🔌 **34 connectors, each with a skill** — the agent gets a built-in "manual" for every tool (Gmail, Calendar, Excel, Canva, Maps, GitHub…)
+- 🌐 **Uses your browser** — for web tasks (Gmail, Maps, GitHub…) it just drives Chrome the way you would — no accounts to connect, no API keys
 - 👁️ **Watch it work** — live action ticker and an aqua glow around the app it's touching
 
 ---
@@ -60,7 +60,7 @@ OPENROUTER_API_KEY=sk-or-v1-...   # free tier — recommended
 Two native desktop surfaces (no browser needed):
 
 - **`start.bat`** — the floating glass **capsule** (the main product). Press **`Ctrl+Shift+Space`** any time to show/hide it.
-- **`start_dashboard.bat`** — the full **dashboard** in its own native window (sessions, connectors, models, MCP, skills).
+- **`start_dashboard.bat`** — the full **dashboard** in its own native window (sessions, models, MCP, skills).
 
 > Advanced: `start_web.bat` serves the dashboard over HTTP (http://localhost:8080) for a browser or another device.
 
@@ -75,16 +75,6 @@ Two native desktop surfaces (no browser needed):
 | **Desktop** | Drives native + Electron apps (Notepad, Discord, VS Code, Spotify…) through **Windows UI Automation** — by control name, **no screenshots, no pixel guessing**. Glows the edge of the app it's working in so you can see what it's doing. |
 
 The mode is **auto-detected** from your goal, or you can pick it manually.
-
----
-
-## Connectors & Skills
-
-A **connector** gives the agent a tool (Gmail, Google Calendar, Excel, Canva, GitHub, Slack, Maps, Notion…). A **skill** is that tool's *manual* — it tells the agent exactly how to drive the surface and where the safety rails are (never send/post/buy/delete without your say-so).
-
-Skills load via **progressive disclosure**, the same pattern Claude's skills use: the agent always sees a one-line summary of every connected tool, and only pulls in the full how-to for the one the current task actually needs. Link the tools you use in the dashboard's **Connectors** tab.
-
-> Connectors are read-only by default. The agent drafts, summarizes, and reports — it asks before anything irreversible.
 
 ---
 
@@ -179,7 +169,6 @@ FastAPI  (app/main.py)
    ├── Providers      → OpenRouter / OpenAI / Anthropic / … (free models by default)
    ├── ToolExecutor   → shell · files · browser · UIA desktop (app/tools.py)
    │     └── Hybrid resolver: UIA control → on-screen-text OCR → pixel
-   ├── Connectors+Skills → progressive-disclosure tool manuals (app/connectors.py)
    ├── SafetyManager  → blocks dangerous / irreversible actions
    └── LogEmitter     → streams every step to the UI
 ```

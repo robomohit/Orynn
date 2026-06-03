@@ -1,7 +1,6 @@
 """Connector registry invariants: every connector ships a skill manual (the
 "how-to" the agent reads), nothing is orphaned, icons all resolve, and the
 progressive-disclosure matcher hands back the right manual for a goal."""
-import re
 from pathlib import Path
 
 import app.connectors as C
@@ -29,12 +28,10 @@ def test_every_skill_has_keywords_and_text():
         assert meta.get("keywords"), f"{cid}: no keywords (won't ever match a goal)"
 
 
-def test_all_icons_are_defined_in_dashboard():
-    js = (_ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    block = re.search(r"const ICONS = \{(.*?)\n  \};", js, re.S).group(1)
-    defined = set(re.findall(r"(\w+):\s*.<svg", block))
-    used = {c["icon"] for c in C.CONNECTORS}
-    assert used <= defined, f"icons used but not defined: {sorted(used - defined)}"
+# NOTE: The connector picker UI (dashboard section + onboarding step) was removed
+# pending a real account-linking flow — web tasks just drive the browser for now.
+# The backend registry below stays (skills/manuals still feed the agent), so these
+# registry-invariant tests remain. The dashboard-icon test was dropped with the UI.
 
 
 def test_relevant_briefs_matches_only_relevant_linked_connectors(monkeypatch):

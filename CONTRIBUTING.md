@@ -40,8 +40,7 @@ error output. For questions, use **Discussions** rather than an issue.
 
 ## Good first contributions
 
-- New **connectors + skills** (see `app/connectors.py` — each connector ships a
-  short "manual" skill).
+- New **skills** for the Expertise Library (see `app/skills.py`).
 - **Troubleshooting** entries in the README for issues you hit.
 - Test coverage for edge cases in `tests/`.
 

@@ -4379,150 +4379,6 @@
 
   init();
 
-/* ─────────────────────────────────────────────────────────────────
- * CONNECTORS — dashboard sidebar section.
- * Renders cards for each connector from /api/connectors and lets
- * the user Link/Unlink. Linked connectors become available to the
- * widget+agent automatically (the backend reads /api/connectors).
- * ───────────────────────────────────────────────────────────────── */
-(function initConnectors(){
-  const ICONS = {
-    mail:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2 6 12 13 22 6"/></svg>',
-    calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-    github:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2A10 10 0 0 0 9 21.5c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.4-3.4-1.4-.5-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9v2.7c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg>',
-    slack:    '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="8" width="6" height="2" rx="1"/><rect x="14" y="14" width="6" height="2" rx="1"/><rect x="8" y="14" width="2" height="6" rx="1"/><rect x="14" y="4" width="2" height="6" rx="1"/></svg>',
-    notion:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="7" x2="8" y2="17"/><line x1="8" y1="7" x2="16" y2="17"/><line x1="16" y1="7" x2="16" y2="17"/></svg>',
-    drive:    '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 3 3 18 7 18 12 9 17 18 21 18"/></svg>',
-    youtube:  '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="6" width="20" height="12" rx="3"/><polygon points="10 9 16 12 10 15" fill="#fff"/></svg>',
-    folder:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
-    clipboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>',
-    sheet:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>',
-    doc:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><polyline points="14 3 14 8 19 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>',
-    slides:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="12" y1="16" x2="12" y2="20"/><line x1="8" y1="20" x2="16" y2="20"/></svg>',
-    code:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
-    design:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="6.5" cy="11.5" r="2.5"/><circle cx="16.5" cy="14.5" r="2.5"/><circle cx="9" cy="18" r="2.5"/></svg>',
-    map:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
-    cart:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.3h8.5a1.5 1.5 0 0 0 1.5-1.2L22 7H6"/></svg>',
-    briefcase:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
-    social:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>',
-    check:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><polyline points="8 12 11 15 16 9"/></svg>',
-    crm:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 20a5 5 0 0 1 5-5"/></svg>',
-    music:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
-    video:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="14" height="12" rx="2"/><polygon points="16 10 22 7 22 17 16 14"/></svg>',
-    message:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.4 8.4 0 0 1-9 8 9 9 0 0 1-4-1L3 20l1.5-4.5a8.4 8.4 0 0 1-1-4A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>',
-    ticket:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/></svg>',
-  };
-
-  const url = (path) => path;
-
-  async function ensureSession() {
-    try { await fetch(url('/api/session'), {method:'POST'}); } catch {}
-  }
-
-  async function fetchConnectors() {
-    await ensureSession();
-    const r = await fetch(url('/api/connectors'), {credentials:'include'});
-    if (!r.ok) throw new Error('connectors fetch: ' + r.status);
-    return (await r.json()).connectors || [];
-  }
-
-  async function toggleLink(id, linked) {
-    await ensureSession();
-    const path = linked
-      ? `/api/connectors/${id}/unlink`
-      : `/api/connectors/${id}/link`;
-    const r = await fetch(url(path), {method:'POST', credentials:'include',
-      headers:{'Content-Type':'application/json'},
-      body: linked ? '{}' : '{"notes":""}'});
-    if (!r.ok) throw new Error('toggle failed: ' + r.status);
-    return await r.json();
-  }
-
-  function render(items) {
-    const grid = document.getElementById('connectors-grid');
-    const countEl = document.getElementById('connector-count');
-    if (!grid) return;
-    grid.innerHTML = '';
-    items.forEach((c) => {
-      const tile = document.createElement('div');
-      tile.className = 'conn-tile' + (c.linked ? ' linked' : '');
-      const head = document.createElement('div');
-      head.className = 'conn-tile-head';
-
-      const swatch = document.createElement('span');
-      swatch.className = 'conn-tile-swatch';
-      const tint = String(c.tint || '');
-      swatch.style.background = /^#[0-9a-fA-F]{3,8}$/.test(tint) ? tint : 'var(--line)';
-      swatch.innerHTML = ICONS[c.icon] || ICONS.folder;
-
-      const name = document.createElement('span');
-      name.className = 'conn-tile-name';
-      name.textContent = c.label || c.id || 'Connector';
-
-      const status = document.createElement('span');
-      status.className = 'conn-tile-status';
-      status.textContent = c.linked ? 'Linked' : c.auth_kind === 'local' ? 'Built-in' : 'Not linked';
-
-      head.append(swatch, name, status);
-      tile.appendChild(head);
-
-      const tip = document.createElement('p');
-      tip.className = 'conn-tile-tip';
-      tip.textContent = c.tip || '';
-      tile.appendChild(tip);
-
-      let btn = null;
-      if (c.auth_kind !== 'local') {
-        btn = document.createElement('button');
-        btn.className = 'conn-tile-action';
-        btn.dataset.id = c.id || '';
-        btn.dataset.linked = String(Boolean(c.linked));
-        btn.textContent = c.linked ? 'Unlink' : 'Link';
-        tile.appendChild(btn);
-      }
-      if (btn) {
-        btn.addEventListener('click', async (e) => {
-          const id = btn.dataset.id;
-          const linked = btn.dataset.linked === 'true';
-          btn.disabled = true;
-          btn.textContent = linked ? 'Unlinking…' : 'Linking…';
-          try {
-            await toggleLink(id, linked);
-            await load();
-          } catch (err) {
-            btn.textContent = 'Error';
-            console.error(err);
-          }
-        });
-      }
-      grid.appendChild(tile);
-    });
-    if (countEl) {
-      const n = items.filter((c) => c.linked).length;
-      countEl.textContent = `${n}/${items.length}`;
-    }
-  }
-
-  async function load() {
-    try {
-      const items = await fetchConnectors();
-      render(items);
-    } catch (e) {
-      console.error('[connectors] load failed', e);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', load);
-  } else {
-    load();
-  }
-  // refresh on settings modal open
-  document.getElementById('open-settings')?.addEventListener('click', () => {
-    setTimeout(load, 50);
-  });
-})();
-
 /* ---------------- User preferences (theme, mode, voice…) ---------------- */
 (function initPreferences(){
   let prefs = null;
@@ -4655,7 +4511,6 @@
     cur = Math.max(1, Math.min(TOTAL, n));
     steps.forEach(s => { s.hidden = (Number(s.dataset.step) !== cur); });
     renderProgress();
-    if (cur === 3) loadConnectors();
   }
 
   function next(){ show(cur + 1); }
@@ -4679,47 +4534,7 @@
     } catch(_){ status.className = 'onb-status err'; status.textContent = 'Couldn’t reach the app. Try again.'; }
   }
 
-  // ── Step 3: connectors ──
-  let connectorsLoaded = false;
-  async function loadConnectors(){
-    if (connectorsLoaded) return;
-    const grid = document.getElementById('onb-conn-grid');
-    if (!grid) return;
-    try {
-      await ensureSession();
-      const r = await fetch('/api/connectors', { credentials:'include' });
-      const items = (await r.json()).connectors || [];
-      grid.innerHTML = '';
-      items.filter(c => c.auth_kind !== 'local').forEach(c => {
-        const tile = document.createElement('button');
-        tile.type = 'button';
-        tile.className = 'onb-conn' + (c.linked ? ' on' : '');
-        const sw = document.createElement('span');
-        sw.className = 'onb-conn-swatch';
-        sw.style.background = /^#[0-9a-fA-F]{3,8}$/.test(String(c.tint||'')) ? c.tint : 'var(--accent)';
-        sw.textContent = (c.label || '?').trim().charAt(0).toUpperCase();
-        const nm = document.createElement('span');
-        nm.className = 'onb-conn-name';
-        nm.textContent = c.label;
-        tile.append(sw, nm);
-        tile.addEventListener('click', async () => {
-          const willLink = !tile.classList.contains('on');
-          tile.classList.toggle('on', willLink);
-          try {
-            await ensureSession();
-            await fetch(`/api/connectors/${c.id}/${willLink ? 'link' : 'unlink'}`, {
-              method:'POST', credentials:'include',
-              headers:{'Content-Type':'application/json'}, body: willLink ? '{"notes":""}' : '{}',
-            });
-          } catch(_){ tile.classList.toggle('on', !willLink); } // revert on failure
-        });
-        grid.appendChild(tile);
-      });
-      connectorsLoaded = true;
-    } catch(_){ grid.innerHTML = '<p class="onb-sub">Couldn’t load connectors — you can add them later in Settings.</p>'; }
-  }
-
-  // ── Step 4: preferences ──
+  // ── Step 3: preferences ──
   function applyThemeNow(t){
     let r = t;
     if (t === 'auto'){ try { r = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light':'dark'; } catch(_){ r='dark'; } }
