@@ -1,5 +1,8 @@
 # AI Computer
 
+[![CI](https://github.com/robomohit/Ai_computer/actions/workflows/ci.yml/badge.svg)](https://github.com/robomohit/Ai_computer/actions/workflows/ci.yml)
+[![License: PolyForm NC](https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-5BE0D0)](LICENSE)
+
 **An autonomous AI agent that controls your computer using plain English.** Give it a goal — it plans, acts, and shows you exactly what it's doing in real time, in a floating glass capsule that sits on top of your desktop.
 
 > Free to run on [OpenRouter](https://openrouter.ai)'s free-tier models (subject to their limits). Coding and browser modes work on Windows, macOS, and Linux; native desktop control is Windows-only.
@@ -198,7 +201,9 @@ FastAPI  (app/main.py)
 
 ## Contributing
 
-Issues and PRs are welcome. Run the test suite before submitting:
+Issues and PRs are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for the
+full guide. In short, run the test suite before submitting (CI runs it on Windows
++ Ubuntu for every PR):
 
 ```bash
 python -m pytest -q
