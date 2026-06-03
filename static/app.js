@@ -4652,10 +4652,24 @@
     if (save && changed) persist();
   }
 
-  function idxFromX(clientX){
+  function ratioFromX(clientX){
     const r = track.getBoundingClientRect();
-    const ratio = (clientX - r.left) / Math.max(1, r.width);
-    return Math.round(ratio * 3);
+    return Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width)));
+  }
+
+  // Live 1:1 drag — the thumb tracks the cursor exactly (no transition), and
+  // the label snaps to the nearest stop. On release we re-enable the spring.
+  function dragTo(ratio){
+    const pct = ratio * 100;
+    const near = Math.round(ratio * 3);
+    const lvl = LEVELS[near];
+    root.classList.add('dragging');
+    root.dataset.level = lvl;
+    fill.style.width = pct + '%';
+    thumb.style.left = pct + '%';
+    nameEl.textContent = META[lvl].name;
+    hintEl.textContent = META[lvl].hint;
+    stops.forEach((s, i) => s.classList.toggle('passed', (i / 3) <= ratio + 0.001));
   }
 
   // ── drag + click ──
@@ -4663,12 +4677,17 @@
   track.addEventListener('pointerdown', (e) => {
     dragging = true;
     try { track.setPointerCapture(e.pointerId); } catch(_){}
-    setIdx(idxFromX(e.clientX), true);
+    dragTo(ratioFromX(e.clientX));
   });
-  track.addEventListener('pointermove', (e) => { if (dragging) setIdx(idxFromX(e.clientX), true); });
-  const endDrag = () => { dragging = false; };
+  track.addEventListener('pointermove', (e) => { if (dragging) dragTo(ratioFromX(e.clientX)); });
+  const endDrag = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    root.classList.remove('dragging');          // re-enable the spring transition
+    setIdx(Math.round(ratioFromX(e.clientX) * 3), true);  // snap + persist
+  };
   track.addEventListener('pointerup', endDrag);
-  track.addEventListener('pointercancel', endDrag);
+  track.addEventListener('pointercancel', () => { dragging = false; root.classList.remove('dragging'); paint(); });
   stops.forEach((s) => s.addEventListener('click', (e) => { e.stopPropagation(); setIdx(Number(s.dataset.i), true); }));
 
   // ── keyboard ──

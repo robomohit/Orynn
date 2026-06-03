@@ -4340,6 +4340,10 @@
                 box-shadow .3s ease, transform .18s ease;
   }
   .effort-track:active .effort-thumb { transform: translate(-50%,-50%) scale(1.12); }
+  /* during an active drag the thumb/fill track the cursor 1:1 (no lag); on
+     release the .dragging class drops and the spring transition kicks back in */
+  .effort.dragging .effort-fill,
+  .effort.dragging .effort-thumb { transition: none; }
   .effort-track:focus-visible .effort-thumb { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent), 0 2px 8px rgba(0,0,0,.35); }
 
   .effort-ends {
