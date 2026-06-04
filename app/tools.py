@@ -109,6 +109,44 @@ def _rect_payload(rect: Optional[Dict[str, Any]]) -> Optional[Dict[str, int]]:
     return {"left": left, "top": top, "width": width, "height": height}
 
 
+def _clean_finish_reason(args: Dict[str, Any]) -> str:
+    """Extract a clean, human-readable answer from the finish action's args.
+
+    Some models (notably gpt-oss in harmony mode) double-wrap the answer as a
+    JSON object — e.g. reason='{"reason":"…"}' — which then renders as literal
+    JSON in the answer card. Unwrap up to a couple of nested reason/answer/text
+    payloads so the user always sees plain prose."""
+    keys = ("reason", "answer", "text", "result", "summary", "message")
+    raw: Any = None
+    for k in keys:
+        if args.get(k) not in (None, ""):
+            raw = args.get(k)
+            break
+    if raw is None:
+        raw = args.get("reason", "")
+    for _ in range(3):
+        if isinstance(raw, dict):
+            nxt = next((raw[k] for k in keys if raw.get(k) not in (None, "")), "")
+            raw = nxt
+            continue
+        if isinstance(raw, str):
+            s = raw.strip()
+            if len(s) >= 2 and s[0] == "{" and s[-1] == "}" and any(
+                f'"{k}"' in s for k in keys
+            ):
+                try:
+                    obj = json.loads(s)
+                except Exception:
+                    break
+                if isinstance(obj, dict) and any(obj.get(k) for k in keys):
+                    raw = next((obj[k] for k in keys if obj.get(k) not in (None, "")), "")
+                    continue
+            break
+        break
+    out = str(raw or "").strip()
+    return out or "Task marked complete by agent."
+
+
 def _rect_from_match(item: Dict[str, Any]) -> Optional[Dict[str, int]]:
     """Build an exact rect from a UIA match, preserving left/top when known."""
     try:
@@ -2998,7 +3036,7 @@ class ToolExecutor:
                 a.args["action"],
                 **{k: v for k, v in a.args.items() if k != "action"},
             ),
-            ActionType.finish: lambda a: ToolResult(ok=True, output=a.args.get("reason", "Task marked complete by agent.")),
+            ActionType.finish: lambda a: ToolResult(ok=True, output=_clean_finish_reason(a.args)),
             ActionType.system_info: lambda a: self.system_info(),
             ActionType.list_directory: lambda a: self.list_directory(a.args.get("path", "."), a.args.get("max_depth", 2)),
             ActionType.file_glob: lambda a: self.file_glob(a.args["pattern"]),
