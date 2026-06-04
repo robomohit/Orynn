@@ -60,7 +60,11 @@ _SCREEN_ACTIONS = {
     "ui_critique",
 }
 
-_SYSTEM_ACTIONS = {"list_processes", "system_info"}
+# system_info is read-only, static OS facts (platform, Python version, CPU
+# count) — harmless, so it's a FREE action (no approval) to avoid pointless
+# "Allow system access?" friction on simple tasks. list_processes stays gated
+# because a live process snapshot reveals what the user is running.
+_SYSTEM_ACTIONS = {"list_processes"}
 
 _COMPUTER_SCREEN_SUBACTIONS = {"screenshot"}
 

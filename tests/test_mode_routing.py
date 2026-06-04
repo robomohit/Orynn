@@ -17,16 +17,24 @@ CHAT = [
     "explain recursion",
     "summarize the theory of relativity",
     "give me advice on productivity",
+    # Standalone code-SNIPPET requests have no project/file context, so they're
+    # answered inline by chat (fast, code-in-a-block) rather than a
+    # filesystem-exploring coding workflow.
+    "write a python function to sort a list",
+    "how do I sort a dict by value in python",
+    "show me a bubble sort in javascript",
+    "give me a regex for email validation",
 ]
 
 CODING = [
-    "write a python function to sort a list",
+    # Real project work — references a file, the codebase, or existing code.
     "fix the bug in app.py",
-    "create a react component for a navbar",
-    "refactor this code",
-    "debug my script",
-    "set up a flask server with an api endpoint",
-    "build me a todo app",
+    "refactor my codebase",
+    "debug this python script",
+    "add a login route to server.js",
+    "commit my changes",
+    "lint the code",
+    "migrate the database schema",
 ]
 
 DESKTOP = [

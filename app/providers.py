@@ -275,8 +275,12 @@ def detect_task_mode(goal: str, explicit_mode: Optional[str] = None) -> str:
     # Pure greeting (no other content)
     if g in _CHAT_GREETINGS or g.rstrip("!?.") in _CHAT_GREETINGS:
         return "chat"
-    # Very short message with no action keywords
-    if len(g.split()) <= 6 and not any(kw in g for kw in _CODING_KEYWORDS + _COMPUTER_KEYWORDS):
+    # Very short message with no action keywords AND no named desktop app
+    # (so a terse command like "in Excel add a sum formula" still controls the
+    # app instead of being treated as small talk).
+    if (len(g.split()) <= 6
+            and not any(kw in g for kw in _CODING_KEYWORDS + _COMPUTER_KEYWORDS)
+            and not infer_isolated_app_name(goal)):
         return "chat"
     # Starts with a chat pattern
     if any(g.startswith(p) or g == p.strip() for p in _CHAT_PATTERNS):
@@ -313,7 +317,21 @@ def detect_task_mode(goal: str, explicit_mode: Optional[str] = None) -> str:
     # don't get mis-routed to coding, and never to desktop control).
     strong_coding = any(kw in g for kw in _STRONG_CODING_KEYWORDS)
     if strong_coding or coding_score >= 2:
-        return "coding"
+        # A STANDALONE snippet request with no project/file context ("write a
+        # python function that returns the nth fibonacci number") is answered
+        # far better inline by chat (which writes the code in a block) than by
+        # a filesystem-exploring coding workflow. Keep `coding` only when the
+        # goal references real project context — a file, a repo/codebase, or
+        # working on existing code. (An explicitly selected project folder
+        # routes to coding upstream, bypassing this.)
+        project_signal = (
+            bool(re.search(r"\.(?:py|js|ts|jsx|tsx|go|rs|java|cpp|cc|c|h|hpp|rb|php|swift|kt|sh|bash|html|css|scss|json|ya?ml|sql|toml|ini|cfg|md)\b", g))
+            or bool(re.search(r"\b(?:project|codebase|repo|repository|directory|folder|workspace)\b", g))
+            or bool(re.search(r"\b(?:fix|refactor|debug|migrate|deploy|lint|compile)\b", g))
+            or bool(re.search(r"\b(?:my|the|this|existing|current)\s+(?:code|file|module|package|app|script|server|component|class|function|test)s?\b", g))
+            or "commit" in g or "git " in g
+        )
+        return "coding" if project_signal else "chat"
     return "chat"
 
 
@@ -350,6 +368,16 @@ def infer_isolated_app_name(goal: str) -> Optional[str]:
         "relevant", "case", "general", "mind", "fact", "front", "addition",
         "short", "particular", "it", "them", "him", "you", "me", "us", "here",
         "there", "between", "regards", "terms", "place",
+    }:
+        return None
+    # Programming languages / formats are not desktop apps to isolate — "sort a
+    # dict in python", "do it in javascript" mean the language, not an app.
+    if candidate_lower in {
+        "python", "javascript", "typescript", "java", "ruby", "go", "golang",
+        "rust", "c", "c++", "cpp", "php", "swift", "kotlin", "scala", "perl",
+        "haskell", "bash", "powershell", "sql", "html", "css", "react", "node",
+        "json", "yaml", "markdown", "english", "spanish", "french", "german",
+        "real time", "real-time", "detail", "depth", "parallel", "advance",
     }:
         return None
     # A domain / URL is a website, not a desktop app to isolate.

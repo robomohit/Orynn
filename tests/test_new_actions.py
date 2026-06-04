@@ -248,7 +248,10 @@ def test_permissions_classify_privacy_sensitive_local_reads():
     assert scope_for_action("computer", {"action": "left_click"}) is None
     assert scope_for_action("get_clipboard") == PermissionScope.clipboard
     assert scope_for_action("set_clipboard") == PermissionScope.clipboard
-    assert scope_for_action("system_info") == PermissionScope.system
+    # system_info is read-only static OS facts → free (no approval friction).
+    assert scope_for_action("system_info") is None
+    # list_processes reveals what's running → still gated behind the system scope.
+    assert scope_for_action("list_processes") == PermissionScope.system
     assert scope_for_action("list_processes") == PermissionScope.system
 
 
