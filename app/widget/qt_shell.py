@@ -3501,6 +3501,12 @@ def main(port: int = 8000) -> int:
             clean = msg.strip()
             if "waiting on model" in lower:
                 return
+            # Never leak a raw JSON / dict payload as status (uncaught provider
+            # error shapes) — show a calm placeholder instead of "{"error":…}".
+            if clean[:1] in "{[" and ('"' in clean or ":" in clean):
+                self.status.setText("Working…")
+                self._set_capsule_state("planning", "Working...")
+                return
             self.status.setText(clean[:90])
             state = "planning" if any(k in lower for k in (
                 "planning", "thinking", "model", "initializing", "strategy"
