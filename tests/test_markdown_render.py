@@ -41,3 +41,21 @@ def test_html_is_escaped_no_injection():
 def test_empty_and_plain():
     assert _md_to_html("") == ""
     assert _md_to_html("just plain text") == "just plain text"
+
+
+def test_fenced_code_block_renders_as_pre():
+    src = "Here:\n```python\ndef f(n):\n    return n\n```\nDone."
+    out = _md_to_html(src)
+    assert "<pre" in out and "</pre>" in out
+    assert "```" not in out            # fences consumed
+    assert "def f(n):" in out          # code preserved
+    assert "monospace" in out
+
+
+def test_fenced_block_escapes_html_and_keeps_indent():
+    src = "```\nif a < b and c > d:\n    pass\n```"
+    out = _md_to_html(src)
+    assert "&lt;" in out and "&gt;" in out          # < > escaped
+    assert "<script>" not in out
+    # indentation preserved as real spaces inside <pre>
+    assert "    pass" in out

@@ -150,12 +150,21 @@ def _md_to_html(text: str) -> str:
 
     HTML is escaped FIRST, then only a controlled set of inline tags is
     introduced — no raw markup from the model/agent ever passes through, so
-    this can't become an injection vector. Supports **bold**, *italic*,
-    `code`, # headings, and - bullet lists.
+    this can't become an injection vector. Supports ```fenced code blocks```,
+    `inline code`, **bold**, *italic*, # headings, and - bullet lists.
     """
     s = _html.escape(str(text or ""), quote=False)
 
-    # Protect `code` spans so bold/italic don't reformat their contents.
+    # Fenced ```code blocks``` first — stash so nothing inside is reformatted.
+    blocks: list[str] = []
+
+    def _stash_block(m):
+        blocks.append(m.group(1).strip("\n"))
+        return f"\x00B{len(blocks) - 1}\x00"
+
+    s = re.sub(r"```[^\n`]*\n?(.*?)```", _stash_block, s, flags=re.S)
+
+    # Protect `inline code` spans so bold/italic don't reformat their contents.
     code_spans: list[str] = []
 
     def _stash(m):
@@ -179,7 +188,19 @@ def _md_to_html(text: str) -> str:
                 f'background:{_MD_CODE_BG};">&nbsp;{body}&nbsp;</span>')
 
     s = re.sub(r"\x00C(\d+)\x00", _restore, s)
-    return s.replace("\n", "<br>")
+    s = s.replace("\n", "<br>")
+
+    # Restore fenced blocks LAST as a monospace <pre> (after the <br> pass so the
+    # block keeps its own real newlines, not <br>).
+    def _restore_block(m):
+        code = blocks[int(m.group(1))]
+        return (
+            '<pre style="font-family:Consolas,\'Cascadia Mono\',monospace;'
+            f'background:{_MD_CODE_BG};padding:6px 9px;margin:2px 0;">'
+            f'{code}</pre>'
+        )
+
+    return re.sub(r"\x00B(\d+)\x00", _restore_block, s)
 
 
 def _set_rich_text(label: QLabel, text: str) -> None:
