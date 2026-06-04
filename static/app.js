@@ -41,6 +41,35 @@
     }
   }
 
+  const makeChevronIcon = () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '12');
+    svg.setAttribute('height', '12');
+    svg.setAttribute('viewBox', '0 0 12 12');
+    svg.setAttribute('fill', 'none');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M4 2.5L7.5 6L4 9.5');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+    return svg;
+  };
+
+  const safeMermaidId = (value, fallback) => {
+    const cleaned = String(value || '').replace(/[^a-zA-Z0-9]/g, '');
+    return cleaned || fallback;
+  };
+
+  const safeMermaidLabel = (value) => {
+    const compact = String(value || '')
+      .replace(/[<>{}\[\]()"`'\\|;:\n\r]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return compact.slice(0, 30) + (compact.length > 30 ? '...' : '');
+  };
+
   /* ---------------- tweaks UI wiring ---------------- */
   const ACCENT_HUES = [220, 262, 300, 340, 10, 160, 40];
 
@@ -103,6 +132,7 @@
     const open = () => {
       overlay.classList.add('show');
       loadReadiness();
+      loadTrustReport();
       loadCodingBackends();
     };
     const close = () => overlay.classList.remove('show');
@@ -1261,15 +1291,20 @@
     if (liveStatusCard && liveStatusCard.isConnected) return liveStatusCard;
     const row = document.createElement('div');
     row.className = 'status-row';
-    row.innerHTML = `
-      <div class="status-copy">
-        <div class="status-line">
-          <div class="status-title">Agent update</div>
-          <div class="status-age"></div>
-        </div>
-        <div class="status-subtitle"></div>
-      </div>
-    `;
+    const copy = document.createElement('div');
+    copy.className = 'status-copy';
+    const line = document.createElement('div');
+    line.className = 'status-line';
+    const title = document.createElement('div');
+    title.className = 'status-title';
+    title.textContent = 'Agent update';
+    const age = document.createElement('div');
+    age.className = 'status-age';
+    const subtitle = document.createElement('div');
+    subtitle.className = 'status-subtitle';
+    line.append(title, age);
+    copy.append(line, subtitle);
+    row.appendChild(copy);
     $('feed').appendChild(row);
     liveStatusCard = row;
     scrollFeed();
@@ -1386,20 +1421,21 @@
        else if (state === 'running') { color = '#1e3a8a'; stroke = '#3b82f6'; } // blue
        else if (state === 'failed') { color = '#7f1d1d'; stroke = '#ef4444'; } // red
 
-       const safeId = subtask.id.replace(/[^a-zA-Z0-9]/g, '');
-       const label = subtask.description.replace(/"/g, "'").slice(0, 30) + (subtask.description.length > 30 ? "..." : "");
+       const safeId = safeMermaidId(subtask.id, `task${index}`);
+       const label = safeMermaidLabel(subtask.description);
        graphDef += `  ${safeId}["${label}"]\n`;
        graphDef += `  style ${safeId} fill:${color},color:#f8fafc,stroke:${stroke},stroke-width:2px,rx:6,ry:6\n`;
 
        if (subtask.dependencies && subtask.dependencies.length > 0) {
            subtask.dependencies.forEach(dep => {
-               const safeDep = dep.replace(/[^a-zA-Z0-9]/g, '');
+               const safeDep = safeMermaidId(dep, '');
+               if (!safeDep) return;
                graphDef += `  ${safeDep} --> ${safeId}\n`;
            });
        } else if (index > 0 && !subtask.dependencies && planSubtasks[index-1]) {
            // fallback sequential link if no deps explicitly defined
-           const prevSafeId = planSubtasks[index-1].id.replace(/[^a-zA-Z0-9]/g, '');
-           graphDef += `  ${prevSafeId} --> ${safeId}\n`;
+            const prevSafeId = safeMermaidId(planSubtasks[index-1].id, `task${index - 1}`);
+            graphDef += `  ${prevSafeId} --> ${safeId}\n`;
        }
     });
 
@@ -1430,7 +1466,7 @@
 
     const chevron = document.createElement('span');
     chevron.className = 'card-chevron open';
-    chevron.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2.5L7.5 6L4 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    chevron.appendChild(makeChevronIcon());
     headBits.head.appendChild(chevron);
     headBits.head.addEventListener('click', () => {
       const collapsed = body.classList.toggle('collapsed');
@@ -1455,8 +1491,13 @@
       window.subtaskStates[subtask.id] = 'pending';
       const row = document.createElement('div');
       row.className = 'subtask-item';
-      row.innerHTML = `<div class="subtask-icon">${String(index + 1).padStart(2,'0')}</div><div class="subtask-text"></div>`;
-      row.querySelector('.subtask-text').textContent = subtask.description;
+      const icon = document.createElement('div');
+      icon.className = 'subtask-icon';
+      icon.textContent = String(index + 1).padStart(2, '0');
+      const text = document.createElement('div');
+      text.className = 'subtask-text';
+      text.textContent = subtask.description;
+      row.append(icon, text);
       subtaskEls[subtask.id] = row;
       list.appendChild(row);
     });
@@ -1521,7 +1562,7 @@
 
     const chevron = document.createElement('span');
     chevron.className = 'card-chevron';
-    chevron.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2.5L7.5 6L4 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    chevron.appendChild(makeChevronIcon());
     parts.head.appendChild(chevron);
     card.appendChild(parts.head);
 
@@ -1671,9 +1712,15 @@
     row.className = 'detail-row';
     const head = document.createElement('div');
     head.className = 'detail-row-head';
-    head.innerHTML = `<div><div class="detail-label"></div><div class="detail-title"></div></div>`;
-    head.querySelector('.detail-label').textContent = eyebrow;
-    head.querySelector('.detail-title').textContent = title || '';
+    const group = document.createElement('div');
+    const labelEl = document.createElement('div');
+    labelEl.className = 'detail-label';
+    labelEl.textContent = eyebrow;
+    const titleEl = document.createElement('div');
+    titleEl.className = 'detail-title';
+    titleEl.textContent = title || '';
+    group.append(labelEl, titleEl);
+    head.appendChild(group);
     row.appendChild(head);
     if (copy) {
       const body = document.createElement('div');
@@ -1694,16 +1741,18 @@
     if (!entry.terminalRows[key]) {
       const row = document.createElement('div');
       row.className = 'detail-row';
-      row.innerHTML = `
-        <div class="detail-row-head">
-          <div>
-            <div class="detail-label">Terminal</div>
-            <div class="detail-title"></div>
-          </div>
-        </div>
-      `;
-      const title = row.querySelector('.detail-title');
+      const head = document.createElement('div');
+      head.className = 'detail-row-head';
+      const group = document.createElement('div');
+      const label = document.createElement('div');
+      label.className = 'detail-label';
+      label.textContent = 'Terminal';
+      const title = document.createElement('div');
+      title.className = 'detail-title';
       title.textContent = command || 'Command output';
+      group.append(label, title);
+      head.appendChild(group);
+      row.appendChild(head);
       const channelEl = document.createElement('span');
       channelEl.className = 'terminal-channel';
       channelEl.textContent = channel;
@@ -3384,6 +3433,7 @@
       await recoverActiveTask();
       loadSkills();
       loadReadiness();
+      loadTrustReport();
       loadMCP();
       loadCodingBackends();
     } catch (_) {}
@@ -3528,6 +3578,194 @@
       grid.appendChild(item);
     });
   };
+
+  let trustReportState = { overall: 'unknown', pending_trust: {}, consent_ledger: [], active_tasks: [] };
+
+  const TRUST_LABELS = {
+    ready: 'Ready',
+    attention: 'Attention',
+    warning: 'Check',
+    blocked: 'Blocked',
+    unknown: '--',
+  };
+
+  const trustStatusClass = (value = '') => {
+    const key = String(value || '').toLowerCase();
+    return ['ready', 'attention', 'warning', 'blocked'].includes(key) ? key : 'warning';
+  };
+
+  const trustList = (value) => Array.isArray(value) ? value : [];
+
+  const makeTrustCard = ({ label, value, detail, status = 'ready' }) => {
+    const card = document.createElement('div');
+    card.className = `trust-card ${trustStatusClass(status)}`;
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'trust-card-label';
+    labelEl.textContent = label;
+
+    const valueEl = document.createElement('div');
+    valueEl.className = 'trust-card-value';
+    valueEl.textContent = value;
+
+    const detailEl = document.createElement('div');
+    detailEl.className = 'trust-card-detail';
+    detailEl.textContent = detail;
+
+    card.append(labelEl, valueEl, detailEl);
+    return card;
+  };
+
+  const makeTrustEmpty = (text) => {
+    const empty = document.createElement('div');
+    empty.className = 'trust-empty';
+    empty.textContent = text;
+    return empty;
+  };
+
+  const makeTrustRow = ({ title, detail, badge }) => {
+    const row = document.createElement('div');
+    row.className = 'trust-row';
+
+    const main = document.createElement('div');
+    main.className = 'trust-row-main';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'trust-row-title';
+    titleEl.textContent = title;
+    const detailEl = document.createElement('div');
+    detailEl.className = 'trust-row-detail';
+    detailEl.textContent = detail;
+    main.append(titleEl, detailEl);
+
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'trust-row-badge';
+    badgeEl.textContent = badge;
+
+    row.append(main, badgeEl);
+    return row;
+  };
+
+  const renderTrustReport = () => {
+    const grid = $('trust-grid');
+    if (!grid) return;
+    const report = trustReportState || {};
+    const pendingTrust = report.pending_trust || {};
+    const approvals = trustList(pendingTrust.approvals);
+    const permissions = trustList(pendingTrust.permissions);
+    const pendingCount = Number.isFinite(pendingTrust.count) ? pendingTrust.count : approvals.length + permissions.length;
+    const activeTasks = trustList(report.active_tasks);
+    const ledger = trustList(report.consent_ledger);
+    const audit = report.audit || {};
+    const auditCount = Object.values(audit).filter(Boolean).length;
+    const trustChecks = trustList(report.readiness?.trust_checks);
+    const blockedChecks = trustChecks.filter((item) => item?.status === 'blocked').length;
+    const warningChecks = trustChecks.filter((item) => item?.status === 'warning').length;
+    const killSwitch = report.kill_switch || {};
+    const killRoutes = trustList(killSwitch.routes);
+    const overall = String(report.overall || 'unknown').toLowerCase();
+
+    const statusEl = $('trust-status');
+    if (statusEl) {
+      statusEl.textContent = TRUST_LABELS[overall] || humanize(overall);
+      statusEl.dataset.status = trustStatusClass(overall);
+    }
+    const pendingCountEl = $('trust-pending-count');
+    if (pendingCountEl) pendingCountEl.textContent = String(pendingCount);
+    const ledgerCountEl = $('trust-ledger-count');
+    if (ledgerCountEl) ledgerCountEl.textContent = String(ledger.length);
+    const updatedEl = $('trust-updated');
+    if (updatedEl) {
+      const age = report.generated_at ? relTime(report.generated_at) : '';
+      updatedEl.textContent = age ? `Updated ${age}` : 'Not loaded yet';
+    }
+
+    grid.replaceChildren(
+      makeTrustCard({
+        label: 'Pending',
+        value: String(pendingCount),
+        detail: `${approvals.length} approvals, ${permissions.length} permissions`,
+        status: pendingCount ? 'attention' : 'ready',
+      }),
+      makeTrustCard({
+        label: 'Active Tasks',
+        value: String(activeTasks.length),
+        detail: activeTasks.length ? 'Kill and pause routes available' : 'No live automation',
+        status: activeTasks.length ? 'attention' : 'ready',
+      }),
+      makeTrustCard({
+        label: 'Audit',
+        value: `${auditCount}/4`,
+        detail: 'Logs, control trace, permissions, capsule auth',
+        status: auditCount >= 4 ? 'ready' : 'warning',
+      }),
+      makeTrustCard({
+        label: 'Kill Switch',
+        value: killSwitch.available ? 'On' : 'Off',
+        detail: `${killRoutes.length} protected stop routes`,
+        status: killSwitch.available ? 'ready' : 'blocked',
+      }),
+      makeTrustCard({
+        label: 'Trust Checks',
+        value: String(trustChecks.length),
+        detail: `${blockedChecks} blocked, ${warningChecks} warnings`,
+        status: blockedChecks ? 'blocked' : (warningChecks ? 'warning' : 'ready'),
+      })
+    );
+
+    const pendingList = $('trust-pending-list');
+    if (pendingList) {
+      const rows = [
+        ...approvals.map((item) => makeTrustRow({
+          title: item.task_id || 'Task',
+          detail: item.action_id || 'Approval required',
+          badge: 'approval',
+        })),
+        ...permissions.map((item) => makeTrustRow({
+          title: item.task_id || 'Task',
+          detail: item.action_id || 'Permission required',
+          badge: 'access',
+        })),
+      ];
+      pendingList.replaceChildren(...(rows.length ? rows : [makeTrustEmpty('No pending approvals or permissions.')]));
+    }
+
+    const ledgerList = $('trust-ledger-list');
+    if (ledgerList) {
+      const rows = ledger.map((item) => {
+        const granted = trustList(item.granted).join(', ') || 'none';
+        const denied = trustList(item.denied).join(', ') || 'none';
+        return makeTrustRow({
+          title: item.task_id || 'Task',
+          detail: `Allowed: ${granted} | Denied: ${denied}`,
+          badge: `${trustList(item.granted).length}/${trustList(item.denied).length}`,
+        });
+      });
+      ledgerList.replaceChildren(...(rows.length ? rows : [makeTrustEmpty('No task-scoped permissions recorded.')]));
+    }
+  };
+
+  const loadTrustReport = async () => {
+    try {
+      await keyReady;
+      trustReportState = await api('/api/trust/report');
+      renderTrustReport();
+    } catch (e) {
+      trustReportState = {
+        overall: 'warning',
+        pending_trust: { approvals: [], permissions: [], count: 0 },
+        consent_ledger: [],
+        active_tasks: [],
+        audit: {},
+        kill_switch: { available: false, routes: [] },
+        readiness: { trust_checks: [] },
+      };
+      renderTrustReport();
+    }
+  };
+
+  setInterval(() => {
+    if ($('settings-overlay')?.classList.contains('show')) loadTrustReport();
+  }, 10000);
 
   const loadMCP = async () => {
     try {
@@ -3799,6 +4037,13 @@
       { group: 'View', label: 'Focus prompt', hint: 'Ctrl L', action: () => { const el = $('input'); if (el) el.focus(); } },
       { group: 'View', label: 'Show widget gallery', hint: 'demo', action: () => playWidgetGallery() },
       { group: 'View', label: 'Toggle history', hint: '', action: () => { const el = $('btn-history'); if (el) el.click(); } },
+      { group: 'Settings', label: 'Open settings', hint: '', action: () => { const b = $('open-settings'); if (b) b.click(); } },
+      { group: 'Settings', label: 'Toggle theme', hint: 'dark / light / system', action: () => {
+          const sel = $('pref-theme'); if (!sel) return;
+          const order = ['auto', 'dark', 'light'];
+          const nx = order[(order.indexOf(sel.value) + 1) % order.length];
+          sel.value = nx; sel.dispatchEvent(new Event('change', { bubbles: true }));
+        } },
     );
     return cmds;
   };
@@ -4453,6 +4698,10 @@
     onChk('pref-glow', 'show_action_glow');
     onChk('pref-confirm', 'confirm_sensitive');
     onTxt('pref-desktop-model', 'desktop_model');
+    // Refresh controls each time Settings opens — onboarding or the capsule may
+    // have changed prefs since page load, so the cached values can be stale.
+    document.getElementById('open-settings')
+      ?.addEventListener('click', () => { setTimeout(load, 30); });
   }
 
   async function load(){
@@ -4710,4 +4959,7 @@
     } catch(_){ paint(); }
   }
   load();
+  // Re-sync when Settings opens (the capsule may have changed effort meanwhile).
+  document.getElementById('open-settings')
+    ?.addEventListener('click', () => { setTimeout(load, 30); });
 })();
