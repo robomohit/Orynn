@@ -3156,6 +3156,15 @@ def main(port: int = 8000) -> int:
             parts.append(user_text)
             goal = "".join(parts)
 
+            # Track the resolved task mode so the scope chip reads the truth
+            # ("Chat" / "Coding" / "Computer" / "Browser") instead of always
+            # saying "Computer".
+            try:
+                from app.providers import detect_task_mode as _dtm
+                self._task_mode = _dtm(user_text)
+            except Exception:
+                self._task_mode = ""
+
             recipe_hint = getattr(self, "_recipe_hint", None)
             attach = {
                 "window": self._scoped_window,
@@ -3277,7 +3286,11 @@ def main(port: int = 8000) -> int:
                 return "Clipboard"
             if self._attached_file:
                 return os.path.basename(self._attached_file.get("path", ""))[:28] or "Attachment"
-            return "Computer"
+            return {
+                "chat": "Chat", "coding": "Coding",
+                "computer": "Computer", "computer_isolated": "Computer",
+                "computer_use": "Browser", "explain": "Screen",
+            }.get(getattr(self, "_task_mode", ""), "Computer")
 
         def _capsule_vision_label(self, state: str) -> str:
             if self._last_control_layer and state in (
