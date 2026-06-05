@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Dict, List
 
 import json
+import os
 from pathlib import Path
 import re
 
@@ -25,7 +26,9 @@ class LogEmitter:
         # Maps task_id -> list of byte offsets, one per event written to disk.
         # Used by read_log() to seek directly to a given event instead of scanning.
         self._offsets: Dict[str, List[int]] = {}
-        self.log_dir = Path("workspace/logs")
+        # Honour the same workspace override as main.py so test runs keep their
+        # task logs in an isolated tmp dir instead of leaking into ./workspace/logs.
+        self.log_dir = Path(os.environ.get("AI_COMPUTER_WORKSPACE", ".")) / "workspace" / "logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         # Single-worker pool for disk writes so emit() never blocks the
         # asyncio event loop on slow/AV-scanned filesystems. One worker is

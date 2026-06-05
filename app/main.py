@@ -295,7 +295,11 @@ async def verify_token(request: Request, credentials: HTTPAuthorizationCredentia
     if not _is_authorized(request, credentials):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-workspace_dir = Path(".")
+# Workspace root for runtime state (tasks/, logs/). Defaults to the CWD in
+# production; tests point AI_COMPUTER_WORKSPACE at a tmp dir so task records and
+# logs never leak into the real ./tasks directory (which would pollute the
+# folder-grouped session history in the dashboard sidebar).
+workspace_dir = Path(os.environ.get("AI_COMPUTER_WORKSPACE", "."))
 workspace_dir.mkdir(parents=True, exist_ok=True)
 (workspace_dir / "logs").mkdir(parents=True, exist_ok=True)
 task_store_dir = workspace_dir / "tasks"
@@ -484,7 +488,15 @@ def _load_persisted_tasks() -> Dict[str, TaskRecord]:
             inferred.finished_at = inferred.finished_at or datetime.now(timezone.utc).isoformat()
         tasks[task_id] = inferred
 
-    return {task_id: record for task_id, record in tasks.items() if record is not None}
+    result = {task_id: record for task_id, record in tasks.items() if record is not None}
+    # Defensive cap: never load an unbounded history into memory (and into the
+    # sidebar). Keep the most recent records so startup stays fast even if the
+    # tasks/ dir has accumulated thousands of files.
+    max_persisted = int(os.environ.get("AI_COMPUTER_MAX_PERSISTED_TASKS", "250"))
+    if len(result) > max_persisted:
+        newest = sorted(result.values(), key=lambda r: r.created_at or "", reverse=True)[:max_persisted]
+        result = {r.id: r for r in newest}
+    return result
 
 
 def _get_task_record(task_id: str) -> Optional[TaskRecord]:

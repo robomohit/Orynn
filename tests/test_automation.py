@@ -88,6 +88,10 @@ def test_cron_trigger_sunday_alias():
 
 @pytest.fixture(autouse=True)
 def reset_singleton(tmp_path, monkeypatch):
+    # Isolate each test's automation.json. workspace_state_path() resolves via
+    # AI_COMPUTER_WORKSPACE (set session-wide in conftest), so point it at this
+    # test's tmp_path — chdir alone no longer isolates the workspace.
+    monkeypatch.setenv("AI_COMPUTER_WORKSPACE", str(tmp_path))
     monkeypatch.chdir(tmp_path)
     auto_mod._registry = None
     yield
