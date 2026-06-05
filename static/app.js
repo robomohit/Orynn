@@ -458,11 +458,20 @@
     catch (_) { return ''; }
   };
 
+  // Codex-style: the idle hero greets the active project by name.
+  const renderWelcomeHero = () => {
+    const h = document.querySelector('#welcome h3');
+    if (!h) return;
+    const folder = projectFolderState.selectedPath;
+    h.textContent = folder ? `What should we build in ${pathLeaf(folder)}?` : 'What can I help you with?';
+  };
+
   const renderProjectFolderSummary = () => {
     const selected = projectFolderState.selectedPath;
     $('project-folder-name').textContent = selected ? pathLeaf(selected) : 'General mode';
     $('project-folder-path').textContent = selected ? selected : 'Desktop + Home access';
     $('project-folder-selection').textContent = projectFolderState.browsingPath || selected || 'General mode · Desktop + Home';
+    renderWelcomeHero();
     if (!task) setTaskTitle();
   };
 
@@ -1239,14 +1248,19 @@
       wrap.dataset.folder = g.key;
       const head = document.createElement('div');
       head.className = 'history-group-head';
+      // Codex-style: a folder glyph turns each group into a "project" row.
+      const lead = document.createElement('span');
+      lead.className = 'history-group-lead';
+      lead.innerHTML = '<svg class="history-group-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2V16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
       const name = document.createElement('span');
       name.className = 'history-group-name';
       name.textContent = historyGroupLabel(g.key);
       name.title = g.key || 'General mode · Desktop + Home';
+      lead.appendChild(name);
       const count = document.createElement('span');
       count.className = 'history-group-count';
       count.textContent = String(matches.length);
-      head.append(name, count);
+      head.append(lead, count);
       const list = document.createElement('div');
       list.className = 'history-group-items';
       matches.forEach((it, idx) => {
@@ -2494,6 +2508,7 @@
       $('feed').classList.remove('has-events');
       document.body.classList.remove('task-active');  // back to the centered idle hero
       bindExamples();
+      renderWelcomeHero();  // re-personalize the restored hero to the active project
     }
   };
 

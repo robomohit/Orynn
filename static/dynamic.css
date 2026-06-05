@@ -243,6 +243,29 @@
   opacity: .62;
 }
 
+/* Codex-style project row: folder glyph + name, chats nested under it. */
+.history-group-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.history-group-lead .history-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-group-icon {
+  flex: 0 0 auto;
+  color: var(--muted-2);
+  opacity: .85;
+}
+.history-group-items {
+  padding-left: 7px;          /* subtle tree indent under the project row */
+  border-left: 1px solid var(--line);
+  margin-left: 6px;
+}
+
 .history-item {
   gap: 0;
 }

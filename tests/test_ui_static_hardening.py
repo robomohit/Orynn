@@ -876,3 +876,21 @@ def test_stall_watchdog_prevents_silent_running_hang():
     # rate-limit backoff message is surfaced (not swallowed into a generic 'Thinking')
     assert "event.retrying && event.message" in js, "retry message branch missing"
     assert "setLiveStatus(String(event.message))" in js, "retry message not surfaced"
+
+
+def test_codex_contextual_hero_and_folder_tree():
+    """Codex-inspired: the idle hero greets the active project by name, and the
+    sidebar history groups read as folder/project rows (glyph + nested chats)."""
+    js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
+    css = (_STATIC / "dynamic.css").read_text(encoding="utf-8")
+
+    # contextual hero
+    assert "renderWelcomeHero" in js, "contextual hero helper missing"
+    assert "What should we build in ${pathLeaf(folder)}?" in js, "project-named hero missing"
+    assert "'What can I help you with?'" in js, "generic hero fallback missing"
+
+    # folder-tree sidebar
+    assert "history-group-lead" in js, "group lead wrapper missing"
+    assert "history-group-icon" in js, "folder glyph missing"
+    assert ".history-group-lead" in css, "group lead CSS missing"
+    assert ".history-group-items {\n  padding-left: 7px;" in css, "tree indent missing"
