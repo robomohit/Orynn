@@ -260,6 +260,15 @@
   let timer = null;
   let startTime = 0;
 
+  // Stall watchdog: a running task must never look frozen. If no meaningful
+  // event arrives for STALL_HINT_MS (e.g. free models queued/rate-limited during
+  // a silent backoff), surface a calm "still working" status so the UI never
+  // sits on a dead "running" with zero feedback.
+  const STALL_HINT_MS = 15000;
+  let lastProgressTs = 0;
+  let stallWatch = null;
+  let stallActive = false;
+
   let historyItems = [];
   let activeHistoryItem = null;
   const historyExpandedGroups = new Set();   // folder keys whose "see more" is expanded
@@ -790,10 +799,30 @@
     return card;
   };
 
+  // ---- stall watchdog (never let a running task look frozen) ----
+  const noteProgress = () => { lastProgressTs = Date.now(); stallActive = false; };
+  const armStallWatch = () => {
+    noteProgress();
+    if (stallWatch) clearInterval(stallWatch);
+    stallWatch = setInterval(() => {
+      if (currentStatus !== 'running') return;
+      if (stallActive) return;  // hint already shown; don't re-spam until real progress
+      if (Date.now() - lastProgressTs < STALL_HINT_MS) return;
+      stallActive = true;
+      setLiveStatus('Still working — this can take a moment on free models.');
+    }, 3000);
+  };
+  const disarmStallWatch = () => {
+    if (stallWatch) { clearInterval(stallWatch); stallWatch = null; }
+    stallActive = false;
+  };
+
   const setStatus = (status) => {
     const map = { ready: 'Ready', queued: 'Queued', pending: 'Pending', running: 'Running', paused: 'Paused', complete: 'Complete', failed: 'Failed', error: 'Error', cancelled: 'Cancelled' };
     const key = (status || 'ready').toLowerCase();
     currentStatus = key;
+    if (key === 'running') armStallWatch();
+    else disarmStallWatch();
     const sb = $('sb-status');
     if (sb) {
       const statusClass = /^[a-z0-9_-]+$/.test(key) ? key : 'ready';
@@ -2511,6 +2540,10 @@
   };
 
   const processTaskEvent = (event, { replay = false, taskId = task, suppressToasts = false } = {}) => {
+    // Any real (non-heartbeat) event is forward progress — keep the stall
+    // watchdog quiet. Heartbeats deliberately don't count, so a model stuck in a
+    // silent rate-limit backoff still trips the "still working" reassurance.
+    if (!replay && !(event.type === 'status' && event.heartbeat)) noteProgress();
     if (event.type === 'task_created') return;
 
     if (event.type === 'reasoning') {
@@ -2708,9 +2741,15 @@
     }
 
     if (event.type === 'provider_info') {
-      // Don't surface the raw model id in the thread — just a calm "Thinking".
-      // The model still shows in the status bar / Settings for the curious.
-      setLiveStatus('Thinking');
+      // A rate-limit backoff carries a real "retrying in Ns…" message — show it so
+      // the wait is explained. Otherwise keep it a calm "Thinking" (the raw model
+      // id stays in the status bar / Settings for the curious).
+      if (event.retrying && event.message) {
+        setLiveStatus(String(event.message));
+        noteProgress();  // an explicit retry notice is progress — don't double up with the stall hint
+      } else {
+        setLiveStatus('Thinking');
+      }
       const sbm = $('sb-model-val'); if (sbm) sbm.textContent = event.tier || event.model || sbm.textContent;
       return;
     }
@@ -3041,6 +3080,7 @@
 
   const stopEverything = () => {
     clearInterval(timer);
+    disarmStallWatch();
     clearReconnectTimer();
     streamClosedManually = true;
     if (sse) { sse.close(); sse = null; }

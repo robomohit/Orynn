@@ -844,3 +844,35 @@ def test_ai23_thinking_budget_ui():
     assert "usage_update" in js, "usage_update event handler missing from app.js"
     assert "usage-badge" in js, "usage-badge class missing from app.js"
     assert "usage-badge" in css, ".usage-badge CSS missing from style.css"
+
+
+def test_stall_watchdog_prevents_silent_running_hang():
+    """A running task must never sit on a silent 'running' with zero feedback.
+
+    Guards the stall watchdog (arm on running / disarm otherwise, heartbeat-excluded
+    progress notes) and the rate-limit retry message surfacing — the fix for the
+    free-model queue/backoff hang where the dashboard showed only 'running'.
+    """
+    js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
+
+    # watchdog primitives
+    assert "STALL_HINT_MS" in js, "stall watchdog threshold missing"
+    assert "armStallWatch" in js and "disarmStallWatch" in js, "stall watchdog arm/disarm missing"
+    assert "noteProgress" in js, "stall watchdog progress note missing"
+    assert "this can take a moment on free models" in js, "stall reassurance message missing"
+
+    # lifecycle: armed only while running, torn down on stop
+    assert "if (key === 'running') armStallWatch();" in js, "watchdog not armed on running status"
+    assert "else disarmStallWatch();" in js, "watchdog not disarmed off running status"
+    assert "disarmStallWatch();" in js.split("const stopEverything")[1][:400], (
+        "watchdog not disarmed in stopEverything"
+    )
+
+    # heartbeats must NOT count as progress (so a silent backoff still trips the hint)
+    assert "event.type === 'status' && event.heartbeat)) noteProgress()" in js, (
+        "heartbeat-excluded progress note missing"
+    )
+
+    # rate-limit backoff message is surfaced (not swallowed into a generic 'Thinking')
+    assert "event.retrying && event.message" in js, "retry message branch missing"
+    assert "setLiveStatus(String(event.message))" in js, "retry message not surfaced"
