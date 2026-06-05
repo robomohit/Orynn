@@ -894,3 +894,23 @@ def test_codex_contextual_hero_and_folder_tree():
     assert "history-group-icon" in js, "folder glyph missing"
     assert ".history-group-lead" in css, "group lead CSS missing"
     assert ".history-group-items {\n  padding-left: 7px;" in css, "tree indent missing"
+
+
+def test_codex_files_changed_capstone():
+    """Codex-style "N files changed" capstone: real edited paths captured from
+    action_result events and rendered in the done-state with state tags."""
+    js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
+    css = (_STATIC / "style.css").read_text(encoding="utf-8")
+
+    # capture from real file actions (reads excluded), render + clear lifecycle
+    assert "const editedFiles = new Map()" in js, "edited-files store missing"
+    assert "noteEditedFile" in js and "_extractEditedPath" in js, "capture helpers missing"
+    assert "!/read_file|view_file/i.test(_t)" in js, "reads must be excluded from changed files"
+    assert "renderFilesChanged" in js, "capstone renderer missing"
+    assert "editedFiles.clear();" in js, "edited files not cleared between tasks"
+    assert "files changed" in js, "capstone label missing"
+
+    # styling: monospace path rows + state tags
+    assert ".files-changed-head" in css, "capstone header CSS missing"
+    assert ".fc-path {" in css, "file path row CSS missing"
+    assert ".fc-row.fc-new .fc-tag" in css and ".fc-row.fc-deleted .fc-tag" in css, "state tag CSS missing"

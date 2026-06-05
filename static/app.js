@@ -1537,6 +1537,66 @@
     summary.append(header, body);
   };
 
+  // ---- Codex-style "N files changed" capstone (real edited paths only) ----
+  const editedFiles = new Map();  // path -> 'new' | 'edited' | 'deleted'
+  const _extractEditedPath = (summary, type) => {
+    let s = String(summary || '').trim();
+    const dash = s.indexOf(' - ');                       // strip a control-layer prefix
+    if (dash >= 0 && /exact|layer|uia|fallback/i.test(s.slice(0, dash))) s = s.slice(dash + 3);
+    s = s.split(/\s+[·—-]\s+/)[0].trim();                // strip trailing " · 42 lines" / " — note"
+    if (/text_editor|str_replace|edit_file|insert|create/i.test(type)) {
+      const toks = s.split(/\s+/);                        // "<command> <path>" -> path
+      const last = toks[toks.length - 1];
+      if (last && (/[\\/]/.test(last) || /\.\w{1,6}$/.test(last))) s = last;
+    }
+    return s;
+  };
+  const noteEditedFile = (path, state) => {
+    if (!path || path.length > 200) return;
+    const prev = editedFiles.get(path);
+    if (state === 'deleted') editedFiles.set(path, 'deleted');
+    else if (prev === 'new' || state === 'new') editedFiles.set(path, 'new');
+    else editedFiles.set(path, 'edited');
+  };
+  const renderFilesChanged = () => {
+    const feed = $('feed');
+    if (!feed || !editedFiles.size) return;
+    const n = editedFiles.size;
+    const wrap = document.createElement('div');
+    wrap.className = 'files-changed';
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'files-changed-head';
+    head.innerHTML =
+      '<svg class="fc-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M9 13h6M12 10v6"/></svg>'
+      + `<span class="fc-title">${n} file${n > 1 ? 's' : ''} changed</span>`
+      + '<span class="fc-chevron">›</span>';
+    const body = document.createElement('div');
+    body.className = 'files-changed-body';
+    editedFiles.forEach((state, path) => {
+      const row = document.createElement('div');
+      row.className = `fc-row fc-${state}`;
+      const name = document.createElement('span');
+      name.className = 'fc-path';
+      name.textContent = path;
+      name.title = path;
+      const tag = document.createElement('span');
+      tag.className = 'fc-tag';
+      tag.textContent = state;
+      row.append(name, tag);
+      body.appendChild(row);
+    });
+    const expanded = n <= 5;                  // few files: show them; many: tuck away
+    body.hidden = !expanded;
+    wrap.classList.toggle('open', expanded);
+    head.addEventListener('click', () => {
+      body.hidden = !body.hidden;
+      wrap.classList.toggle('open', !body.hidden);
+    });
+    wrap.append(head, body);
+    feed.appendChild(wrap);
+  };
+
   const createStateChip = (label, cls = '') => {
     const chip = document.createElement('span');
     // A bare duration ("20s", "2.4s") is a time, not a state — render it quiet.
@@ -2489,6 +2549,7 @@
     setControlSurface();
     planSubtasks = []; currentSubtaskIdx = 0; subtaskEls = {};
     screenshotStore.clear(); lastActionId = null; terminalStateKey = null;
+    editedFiles.clear();
     Object.keys(actionCards).forEach((k) => delete actionCards[k]);
     lastActiveCard = null; activeTurnSummary = null;
 
@@ -2617,6 +2678,14 @@
         target: event.overlay?.target || event.overlay?.label || event.args_summary || '',
         phase: event.ok ? 'Complete' : 'Failed',
       });
+      // Record real files the agent created/edited for the done-state capstone.
+      if (event.ok) {
+        const _t = String(event.action_type || '');
+        if (_actionTypeLabel(_t) === 'file' && !/read_file|view_file/i.test(_t)) {
+          const _p = _extractEditedPath(event.args_summary || '', _t);
+          if (_p) noteEditedFile(_p, /delete/i.test(_t) ? 'deleted' : /create/i.test(_t) ? 'new' : 'edited');
+        }
+      }
       const entry = ensureActionCard(event.action_id, event.action_type, event.args_summary || '');
       clearTrustControls(entry, event.action_id || '');
       setActionState(entry, event.ok ? 'OK' : 'Fail', event.ok ? 'ok' : 'fail');
@@ -2913,6 +2982,7 @@
         // Fold the working steps under a "Worked for Xm Ys ›" toggle (Codex).
         const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
         summarizeWork(elapsed);
+        renderFilesChanged();  // Codex-style "N files changed" capstone (if any)
         // Show the model's actual final reply as a primary assistant message.
         // Fall back to the generic note only when there's no real answer.
         const reply = String(event.reason || '').trim();
@@ -2923,6 +2993,7 @@
         else showPostRunControls();
       } else {
         setStatus('failed');
+        renderFilesChanged();  // surface what was touched before the failure (if any)
         appendMessage(event.blocked ? `Request blocked: ${event.reason || 'This request could not be completed.'}` : `Task failed: ${event.reason || 'Unknown failure.'}`, 'system-error');
         if (!replay) { markHistoryFinal('failed'); stopEverything(); if (!suppressToasts) toast('Task failed.', 'err'); }
         else showPostRunControls();

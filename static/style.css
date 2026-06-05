@@ -4813,6 +4813,68 @@
   .work-summary-body .message,
   .work-summary-body .status-row { padding-top: 4px; padding-bottom: 4px; font-size: var(--fs-sm); }
 
+  /* ---- Codex-style "N files changed" capstone ---- */
+  .files-changed {
+    margin: 2px 0 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    max-width: 100%;
+  }
+  .files-changed-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 12px;
+    background: var(--bg-2);
+    border: none;
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .files-changed-head:hover { background: var(--bg-3); }
+  .files-changed-head .fc-icon { color: var(--muted); flex: 0 0 auto; }
+  .files-changed-head .fc-title { flex: 1 1 auto; text-align: left; }
+  .files-changed-head .fc-chevron {
+    font-size: 16px; line-height: 1; color: var(--muted-2);
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .files-changed.open .files-changed-head .fc-chevron { transform: rotate(90deg); }
+  .files-changed-body { padding: 4px 0; }
+  .files-changed-body[hidden] { display: none; }
+  .fc-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 12px;
+  }
+  .fc-row:hover { background: var(--bg-2); }
+  .fc-path {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--ink-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fc-tag {
+    flex: 0 0 auto;
+    font-size: var(--fs-micro);
+    font-weight: 600;
+    letter-spacing: .02em;
+    padding: 1px 7px;
+    border-radius: 99px;
+    text-transform: lowercase;
+  }
+  .fc-row.fc-new .fc-tag    { color: var(--ok); background: color-mix(in oklab, var(--ok) 14%, transparent); }
+  .fc-row.fc-edited .fc-tag { color: var(--accent-ink, var(--accent)); background: var(--accent-soft); }
+  .fc-row.fc-deleted .fc-tag { color: var(--err); background: color-mix(in oklab, var(--err) 14%, transparent); }
+
   /* ---- sidebar: sessions grouped by working folder (Codex-style) ---- */
   .history-group { margin-bottom: 10px; }
   .history-group-head {
