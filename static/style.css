@@ -4760,3 +4760,27 @@
 
   /* Composer floats with room above the window edge (was touching the bottom). */
   body.task-active .composer-wrap { padding-bottom: 22px; }
+
+  /* "Worked for Xm Ys ›" — collapsed by default; click to reveal the steps. */
+  .work-summary { margin: 2px 0 12px; }
+  .work-summary-head {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: none; border: none; padding: 3px 0;
+    color: var(--muted); font-size: var(--fs-sm); cursor: pointer;
+    transition: color .15s var(--ease-out);
+  }
+  .work-summary-head:hover { color: var(--ink-2); }
+  .work-summary-head .work-chevron {
+    font-size: 16px; line-height: 1; transition: transform .15s var(--ease-out);
+  }
+  .work-summary.open .work-summary-head .work-chevron { transform: rotate(90deg); }
+  .work-summary-head.no-expand { cursor: default; }
+  .work-summary-head.no-expand:hover { color: var(--muted); }
+  .work-summary-head.no-expand .work-chevron { display: none; }
+  .work-summary-body {
+    margin-top: 6px;
+    padding: 2px 0 2px 14px;
+    border-left: 2px solid var(--line);
+  }
+  .work-summary-body .message,
+  .work-summary-body .status-row { padding-top: 4px; padding-bottom: 4px; font-size: var(--fs-sm); }

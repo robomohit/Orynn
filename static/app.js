@@ -1355,6 +1355,66 @@
     liveStatusMessage = '';
   };
 
+  const fmtWorkDuration = (sec) => {
+    sec = Math.max(0, Math.round(sec || 0));
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60), s = sec % 60;
+    if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  };
+
+  // Codex-style: when a turn finishes, fold the working steps (status notes,
+  // reasoning, tool chatter) under a collapsed "Worked for Xm Ys ›" toggle and
+  // leave the final answer below it.
+  const summarizeWork = (durationSec) => {
+    const feed = $('feed');
+    if (!feed) return;
+    const kids = Array.from(feed.children);
+    let startIdx = -1;
+    for (let i = kids.length - 1; i >= 0; i--) {
+      if (kids[i].classList?.contains('message') && kids[i].classList.contains('user')) { startIdx = i; break; }
+    }
+    const isStep = (el) => el.classList && (
+      el.classList.contains('status-row') ||
+      (el.classList.contains('message') && (
+        el.classList.contains('system-note') ||
+        el.classList.contains('system-success') ||
+        el.classList.contains('reasoning')))
+    );
+    const steps = [];
+    for (let i = startIdx + 1; i < kids.length; i++) {
+      if (isStep(kids[i]) && kids[i].style.display !== 'none') steps.push(kids[i]);
+    }
+    const summary = document.createElement('div');
+    summary.className = 'work-summary';
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'work-summary-head';
+    const dur = document.createElement('span');
+    dur.className = 'work-dur';
+    dur.textContent = `Worked for ${fmtWorkDuration(durationSec)}`;
+    const chev = document.createElement('span');
+    chev.className = 'work-chevron';
+    chev.textContent = '›';
+    header.append(dur, chev);
+    const body = document.createElement('div');
+    body.className = 'work-summary-body';
+    body.hidden = true;
+    if (steps.length) {
+      feed.insertBefore(summary, steps[0]);
+      steps.forEach((s) => body.appendChild(s));
+      header.addEventListener('click', () => {
+        body.hidden = !body.hidden;
+        summary.classList.toggle('open', !body.hidden);
+      });
+    } else {
+      feed.appendChild(summary);
+      header.classList.add('no-expand');
+    }
+    summary.append(header, body);
+  };
+
   const createStateChip = (label, cls = '') => {
     const chip = document.createElement('span');
     // A bare duration ("20s", "2.4s") is a time, not a state — render it quiet.
@@ -2717,6 +2777,9 @@
       clearLiveIndicators();
       if (event.complete) {
         setStatus('complete');
+        // Fold the working steps under a "Worked for Xm Ys ›" toggle (Codex).
+        const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
+        summarizeWork(elapsed);
         // Show the model's actual final reply as a primary assistant message.
         // Fall back to the generic note only when there's no real answer.
         const reply = String(event.reason || '').trim();
