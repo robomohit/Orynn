@@ -1,5 +1,5 @@
 @echo off
-echo Starting Kynvoq - web server (advanced / remote access)...
+echo Starting Orynn - web server (advanced / remote access)...
 echo This serves the dashboard over HTTP for a browser or another device.
 echo For the normal desktop experience use start.bat or start_dashboard.bat.
 echo Open http://localhost:8080 in your browser. Press Ctrl+C to stop.

@@ -1,4 +1,4 @@
-"""Desktop-native features that round out the Kynvoq widget into a
+"""Desktop-native features that round out the Orynn widget into a
 shippable product.
 
 Implements (from research-deferred list):
@@ -229,7 +229,7 @@ def apply_layout(layout_name: str) -> dict:
 # AUTOSTART (HKCU\Software\Microsoft\Windows\CurrentVersion\Run)
 # ─────────────────────────────────────────────────────────────────────────────
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-_AUTOSTART_NAME = "Kynvoq"
+_AUTOSTART_NAME = "Orynn"
 _AUTOSTART_LEGACY_NAMES = ("AI_Computer",)
 
 
@@ -251,7 +251,7 @@ def is_autostart_enabled() -> bool:
 
 def set_autostart(enable: bool, launch_cmd: Optional[str] = None) -> bool:
     """Toggle autostart. `launch_cmd` defaults to `pythonw run_desktop.py`
-    in the current Kynvoq folder."""
+    in the current Orynn folder."""
     if winreg is None:
         return False
     if launch_cmd is None:
@@ -1718,7 +1718,7 @@ def rag_index_folder(folder: str, name: str = "default") -> dict:
     except ImportError:
         return {"ok": False, "error": "chromadb not installed"}
     try:
-        workspace = os.environ.get("KYNVOQ_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")
+        workspace = os.environ.get("ORYNN_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")
         client = chromadb.PersistentClient(
             path=str(Path(workspace).resolve() / "rag_db"))
         try:
@@ -1755,7 +1755,7 @@ def rag_index_folder(folder: str, name: str = "default") -> dict:
 def rag_query(name: str, query: str, top_k: int = 5) -> dict:
     try:
         import chromadb
-        workspace = os.environ.get("KYNVOQ_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")
+        workspace = os.environ.get("ORYNN_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")
         client = chromadb.PersistentClient(
             path=str(Path(workspace).resolve() / "rag_db"))
         coll = client.get_collection(name)

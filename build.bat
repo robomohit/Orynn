@@ -3,10 +3,10 @@ setlocal
 
 echo.
 echo  ============================================
-echo    Kynvoq - Build a distributable app
+echo    Orynn - Build a distributable app
 echo  ============================================
 echo.
-echo  This packages the app into dist\Kynvoq\ so you can share a runnable
+echo  This packages the app into dist\Orynn\ so you can share a runnable
 echo  Windows desktop bundle.
 echo.
 
@@ -23,7 +23,7 @@ if errorlevel 1 (
 )
 
 echo [2/2] Building (this can take a few minutes the first time)...
-python -m PyInstaller Kynvoq.spec --noconfirm --clean
+python -m PyInstaller Orynn.spec --noconfirm --clean
 if errorlevel 1 (
     echo.
     echo [ERROR] Build failed. See the output above.
@@ -36,9 +36,9 @@ echo  ============================================
 echo    Build complete!
 echo.
 echo    Your app is here:
-echo      dist\Kynvoq\Kynvoq.exe
+echo      dist\Orynn\Orynn.exe
 echo.
-echo    Share the whole "dist\Kynvoq" folder, or wrap it into a single
+echo    Share the whole "dist\Orynn" folder, or wrap it into a single
 echo    installer with Inno Setup / NSIS (see PACKAGING.md).
 echo  ============================================
 echo.

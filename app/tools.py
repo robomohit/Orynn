@@ -35,11 +35,11 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-# Pre-click pointer overlay — off by default. Set KYNVOQ_POINTER_OVERLAY=1
+# Pre-click pointer overlay — off by default. Set ORYNN_POINTER_OVERLAY=1
 # to make desktop clicks "watchable": a ring flashes at the target before the
 # click so the user can see where the agent is acting.
 _POINTER_OVERLAY_ENABLED = (
-    os.environ.get("KYNVOQ_POINTER_OVERLAY")
+    os.environ.get("ORYNN_POINTER_OVERLAY")
     or os.environ.get("AI_COMPUTER_POINTER_OVERLAY", "")
 ).strip() in ("1", "true", "yes")
 
@@ -371,7 +371,7 @@ def _read_public_http_url(
 
     current = _validate_public_http_url(url)
     opener = urllib.request.build_opener(_NoRedirectHandler())
-    request_headers = headers or {"User-Agent": "Mozilla/5.0 (Kynvoq Agent)"}
+    request_headers = headers or {"User-Agent": "Mozilla/5.0 (Orynn Agent)"}
     for _ in range(6):
         req = urllib.request.Request(current, headers=request_headers)
         try:
@@ -1023,7 +1023,7 @@ class ToolExecutor:
     def notify(self, message: str):
         try:
             from plyer import notification
-            notification.notify(title="Kynvoq", message=message, timeout=5)
+            notification.notify(title="Orynn", message=message, timeout=5)
             return ToolResult(ok=True, output="Notification sent")
         except ImportError:
             return ToolResult(ok=False, output="plyer not installed")

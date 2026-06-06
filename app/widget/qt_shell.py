@@ -3,7 +3,7 @@
 QtWebEngine (like WebView2) cannot render a transparent background on
 Windows — Chromium's compositor surface is opaque. So the floating widget
 is built from *native* Qt widgets, which DO support per-pixel window
-transparency + Windows Acrylic. It funnels tasks to the local Kynvoq
+transparency + Windows Acrylic. It funnels tasks to the local Orynn
 server over HTTP.
 
 Launched by `run_desktop.py` (default mode).
@@ -174,7 +174,7 @@ RECIPES = [
             "Research the topic below across at least 6 reputable web sources. "
             "Use web_search and web_fetch tools. Build a Markdown brief with: "
             "TL;DR (3 bullets), Key facts (5-10), Source links. Save the brief "
-            "to %USERPROFILE%/Documents/Kynvoq_Briefs/<slug>.md and open "
+            "to %USERPROFILE%/Documents/Orynn_Briefs/<slug>.md and open "
             "it in Notepad.\n\nTopic: "),
         "mode": "computer_use",
         "verb": "Researching",
@@ -230,7 +230,7 @@ RECIPES = [
             "screenshot, identify the repeating items, and extract each into "
             "a row with columns: title, subtitle, link, any visible price or "
             "metric. Scroll once to capture more rows if obvious. Save as "
-            "%USERPROFILE%\\Documents\\Kynvoq_Scrapes\\<timestamp>.csv "
+            "%USERPROFILE%\\Documents\\Orynn_Scrapes\\<timestamp>.csv "
             "and report the row count."),
         "mode": "computer",
         "verb": "Scraping",
@@ -1895,11 +1895,11 @@ def main(port: int = 8000) -> int:
 
         def __init__(self) -> None:
             super().__init__()
-            self.setWindowTitle("Kynvoq Sidekick")
+            self.setWindowTitle("Orynn Sidekick")
             flags = Qt.FramelessWindowHint
-            if (os.getenv("KYNVOQ_TOOL_WINDOW") or os.getenv("AI_COMPUTER_TOOL_WINDOW", "1")).lower() not in {"0", "false", "no"}:
+            if (os.getenv("ORYNN_TOOL_WINDOW") or os.getenv("AI_COMPUTER_TOOL_WINDOW", "1")).lower() not in {"0", "false", "no"}:
                 flags |= Qt.Tool
-            if (os.getenv("KYNVOQ_TOPMOST") or os.getenv("AI_COMPUTER_TOPMOST", "1")).lower() not in {"0", "false", "no"}:
+            if (os.getenv("ORYNN_TOPMOST") or os.getenv("AI_COMPUTER_TOPMOST", "1")).lower() not in {"0", "false", "no"}:
                 flags |= Qt.WindowStaysOnTopHint
             self.setWindowFlags(flags)
             self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -3072,7 +3072,7 @@ def main(port: int = 8000) -> int:
             self.input.setPlaceholderText(
                 "Paste your free OpenRouter key, then press Enter…")
             self._spawn_widget({
-                "title": "Welcome to Kynvoq",
+                "title": "Welcome to Orynn",
                 "icon": "sparkles",
                 "text": ("Let's get you set up. Paste a free OpenRouter API key "
                          "below and press Enter — that's it.\n\n"
@@ -4520,7 +4520,7 @@ def main(port: int = 8000) -> int:
         _tp.drawLine(16, 21, 16, 23)
         _tp.end()
         tray = QSystemTrayIcon(_QIcon(tray_pm))
-        tray.setToolTip("Kynvoq — click to toggle")
+        tray.setToolTip("Orynn — click to toggle")
         menu = QMenu()
         act_show = QAction("Show / Hide capsule", menu)
         act_show.triggered.connect(on_toggle)
@@ -4565,7 +4565,7 @@ def main(port: int = 8000) -> int:
         menu.addAction(act_autostart)
 
         menu.addSeparator()
-        act_quit = QAction("Quit Kynvoq", menu)
+        act_quit = QAction("Quit Orynn", menu)
         act_quit.triggered.connect(app.quit)
         menu.addAction(act_quit)
         tray.setContextMenu(menu)
@@ -4589,4 +4589,4 @@ def main(port: int = 8000) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(int(os.getenv("KYNVOQ_PORT") or os.getenv("AI_COMPUTER_PORT", "8000"))))
+    sys.exit(main(int(os.getenv("ORYNN_PORT") or os.getenv("AI_COMPUTER_PORT", "8000"))))

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-echo "Starting Kynvoq..."
+echo "Starting Orynn..."
 echo "Open http://localhost:8080 in your browser."
 echo "Press Ctrl+C to stop."
 echo ""

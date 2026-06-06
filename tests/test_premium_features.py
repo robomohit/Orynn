@@ -7,17 +7,17 @@ def test_project_rules_and_workflow_expansion(tmp_path):
     from app.premium_features import discover_project_rules, expand_workflow_goal
 
     (tmp_path / "AGENTS.md").write_text("Use pytest and keep changes small.", encoding="utf-8")
-    rules_dir = tmp_path / ".kynvoq" / "rules"
+    rules_dir = tmp_path / ".orynn" / "rules"
     rules_dir.mkdir(parents=True)
     (rules_dir / "ui.md").write_text("UI controls must be accessible.", encoding="utf-8")
-    workflows = tmp_path / ".kynvoq" / "workflows"
+    workflows = tmp_path / ".orynn" / "workflows"
     workflows.mkdir(parents=True)
     (workflows / "ship.md").write_text("Run tests, summarize risk, prepare rollback.", encoding="utf-8")
 
     rules = discover_project_rules(tmp_path)
     assert "AGENTS.md" in rules
     assert "Use pytest" in rules
-    assert ".kynvoq" in rules
+    assert ".orynn" in rules
 
     expanded = expand_workflow_goal("/ship finish the feature", tmp_path)
     assert "finish the feature" in expanded
@@ -37,8 +37,8 @@ def test_preflight_plan_is_local_and_mode_aware():
 def test_hooks_run_from_local_config(tmp_path):
     from app.premium_features import run_task_hooks
 
-    (tmp_path / ".kynvoq").mkdir()
-    (tmp_path / ".kynvoq" / "hooks.json").write_text(
+    (tmp_path / ".orynn").mkdir()
+    (tmp_path / ".orynn" / "hooks.json").write_text(
         json.dumps({"task_done": [{"name": "echo", "command": "python -c \"print('hook ok')\""}]}),
         encoding="utf-8",
     )

@@ -217,7 +217,7 @@ async def start_telegram(agent_service: "AgentService", submit_task: Any | None 
     async def _handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if update.message:
             await update.message.reply_text(
-                "Hi! I'm Kynvoq. Send me a task and I'll get to work."
+                "Hi! I'm Orynn. Send me a task and I'll get to work."
             )
 
     app = Application.builder().token(token).build()

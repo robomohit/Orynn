@@ -2,7 +2,7 @@
 """Clean common orphan processes and print a small RAM snapshot.
 
 This is intentionally conservative: it targets development/test leftovers for
-Kynvoq only (server, pytest, and browser automation children) and avoids
+Orynn only (server, pytest, and browser automation children) and avoids
 matching the current Python process.
 """
 

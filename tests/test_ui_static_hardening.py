@@ -72,8 +72,8 @@ def test_plan_mermaid_graph_escapes_model_provided_labels():
 def test_mode_selection_is_persisted_client_side():
     html = _read_all_static()
 
-    assert "localStorage.setItem('kynvoq_mode'" in html
-    assert "localStorage.getItem('kynvoq_mode')" in html
+    assert "localStorage.setItem('orynn_mode'" in html
+    assert "localStorage.getItem('orynn_mode')" in html
     assert "localStorage.getItem('ai_computer_mode')" in html
 
 
@@ -526,7 +526,7 @@ def test_desktop_launcher_has_frameless_widget_mode():
     # the Qt shell is a frameless, translucent, always-on-top capsule built
     # from NATIVE Qt widgets (QtWebEngine can't render transparent on Windows)
     # — it funnels tasks to the local server over HTTP.
-    assert "Kynvoq Sidekick" in qt_shell
+    assert "Orynn Sidekick" in qt_shell
     assert "/api/tasks" in qt_shell
     assert "FramelessWindowHint" in qt_shell
     assert "WindowStaysOnTopHint" in qt_shell
@@ -536,8 +536,8 @@ def test_desktop_launcher_has_frameless_widget_mode():
     assert "readiness_preflight_warning" in qt_shell
     assert "Capability fallback" in qt_shell
     assert "Setup needed before this task can run." in qt_shell
-    assert "KYNVOQ_TOPMOST" in qt_shell
-    assert "KYNVOQ_TOOL_WINDOW" in qt_shell
+    assert "ORYNN_TOPMOST" in qt_shell
+    assert "ORYNN_TOOL_WINDOW" in qt_shell
     assert "WA_TranslucentBackground" in qt_shell
     assert "_apply_pill_glass" in qt_shell
     assert "context_bar" in qt_shell
@@ -761,7 +761,7 @@ def test_focused_dashboard_idle_state_is_minimal():
     css = (_STATIC / "dynamic.css").read_text(encoding="utf-8")
     glass = (_STATIC / "liquid-glass.css").read_text(encoding="utf-8")
 
-    assert 'placeholder="Message Kynvoq"' in html
+    assert 'placeholder="Message Orynn"' in html
     assert 'rows="1"' in html
     assert "body:not(.task-active) .welcome p" in css
     assert "display: none;" in css

@@ -1,4 +1,4 @@
-"""Native always-on-top floating shell for the Kynvoq voice widget.
+"""Native always-on-top floating shell for the Orynn voice widget.
 
 Runs the FastAPI server as a subprocess and opens a frameless, always-on-top
 pywebview window pointing at /?widget=1 — so the liquid-glass widget hovers
@@ -83,7 +83,7 @@ def run(port: int, manage_server: bool, width: int, height: int) -> int:
         import webview  # pywebview
     except ImportError:
         print(
-            "[Kynvoq Shell] pywebview is not installed.\n"
+            "[Orynn Shell] pywebview is not installed.\n"
             "  Install with:  pip install pywebview\n"
             "  (Windows uses Edge WebView2 — already present on Win10/11.)",
             file=sys.stderr,
@@ -97,7 +97,7 @@ def run(port: int, manage_server: bool, width: int, height: int) -> int:
             server_proc = _spawn_server(port)
             if not _wait_for_server(f"http://127.0.0.1:{port}/healthz", timeout=30.0):
                 print(
-                    f"[Kynvoq Shell] Server on 127.0.0.1:{port} did not "
+                    f"[Orynn Shell] Server on 127.0.0.1:{port} did not "
                     f"become ready within 30s. Aborting.",
                     file=sys.stderr,
                 )
@@ -107,7 +107,7 @@ def run(port: int, manage_server: bool, width: int, height: int) -> int:
     else:
         if not _wait_for_server(f"http://127.0.0.1:{port}/healthz", timeout=2.0):
             print(
-                f"[Kynvoq Shell] No server answering on 127.0.0.1:{port}. "
+                f"[Orynn Shell] No server answering on 127.0.0.1:{port}. "
                 f"Either drop --no-server, or start uvicorn first.",
                 file=sys.stderr,
             )
@@ -115,7 +115,7 @@ def run(port: int, manage_server: bool, width: int, height: int) -> int:
 
     api = _ShellApi()
     api.window = webview.create_window(
-        title="Kynvoq",
+        title="Orynn",
         url=f"http://127.0.0.1:{port}/?widget=1",
         width=width,
         height=height,
@@ -141,9 +141,9 @@ def run(port: int, manage_server: bool, width: int, height: int) -> int:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="app.shell",
-        description="Launch the Kynvoq voice widget as an always-on-top floating window.",
+        description="Launch the Orynn voice widget as an always-on-top floating window.",
     )
-    parser.add_argument("--port", type=int, default=int(os.environ.get("KYNVOQ_PORT") or os.environ.get("AI_COMPUTER_PORT", "8765")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("ORYNN_PORT") or os.environ.get("AI_COMPUTER_PORT", "8765")))
     parser.add_argument("--no-server", action="store_true",
                         help="Don't start uvicorn; assume the server is already running.")
     parser.add_argument("--width", type=int, default=520)

@@ -11,7 +11,7 @@ def _config_home() -> Path:
 def _key_file_candidates() -> list[Path]:
     base = _config_home()
     return [
-        base / "kynvoq" / ".api_key",
+        base / "orynn" / ".api_key",
         base / "ai_computer" / ".api_key",
     ]
 
@@ -20,7 +20,7 @@ def local_api_key() -> str:
     """Return the local API key used by the backend, without generating one."""
     env_key = (
         os.environ.get("AGENT_API_KEY")
-        or os.environ.get("KYNVOQ_API_KEY")
+        or os.environ.get("ORYNN_API_KEY")
         or os.environ.get("AI_COMPUTER_API_KEY")
     )
     if env_key:

@@ -1,6 +1,6 @@
 # Security Policy
 
-Kynvoq can read local context, call LLM providers, run code, browse the web,
+Orynn can read local context, call LLM providers, run code, browse the web,
 and, on Windows, control desktop applications through UI Automation. Treat it as
 powerful local automation software, not as a sandbox boundary.
 
@@ -38,7 +38,7 @@ fix, and disclosure timing based on severity.
 ## Untrusted Web Content
 
 Agentic browser and desktop tools must treat web pages, search snippets, and
-accessibility trees as untrusted data. Kynvoq wraps fetched web content with
+accessibility trees as untrusted data. Orynn wraps fetched web content with
 an explicit untrusted-content boundary before passing it to the model, and the
 test suite covers that behavior. Still, users should avoid approving sensitive
 actions that are justified only by instructions found on a web page, email,

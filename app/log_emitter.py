@@ -28,7 +28,7 @@ class LogEmitter:
         self._offsets: Dict[str, List[int]] = {}
         # Honour the same workspace override as main.py so test runs keep their
         # task logs in an isolated tmp dir instead of leaking into ./workspace/logs.
-        workspace = os.environ.get("KYNVOQ_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")
+        workspace = os.environ.get("ORYNN_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")
         self.log_dir = Path(workspace) / "workspace" / "logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         # Single-worker pool for disk writes so emit() never blocks the

@@ -94,7 +94,7 @@ class MCPServer:
         await self.call("initialize", {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "kynvoq", "version": "1.0.0"},
+            "clientInfo": {"name": "orynn", "version": "1.0.0"},
         })
         await self.notify("notifications/initialized", {})
         res = await self.call("tools/list", {})
@@ -275,7 +275,7 @@ class MCPManager:
 
     def _definition_paths(self, workspace_path: str) -> List[Path]:
         candidates: List[Path] = []
-        env_path = os.environ.get("KYNVOQ_MCP_CONFIG") or os.environ.get("AI_COMPUTER_MCP_CONFIG")
+        env_path = os.environ.get("ORYNN_MCP_CONFIG") or os.environ.get("AI_COMPUTER_MCP_CONFIG")
         if env_path:
             candidates.append(Path(env_path).expanduser())
 

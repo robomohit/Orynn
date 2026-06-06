@@ -1,6 +1,6 @@
 """Pluggable coding backends.
 
-Kynvoq runs on cheap/free orchestration models. Those are weak at real
+Orynn runs on cheap/free orchestration models. Those are weak at real
 coding, so coding-heavy subtasks can be delegated to a stronger backend the
 user has connected — e.g. the Claude Code CLI.
 
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Where user-declared backends live. Mirrors the .acpxrc.json shape.
-DEFAULT_CONFIG_PATH = Path.home() / ".kynvoq" / "backends.json"
+DEFAULT_CONFIG_PATH = Path.home() / ".orynn" / "backends.json"
 LEGACY_CONFIG_PATH = Path.home() / ".aicomputer" / "backends.json"
 
 # A coding brief can run long (multi-file edits + tests). Hard ceiling.

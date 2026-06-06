@@ -6,17 +6,17 @@ import os
 import sys
 from app.main import app
 
-PORT = int(os.getenv("KYNVOQ_PORT") or os.getenv("AI_COMPUTER_PORT", "8000"))
+PORT = int(os.getenv("ORYNN_PORT") or os.getenv("AI_COMPUTER_PORT", "8000"))
 
 
 def run_server(port: int):
     # Run FastAPI server on a background thread
-    # Defaults to 8000; KYNVOQ_PORT can override it for local testing.
+    # Defaults to 8000; ORYNN_PORT can override it for local testing.
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error")
 
 
 def _server_healthy(port: int, timeout: float = 0.7) -> bool:
-    """True only when Kynvoq is actually serving HTTP on this port."""
+    """True only when Orynn is actually serving HTTP on this port."""
     import urllib.request
     try:
         with urllib.request.urlopen(
@@ -77,7 +77,7 @@ def _start_backend(preferred_port: int) -> int:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Launch Kynvoq desktop shell.")
+    parser = argparse.ArgumentParser(description="Launch Orynn desktop shell.")
     parser.add_argument(
         "--dashboard",
         action="store_true",
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         # Acrylic, so the glass capsule genuinely blurs the desktop behind
         # it. (WebView2/pywebview cannot do reliable window transparency.)
         from app.widget.qt_shell import main as qt_widget_main
-        print("[Desktop] Kynvoq Sidekick (Qt shell) is launching...")
+        print("[Desktop] Orynn Sidekick (Qt shell) is launching...")
         sys.exit(qt_widget_main(port))
 
     # Full dashboard (pywebview)
@@ -118,13 +118,13 @@ if __name__ == "__main__":
     icon_path = next(
         (
             os.path.join(root_dir, name)
-            for name in ("kynvoq_app_icon.png", "app_icon.ico")
+            for name in ("orynn_app_icon.png", "app_icon.ico")
             if os.path.exists(os.path.join(root_dir, name))
         ),
         None,
     )
     window = webview.create_window(
-        "Kynvoq",
+        "Orynn",
         f"http://127.0.0.1:{port}",
         js_api=bridge,
         width=1400,
@@ -142,5 +142,5 @@ if __name__ == "__main__":
     def bind_bridge(main_window, desktop_bridge):
         desktop_bridge.bind_window(main_window)
 
-    print("[Desktop] Kynvoq is launching...")
+    print("[Desktop] Orynn is launching...")
     webview.start(bind_bridge, args=(window, bridge), icon=icon_path)

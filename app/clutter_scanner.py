@@ -139,7 +139,7 @@ def _save_trash_manifest(items: list[dict]) -> None:
 
 
 def delete_files(file_paths: list[str], *, permanent: bool = False) -> dict:
-    """Move files to Kynvoq's local trash by default.
+    """Move files to Orynn's local trash by default.
 
     Permanent deletion remains available only when explicitly requested by
     backend callers. The API endpoint defaults to the reversible path.
@@ -168,7 +168,7 @@ def delete_files(file_paths: list[str], *, permanent: bool = False) -> dict:
             src_resolved = src.resolve()
             trash_resolved = _trash_root().resolve()
             if src_resolved == trash_resolved or trash_resolved in src_resolved.parents:
-                errors.append({"path": path, "error": "Path is already in Kynvoq trash"})
+                errors.append({"path": path, "error": "Path is already in Orynn trash"})
                 continue
 
             batch_dir.mkdir(parents=True, exist_ok=True)
@@ -225,14 +225,14 @@ def restore_trashed(items: list[dict | str]) -> dict:
             errors.append({"item": item, "error": "Missing trash_path"})
             continue
         if not manifest_entry or not original:
-            errors.append({"trash_path": trash_path, "error": "Trash item is not in Kynvoq trash manifest"})
+            errors.append({"trash_path": trash_path, "error": "Trash item is not in Orynn trash manifest"})
             continue
 
         try:
             src = Path(trash_path)
             src_resolved = src.resolve()
             if src_resolved == trash_root or trash_root not in src_resolved.parents:
-                errors.append({"trash_path": trash_path, "error": "Trash item is outside Kynvoq trash"})
+                errors.append({"trash_path": trash_path, "error": "Trash item is outside Orynn trash"})
                 continue
             if not src.exists():
                 errors.append({"trash_path": trash_path, "error": "Trash item does not exist"})

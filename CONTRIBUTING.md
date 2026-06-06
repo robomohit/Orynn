@@ -1,4 +1,4 @@
-# Contributing to Kynvoq
+# Contributing to Orynn
 
 Thanks for your interest! This is a **source-available** project under the
 [PolyForm Noncommercial](LICENSE) license - you are welcome to read, learn from,
@@ -7,8 +7,8 @@ fix, and extend it for any noncommercial purpose.
 ## Getting set up
 
 ```bash
-git clone https://github.com/robomohit/Kynvoq.git
-cd Kynvoq
+git clone https://github.com/robomohit/Orynn.git
+cd Orynn
 setup.bat            # Windows  (setup.sh on macOS/Linux)
 ```
 

@@ -1,5 +1,5 @@
 @echo off
-echo Starting Kynvoq - Dashboard (native desktop window)...
+echo Starting Orynn - Dashboard (native desktop window)...
 echo Close the window to quit.
 echo.
 python run_desktop.py --dashboard

@@ -409,7 +409,7 @@ class DynamicWidget(CapsuleCard):
         lay.setSpacing(0)
 
         # ── Header: icon + title + subtitle + dismiss ──
-        title_text = s.get("title", "Kynvoq")
+        title_text = s.get("title", "Orynn")
         subtitle_text = s.get("subtitle", "")
         icon_name = s.get("icon", "sparkles")
 

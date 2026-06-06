@@ -14,7 +14,7 @@ _LOCKS_GUARD = threading.Lock()
 
 
 def workspace_state_path(filename: str) -> Path:
-    base = Path(os.environ.get("KYNVOQ_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")).resolve()
+    base = Path(os.environ.get("ORYNN_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", ".")).resolve()
     return base / filename
 
 

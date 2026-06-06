@@ -279,9 +279,9 @@ class DesktopBridge:
         if not self._main_window:
             return
         if task_title:
-            self._main_window.set_title(f"Kynvoq - Desktop Control - {task_title[:48]}")
+            self._main_window.set_title(f"Orynn - Desktop Control - {task_title[:48]}")
         else:
-            self._main_window.set_title("Kynvoq - Desktop Control")
+            self._main_window.set_title("Orynn - Desktop Control")
 
     def _exit_companion(self) -> None:
         if not self._main_window:
@@ -291,7 +291,7 @@ class DesktopBridge:
         snapshot = self._snapshot
         self._snapshot = None
         self._companion_active = False
-        self._main_window.set_title("Kynvoq - Codex Dashboard")
+        self._main_window.set_title("Orynn - Codex Dashboard")
 
         if not snapshot:
             self._main_window.on_top = False

@@ -984,7 +984,7 @@
     const banner = $('desktop-control-banner');
     if (!banner) return;
     banner.classList.toggle('show', !!active && isDesktopMode(mode));
-    $('desktop-control-title').textContent = active ? 'Kynvoq is using your computer' : 'Desktop control inactive';
+    $('desktop-control-title').textContent = active ? 'Orynn is using your computer' : 'Desktop control inactive';
     renderDesktopControlDetail(mode, isolatedApp);
   };
 
@@ -994,16 +994,16 @@
     const fullDesktop = mode === 'computer';
     $('desktop-access-title').textContent = fullDesktop ? 'Allow full desktop control?' : `Allow control of ${isolatedApp || 'selected app'}?`;
     $('desktop-access-reason').textContent = fullDesktop
-      ? 'Kynvoq will be able to see the desktop and use mouse, keyboard, screenshots, and windows during this task.'
-      : `Kynvoq will lock control to ${isolatedApp || 'the selected app'} where possible and use screenshots, focus, and keyboard input for this task.`;
+      ? 'Orynn will be able to see the desktop and use mouse, keyboard, screenshots, and windows during this task.'
+      : `Orynn will lock control to ${isolatedApp || 'the selected app'} where possible and use screenshots, focus, and keyboard input for this task.`;
     const rows = fullDesktop
       ? [
-          ['Desktop screen', 'Visible to Kynvoq during this session', 'Full control'],
+          ['Desktop screen', 'Visible to Orynn during this session', 'Full control'],
           ['Mouse and keyboard', 'Can click, type, and use shortcuts while the task runs', 'Full control'],
           ['Other windows', 'May be visible in screenshots unless you use isolated mode', 'Visible']
         ]
       : [
-          [isolatedApp || 'Target app', 'Primary app Kynvoq may view and control', 'Full control'],
+          [isolatedApp || 'Target app', 'Primary app Orynn may view and control', 'Full control'],
           ['Other windows', 'Not targeted; may only appear if Windows focus changes', 'Limited'],
           ['Stop control', 'Pause or cancel from the top bar at any time', 'Available']
         ];
@@ -2220,7 +2220,7 @@
       ],
       bars: [34, 44, 28, 61, 48, 76, 45, 58, 37, 64, 42, 52],
       processes: [
-        { title: 'python.exe', subtitle: 'Kynvoq server', meta: '418 MB', action: 'Keep' },
+        { title: 'python.exe', subtitle: 'Orynn server', meta: '418 MB', action: 'Keep' },
         { title: 'msedgewebview2.exe', subtitle: 'background webview', meta: '311 MB', action: 'Kill', intent: 'danger' },
         { title: 'Code.exe', subtitle: 'extension host', meta: '268 MB', action: 'Inspect' }
       ]
@@ -3662,7 +3662,7 @@
     await delay(500);
     processTaskEvent({ type: 'action_start', action_id: 'a1', action_type: 'write_file', args_summary: 'app/main.py · 42 lines' });
     await delay(800);
-    processTaskEvent({ type: 'file_change', action: 'write_file', path: 'app/main.py', content: 'from fastapi import FastAPI\nfrom .router import api\n\napp = FastAPI(title="Kynvoq")\napp.include_router(api, prefix="/api")\n' });
+    processTaskEvent({ type: 'file_change', action: 'write_file', path: 'app/main.py', content: 'from fastapi import FastAPI\nfrom .router import api\n\napp = FastAPI(title="Orynn")\napp.include_router(api, prefix="/api")\n' });
     processTaskEvent({ type: 'action_result', action_id: 'a1', action_type: 'write_file', ok: true, args_summary: 'app/main.py · wrote 42 lines' });
 
     await delay(400);
@@ -3765,7 +3765,7 @@
     syncTweaks();
     bindExamples();
     hydrateModelSelect();
-    const _savedMode = localStorage.getItem('kynvoq_mode') || localStorage.getItem('ai_computer_mode');
+    const _savedMode = localStorage.getItem('orynn_mode') || localStorage.getItem('ai_computer_mode');
     const _modeSelect = $('mode-id');
     if (_savedMode && _modeSelect && Array.from(_modeSelect.options).some((o) => o.value === _savedMode)) {
       _modeSelect.value = _savedMode;
@@ -4343,7 +4343,7 @@
   $('mode-id').onchange = (e) => {
     const val = e.target.value;
     const isolatedApp = ($('isolated-app-id').value || '').trim();
-    localStorage.setItem('kynvoq_mode', val);
+    localStorage.setItem('orynn_mode', val);
     localStorage.removeItem('ai_computer_mode');
     setMode(val, val === 'computer_isolated', isolatedApp);
     $('isolated-app-wrap').style.display = (val === 'computer_isolated') ? '' : 'none';

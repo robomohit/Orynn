@@ -37,18 +37,18 @@ def _config_home() -> Path:
 def _load_or_create_api_key() -> str:
     if existing_key := local_api_key():
         return existing_key
-    config_dir = _config_home() / "kynvoq"
+    config_dir = _config_home() / "orynn"
     key_file = config_dir / ".api_key"
     config_dir.mkdir(parents=True, exist_ok=True)
     new_key = secrets.token_hex(32)
     key_file.write_text(new_key)
     key_file.chmod(0o600)
-    print(f"[Kynvoq] Generated new API key, saved to {key_file}", flush=True)
+    print(f"[Orynn] Generated new API key, saved to {key_file}", flush=True)
     return new_key
 
 API_KEY = _load_or_create_api_key()
-print(f"[Kynvoq] Agent API key configured: {bool(API_KEY)}", flush=True)
-SESSION_COOKIE_NAME = "kynvoq_session"
+print(f"[Orynn] Agent API key configured: {bool(API_KEY)}", flush=True)
+SESSION_COOKIE_NAME = "orynn_session"
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "43200"))
 _sessions: Dict[str, datetime] = {}
 
@@ -114,7 +114,7 @@ async def _lifespan(application):
                 pass
     await service.shutdown()
 
-app = FastAPI(title="Kynvoq", lifespan=_lifespan)
+app = FastAPI(title="Orynn", lifespan=_lifespan)
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -214,7 +214,7 @@ async def organize_capsule_files(request: Request):
 
 @app.post("/api/capsule/delete")
 async def delete_capsule_files(request: Request):
-    """Move selected files to Kynvoq's local trash."""
+    """Move selected files to Orynn's local trash."""
     await verify_token(request, None)
     from .clutter_scanner import delete_files
     body = await request.json()
@@ -231,7 +231,7 @@ async def delete_capsule_files(request: Request):
 
 @app.post("/api/capsule/restore-delete")
 async def restore_capsule_files(request: Request):
-    """Restore files that were moved to Kynvoq's local trash."""
+    """Restore files that were moved to Orynn's local trash."""
     await verify_token(request, None)
     from .clutter_scanner import restore_trashed
     body = await request.json()
@@ -298,10 +298,10 @@ async def verify_token(request: Request, credentials: HTTPAuthorizationCredentia
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 # Workspace root for runtime state (tasks/, logs/). Defaults to the CWD in
-# production; tests can point KYNVOQ_WORKSPACE (or legacy
+# production; tests can point ORYNN_WORKSPACE (or legacy
 # AI_COMPUTER_WORKSPACE) at a tmp dir so task records and logs never leak into
 # the real ./tasks directory.
-workspace_dir = Path(os.environ.get("KYNVOQ_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", "."))
+workspace_dir = Path(os.environ.get("ORYNN_WORKSPACE") or os.environ.get("AI_COMPUTER_WORKSPACE", "."))
 workspace_dir.mkdir(parents=True, exist_ok=True)
 (workspace_dir / "logs").mkdir(parents=True, exist_ok=True)
 task_store_dir = workspace_dir / "tasks"
@@ -381,7 +381,7 @@ def _cleanup_orphan_tmp_files() -> int:
 
 _orphans_removed = _cleanup_orphan_tmp_files()
 if _orphans_removed:
-    print(f"[Kynvoq] Cleaned up {_orphans_removed} orphaned task tmp file(s).", flush=True)
+    print(f"[Orynn] Cleaned up {_orphans_removed} orphaned task tmp file(s).", flush=True)
 
 service = AgentService(workspace_dir, log_emitter=log_emitter)
 
@@ -470,7 +470,7 @@ def _load_persisted_tasks() -> Dict[str, TaskRecord]:
         try:
             record = TaskRecord.model_validate(json.loads(meta_file.read_text(encoding="utf-8")))
         except Exception as exc:
-            print(f"[Kynvoq] Skipped malformed task record {meta_file.name}: {exc}", flush=True)
+            print(f"[Orynn] Skipped malformed task record {meta_file.name}: {exc}", flush=True)
             continue
 
         if record.status in {"running", "paused", "pending"}:
@@ -494,7 +494,7 @@ def _load_persisted_tasks() -> Dict[str, TaskRecord]:
     # Defensive cap: never load an unbounded history into memory (and into the
     # sidebar). Keep the most recent records so startup stays fast even if the
     # tasks/ dir has accumulated thousands of files.
-    max_persisted = int(os.environ.get("KYNVOQ_MAX_PERSISTED_TASKS") or os.environ.get("AI_COMPUTER_MAX_PERSISTED_TASKS", "250"))
+    max_persisted = int(os.environ.get("ORYNN_MAX_PERSISTED_TASKS") or os.environ.get("AI_COMPUTER_MAX_PERSISTED_TASKS", "250"))
     if len(result) > max_persisted:
         newest = sorted(result.values(), key=lambda r: r.created_at or "", reverse=True)[:max_persisted]
         result = {r.id: r for r in newest}
@@ -538,7 +538,7 @@ def _serialize_task_record(record: TaskRecord) -> dict:
 _tasks = _load_persisted_tasks()
 
 _MAX_IN_MEMORY_TASKS = 200  # keep at most this many completed tasks in _tasks dict
-_MAX_ACTIVE_TASKS = int(os.environ.get("KYNVOQ_MAX_ACTIVE_TASKS") or os.environ.get("AI_COMPUTER_MAX_ACTIVE_TASKS", "5"))
+_MAX_ACTIVE_TASKS = int(os.environ.get("ORYNN_MAX_ACTIVE_TASKS") or os.environ.get("AI_COMPUTER_MAX_ACTIVE_TASKS", "5"))
 _queued_task_specs: List[Dict[str, Any]] = []
 
 

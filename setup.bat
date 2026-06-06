@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo  ============================================
-echo    Kynvoq - Setup
+echo    Orynn - Setup
 echo  ============================================
 echo.
 

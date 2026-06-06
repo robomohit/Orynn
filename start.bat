@@ -1,5 +1,5 @@
 @echo off
-echo Starting Kynvoq (floating capsule)...
+echo Starting Orynn (floating capsule)...
 echo Press Ctrl+Shift+Space to show/hide it. Close this window to quit.
 echo.
 python run_desktop.py

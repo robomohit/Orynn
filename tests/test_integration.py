@@ -15,7 +15,7 @@ import uuid
 import httpx
 import pytest
 
-BASE = os.environ.get("KYNVOQ_INTEGRATION_BASE") or os.environ.get("AI_COMPUTER_INTEGRATION_BASE", "http://127.0.0.1:8080")
+BASE = os.environ.get("ORYNN_INTEGRATION_BASE") or os.environ.get("AI_COMPUTER_INTEGRATION_BASE", "http://127.0.0.1:8080")
 API_KEY: str | None = None
 
 
@@ -153,7 +153,7 @@ def main() -> None:
     API_KEY = sys.argv[1] if len(sys.argv) > 1 else input("Paste your AGENT_API_KEY: ").strip()
 
     print("=" * 60)
-    print("Kynvoq - Integration Test Suite")
+    print("Orynn - Integration Test Suite")
     print("=" * 60)
 
     run_test_health()

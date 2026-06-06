@@ -7,10 +7,10 @@ import os
 
 def test_orphan_tmp_files_removed_on_startup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    # app.main resolves task_store_dir from KYNVOQ_WORKSPACE (set session-wide
+    # app.main resolves task_store_dir from ORYNN_WORKSPACE (set session-wide
     # in conftest); point it at this test's tmp_path so the orphan we plant below
     # is the one startup cleanup scans.
-    monkeypatch.setenv("KYNVOQ_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("ORYNN_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("AGENT_API_KEY", "token123")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
 

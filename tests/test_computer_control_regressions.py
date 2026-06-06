@@ -1342,7 +1342,7 @@ async def test_xml_stream_normalizes_tool_history_for_openrouter(monkeypatch):
         {"role": "assistant", "content": "I will open it.", "tool_calls": [
             {"id": "call-1", "type": "function", "function": {"name": "browser_open", "arguments": "{\"url\":\"http://127.0.0.1:8000\"}"}}
         ]},
-        {"role": "tool", "tool_call_id": "call-1", "content": "Opened: http://127.0.0.1:8000/ | Title: Kynvoq · Stream"},
+        {"role": "tool", "tool_call_id": "call-1", "content": "Opened: http://127.0.0.1:8000/ | Title: Orynn · Stream"},
         {"role": "user", "content": "Continue from here."},
     ]
 

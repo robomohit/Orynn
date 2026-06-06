@@ -2,7 +2,7 @@ from app.state_store import read_json, workspace_state_path, write_json
 
 
 def test_state_store_writes_and_reads_json_atomically(monkeypatch, tmp_path):
-    monkeypatch.setenv("KYNVOQ_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("ORYNN_WORKSPACE", str(tmp_path))
     path = workspace_state_path("sample.json")
 
     write_json(path, {"items": [1, 2, 3]})

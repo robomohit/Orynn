@@ -374,7 +374,7 @@ def test_load_or_create_api_key_env_var(monkeypatch, tmp_path):
 def test_load_or_create_api_key_from_file(monkeypatch, tmp_path):
     monkeypatch.delenv("AGENT_API_KEY", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    key_dir = tmp_path / "kynvoq"
+    key_dir = tmp_path / "orynn"
     key_dir.mkdir()
     (key_dir / ".api_key").write_text("filekey456")
     assert _m._load_or_create_api_key() == "filekey456"
@@ -385,7 +385,7 @@ def test_load_or_create_api_key_generates_and_saves(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     key = _m._load_or_create_api_key()
     assert len(key) == 64  # token_hex(32) produces 64 hex chars
-    key_file = tmp_path / "kynvoq" / ".api_key"
+    key_file = tmp_path / "orynn" / ".api_key"
     assert key_file.exists()
     assert key_file.read_text().strip() == key
 

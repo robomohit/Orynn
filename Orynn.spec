@@ -1,10 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller build spec for Kynvoq.
+"""PyInstaller build spec for Orynn.
 
-Produces a self-contained desktop app (dist/Kynvoq/Kynvoq.exe) that
+Produces a self-contained desktop app (dist/Orynn/Orynn.exe) that
 bundles the engine + UI into a runnable Windows desktop app.
 
-Build:  python -m PyInstaller Kynvoq.spec --noconfirm
+Build:  python -m PyInstaller Orynn.spec --noconfirm
 (or just run build.bat)
 
 Notes:
@@ -50,7 +50,7 @@ for _pkg in _COLLECT:
 
 # App icon (optional)
 _icon = None
-for _cand in ("app_icon.ico", "kynvoq_app_icon.png"):
+for _cand in ("app_icon.ico", "orynn_app_icon.png"):
     if os.path.exists(_cand):
         _icon = _cand
         break
@@ -90,7 +90,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Kynvoq",
+    name="Orynn",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -107,5 +107,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="Kynvoq",
+    name="Orynn",
 )

@@ -1,13 +1,13 @@
-# Kynvoq
+# Orynn
 
-[![CI](https://github.com/robomohit/Kynvoq/actions/workflows/ci.yml/badge.svg)](https://github.com/robomohit/Kynvoq/actions/workflows/ci.yml)
+[![CI](https://github.com/robomohit/Orynn/actions/workflows/ci.yml/badge.svg)](https://github.com/robomohit/Orynn/actions/workflows/ci.yml)
 [![License: PolyForm NC](https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-5BE0D0)](LICENSE)
 
 **An autonomous AI agent that controls your computer using plain English.** Give it a goal - it plans, acts, and shows you exactly what it is doing in real time, in a floating glass capsule that sits on top of your desktop.
 
 > Free to run on [OpenRouter](https://openrouter.ai)'s free-tier models (subject to their limits). Coding and browser modes work on Windows, macOS, and Linux; native desktop control is Windows-only.
 
-> **Security note:** Kynvoq is local automation software that can read local
+> **Security note:** Orynn is local automation software that can read local
 > context, call external LLM providers, run code, browse the web, and control
 > desktop apps when you allow it. Do not expose the dashboard to the public
 > internet, never commit `.env`, and review sensitive actions before approval.
@@ -15,7 +15,7 @@
 
 ### What makes it different
 
-Most computer-use agents take a **screenshot every step** and guess pixel coordinates - slow, expensive, and brittle. Kynvoq drives native Windows apps through **UI Automation**: it clicks controls **by name** (no screenshots, no pixel guessing), so it is faster, cheaper, and far more reliable. It only falls back to on-screen-text OCR, then pixels, when a control genuinely is not in the accessibility tree.
+Most computer-use agents take a **screenshot every step** and guess pixel coordinates - slow, expensive, and brittle. Orynn drives native Windows apps through **UI Automation**: it clicks controls **by name** (no screenshots, no pixel guessing), so it is faster, cheaper, and far more reliable. It only falls back to on-screen-text OCR, then pixels, when a control genuinely is not in the accessibility tree.
 
 - **UIA-first desktop control** - drives Notepad, Excel, Word, Discord, Spotify, VS Code, and other Windows apps by control name.
 - **Floating glass capsule** - frameless, translucent, always-on-top; press `Ctrl+Shift+Space` to summon it.
@@ -25,7 +25,7 @@ Most computer-use agents take a **screenshot every step** and guess pixel coordi
 
 ### Privacy and control
 
-Kynvoq is designed for local, inspectable automation rather than a hosted
+Orynn is designed for local, inspectable automation rather than a hosted
 black box. It still calls whichever LLM provider you configure, so read your
 provider's data policy before pasting sensitive data, but the app itself gives
 you these controls:
@@ -58,16 +58,16 @@ you these controls:
 **Windows** - double-click `setup.bat`, or run in terminal:
 
 ```cmd
-git clone https://github.com/robomohit/Kynvoq.git
-cd Kynvoq
+git clone https://github.com/robomohit/Orynn.git
+cd Orynn
 setup.bat
 ```
 
 **Mac / Linux:**
 
 ```bash
-git clone https://github.com/robomohit/Kynvoq.git
-cd Kynvoq
+git clone https://github.com/robomohit/Orynn.git
+cd Orynn
 chmod +x setup.sh && ./setup.sh
 ```
 
