@@ -403,6 +403,7 @@ class ToolExecutor:
         self._isolated_hwnd = None
         self._isolated_app = None
         self._started_pids: set[int] = set()
+        self._plugin_session_id = f"tools-{id(self)}"
 
     @property
     def allowed_roots(self) -> tuple[Path, ...]:
@@ -3113,13 +3114,30 @@ class ToolExecutor:
             if action.type.value in h:
                 try:
                     handler = h[action.type.value]
+                    handler_args = dict(action.args)
+                    if action.type.value.startswith("browser_"):
+                        handler_args.setdefault("session_id", self._plugin_session_id)
                     if asyncio.iscoroutinefunction(handler):
-                        result = await handler(**action.args)
+                        result = await handler(**handler_args)
                     else:
-                        result = await asyncio.to_thread(handler, **action.args)
+                        result = await asyncio.to_thread(handler, **handler_args)
                     return ToolResult(ok=True, output=str(result))
                 except Exception as e:
                     _log.exception("Plugin handler %s failed", action.type.value)
                     return ToolResult(ok=False, output=f"Plugin error: {str(e)}")
 
         return ToolResult(ok=False, output=f"Unknown action type: {action.type}")
+
+    async def close_plugin_sessions(self):
+        if not self.plugin_registry:
+            return
+        handler = self.plugin_registry.handlers().get("browser_close")
+        if not handler:
+            return
+        try:
+            if asyncio.iscoroutinefunction(handler):
+                await handler(session_id=self._plugin_session_id)
+            else:
+                await asyncio.to_thread(handler, session_id=self._plugin_session_id)
+        except Exception:
+            _log.debug("Plugin session cleanup failed", exc_info=True)

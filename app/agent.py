@@ -2596,7 +2596,12 @@ class AgentService:
                     await browser.stop()
                 except Exception:
                     pass
-            self._task_tools.pop(task_id, None)
+            task_tools = self._task_tools.pop(task_id, None)
+            if task_tools is not None:
+                try:
+                    await task_tools.close_plugin_sessions()
+                except Exception:
+                    pass
             # Force a GC cycle so freed screenshot buffers and message history
             # are collected immediately instead of accumulating across tasks
             import gc

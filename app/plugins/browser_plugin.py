@@ -8,89 +8,105 @@ from ..untrusted_content import wrap_untrusted_web_content
 _pw = None
 _browser = None
 _page = None
+_sessions: dict[str, dict] = {}
 
 # Headed by default when BROWSER_HEADED=1 in the env so the user can see
 # the agent driving the browser. Falls back to headless otherwise.
 _DEFAULT_HEADLESS = os.environ.get("BROWSER_HEADED", "").lower() not in ("1", "true", "yes")
 
 
-async def _ensure_browser(headless: Optional[bool] = None):
+async def _ensure_browser(headless: Optional[bool] = None, session_id: str = "default"):
     global _pw, _browser, _page
-    if _browser is None:
+    session = _sessions.get(session_id)
+    if session and session.get("browser") is not None:
+        return session
+    session = {"pw": None, "browser": None, "page": None}
+    _sessions[session_id] = session
+    if session["browser"] is None:
         from playwright.async_api import async_playwright
         try:
-            _pw = await async_playwright().start()
+            session["pw"] = await async_playwright().start()
             use_headless = _DEFAULT_HEADLESS if headless is None else headless
-            _browser = await _pw.chromium.launch(headless=use_headless)
-            _page = await _browser.new_page(viewport={"width": 1280, "height": 800})
+            session["browser"] = await session["pw"].chromium.launch(headless=use_headless)
+            session["page"] = await session["browser"].new_page(viewport={"width": 1280, "height": 800})
+            if session_id == "default":
+                _pw = session["pw"]
+                _browser = session["browser"]
+                _page = session["page"]
         except Exception:
             # Reset all globals so the next call retries from scratch
-            _pw = _browser = _page = None
+            _sessions.pop(session_id, None)
+            if session_id == "default":
+                _pw = _browser = _page = None
             raise
+    return session
 
 
-async def browser_open(url: str, headless: Optional[bool] = None) -> str:
+async def browser_open(url: str, headless: Optional[bool] = None, session_id: str = "default") -> str:
     # Block non-web schemes (file:, javascript:, data:, about:) — they have no
     # legitimate browsing use and are local-file-read / script-injection vectors.
     from urllib.parse import urlsplit
     scheme = (urlsplit(url).scheme or "").lower() if isinstance(url, str) else ""
     if scheme and scheme not in ("http", "https"):
         return f"Blocked URL scheme '{scheme}': only http(s) navigation is allowed."
-    await _ensure_browser(headless)
+    session = await _ensure_browser(headless, session_id=session_id)
+    page = session["page"]
     try:
-        await _page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
     except Exception as e:
         return f"Navigation error: {type(e).__name__}: {str(e)[:200]}"
-    return f"Opened: {_page.url} | Title: {await _page.title()}"
+    return f"Opened: {page.url} | Title: {await page.title()}"
 
 
-async def browser_screenshot() -> str:
-    await _ensure_browser()
-    data = await _page.screenshot(type="png")
+async def browser_screenshot(session_id: str = "default") -> str:
+    session = await _ensure_browser(session_id=session_id)
+    data = await session["page"].screenshot(type="png")
     return base64.b64encode(data).decode("utf-8")
 
 
-async def browser_click(selector: str) -> str:
-    await _ensure_browser()
+async def browser_click(selector: str, session_id: str = "default") -> str:
+    session = await _ensure_browser(session_id=session_id)
     try:
-        await _page.click(selector, timeout=10000)
+        await session["page"].click(selector, timeout=10000)
     except Exception as e:
         return f"Click error on {selector!r}: {type(e).__name__}: {str(e)[:200]}"
     return f"Clicked {selector}"
 
 
-async def browser_click_coords(x: int, y: int) -> str:
-    await _ensure_browser()
-    await _page.mouse.click(x, y)
+async def browser_click_coords(x: int, y: int, session_id: str = "default") -> str:
+    session = await _ensure_browser(session_id=session_id)
+    await session["page"].mouse.click(x, y)
     return f"Clicked coords ({x}, {y})"
 
 
-async def browser_type(selector: str, text: str) -> str:
-    await _ensure_browser()
+async def browser_type(selector: str, text: str, session_id: str = "default") -> str:
+    session = await _ensure_browser(session_id=session_id)
     try:
-        await _page.fill(selector, text, timeout=10000)
+        await session["page"].fill(selector, text, timeout=10000)
     except Exception as e:
         return f"Type error on {selector!r}: {type(e).__name__}: {str(e)[:200]}"
     return f"Typed {len(text)} chars into {selector}"
 
 
-async def browser_scroll(direction: str = "down", amount: int = 500) -> str:
-    await _ensure_browser()
+async def browser_scroll(direction: str = "down", amount: int = 500, session_id: str = "default") -> str:
+    session = await _ensure_browser(session_id=session_id)
+    page = session["page"]
     if direction == "down":
-        await _page.evaluate(f"window.scrollBy(0, {amount})")
+        await page.evaluate(f"window.scrollBy(0, {amount})")
     else:
-        await _page.evaluate(f"window.scrollBy(0, -{amount})")
+        await page.evaluate(f"window.scrollBy(0, -{amount})")
     return f"Scrolled {direction} {amount}px"
 
 
-async def browser_get_text() -> str:
+async def browser_get_text(session_id: str = "default") -> str:
     """Return visible page text (body.innerText). Capped so small models don't choke."""
-    await _ensure_browser()
+    session = await _ensure_browser(session_id=session_id)
+    page = session["page"]
     try:
-        text = await _page.evaluate("document.body ? document.body.innerText : ''")
+        text = await page.evaluate("document.body ? document.body.innerText : ''")
     except Exception as e:
         return f"Error reading text: {e}"
-    url = _page.url
+    url = page.url
     text = (text or "").strip()
     if len(text) > 4000:
         text = text[:4000] + "\n...(truncated)"
@@ -120,19 +136,20 @@ def _flatten_ax_tree(node: dict, depth: int = 0, lines: list | None = None, max_
     return lines
 
 
-async def browser_accessibility_tree() -> str:
+async def browser_accessibility_tree(session_id: str = "default") -> str:
     """Return the page as a compact text outline — the primary 'vision' for free models.
     Compatible with both older Playwright (page.accessibility.snapshot) and newer
     (page.aria_snapshot / ARIA tree via evaluate).
     """
-    await _ensure_browser()
-    url = _page.url
-    title = await _page.title()
+    session = await _ensure_browser(session_id=session_id)
+    page = session["page"]
+    url = page.url
+    title = await page.title()
     snap = None
 
     # Try the modern API first (Playwright >= 1.46)
     try:
-        raw = await _page.aria_snapshot()
+        raw = await page.aria_snapshot()
         if raw:
             lines = raw.splitlines()[:120]
             content = f"URL: {url}\nTitle: {title}\n\n" + "\n".join(lines)
@@ -142,7 +159,7 @@ async def browser_accessibility_tree() -> str:
 
     # Fallback: older page.accessibility.snapshot()
     try:
-        snap = await _page.accessibility.snapshot()  # type: ignore[attr-defined]
+        snap = await page.accessibility.snapshot()  # type: ignore[attr-defined]
     except Exception:
         snap = None
 
@@ -153,7 +170,7 @@ async def browser_accessibility_tree() -> str:
 
     # Last resort: body text
     try:
-        text = await _page.evaluate("document.body ? document.body.innerText : ''")
+        text = await page.evaluate("document.body ? document.body.innerText : ''")
         text = (text or "").strip()[:3000]
     except Exception as e:
         text = f"(Could not read page: {e})"
@@ -161,25 +178,33 @@ async def browser_accessibility_tree() -> str:
     return wrap_untrusted_web_content(content, source=url, kind="browser_accessibility_tree")
 
 
-async def browser_navigate_back() -> str:
-    await _ensure_browser()
-    await _page.go_back()
+async def browser_navigate_back(session_id: str = "default") -> str:
+    session = await _ensure_browser(session_id=session_id)
+    await session["page"].go_back()
     return "Navigated back"
 
 
-async def browser_close() -> str:
+async def browser_close(session_id: str = "default") -> str:
     global _pw, _browser, _page
-    if _browser is not None:
+    session = _sessions.pop(session_id, None)
+    if session is None:
+        if session_id == "default":
+            _pw = _browser = _page = None
+        return "Browser closed"
+    browser = session.get("browser")
+    pw = session.get("pw")
+    if browser is not None:
         try:
-            await _browser.close()
+            await browser.close()
         except Exception:
             pass
-    if _pw is not None:
+    if pw is not None:
         try:
-            await _pw.stop()
+            await pw.stop()
         except Exception:
             pass
-    _pw = _browser = _page = None
+    if session_id == "default":
+        _pw = _browser = _page = None
     return "Browser closed"
 
 
