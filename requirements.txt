@@ -1,0 +1,28 @@
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+python-multipart==0.0.20
+httpx==0.28.1
+jinja2==3.1.6
+mss==10.1.0
+pillow==11.3.0
+pytesseract==0.3.13
+pyautogui>=0.9.54
+playwright>=1.40.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+python-dotenv>=1.0.0
+plyer>=2.1.0
+pyperclip>=1.8.2
+psutil>=5.9.0
+pywin32>=306; platform_system == "Windows"
+# Windows UI Automation - powers the screenshot-free desktop control endpoints
+# (/api/desktop/uia/*) and the capsule's UIA tools. comtypes is its backend.
+uiautomation>=2.0.18; platform_system == "Windows"
+comtypes>=1.2.0; platform_system == "Windows"
+# Windows native OCR (Windows.Media.Ocr) - the local, model-free "OCR fallback"
+# layer when UIA finds no accessible control. No external Tesseract binary.
+winsdk>=1.0.0b10; platform_system == "Windows"
+# Optional messaging integrations - only needed if you set the tokens in .env
+# python-telegram-bot>=21.0  # Uncomment to enable Telegram (TELEGRAM_BOT_TOKEN)
+discord.py>=2.3.0             # Discord bot (DISCORD_BOT_TOKEN in .env)

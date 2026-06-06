@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  ai-computer:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - BEARER_TOKEN=${BEARER_TOKEN}
+      - WORKSPACE_DIR=/app/workspace
+    volumes:
+      - ./workspace:/app/workspace
+    restart: unless-stopped

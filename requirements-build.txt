@@ -1,0 +1,4 @@
+# Tools needed only to BUILD a distributable app (not to run from source).
+# Install with: pip install -r requirements-build.txt
+-r requirements-desktop.txt
+pyinstaller>=6.10

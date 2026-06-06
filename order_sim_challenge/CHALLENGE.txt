@@ -1,0 +1,76 @@
+ORDER SIM CHALLENGE - multi-file, tests, concurrency, I/O
+=========================================================
+
+Goal: Under this folder, produce a small but correct Python package `order_sim`
+(stdlib only - no PyYAML, no third-party deps) that passes all tests in
+`order_sim_challenge/tests/`.
+
+REQUIREMENTS (agent must implement/fix all of this)
+
+1) Package layout (final state)
+   order_sim_challenge/
+     order_sim/
+       __init__.py
+       models.py
+       inventory.py
+       pricing.py
+       checkout.py
+       cli.py          # python -m order_sim.cli --orders <path.json>
+     tests/
+       test_fulfillment.py
+
+2) models.py
+   - @dataclass frozen Order, LineItem(sku: str, qty: int), InventorySku(sku, on_hand: int)
+   - validate: sku non-empty stripped, qty > 0, on_hand >= 0
+   - Order has order_id: str, lines: tuple[LineItem,...]
+
+3) inventory.py - thread-safe reservations
+   - class Inventory:
+       - __init__(self, stock: dict[str, int])  # sku -> on_hand
+       - reserve(self, lines: tuple[LineItem,...]) -> str
+           Returns a reservation token (uuid4 hex). Must hold threading.RLock
+           across check+decrement of available stock so two threads cannot oversell
+           the last unit.
+       - commit(self, token: str) -> None  # reservation consumed (already deducted at reserve)
+       - release(self, token: str) -> None  # restore stock if reserve had deducted optimistically
+     Pick ONE clear strategy (document in docstring):
+       EITHER optimistic reserve (deduct on reserve, restore on release)
+       OR hold soft reservation - but must be correct under concurrency.
+
+4) pricing.py
+   - subtotal(lines, unit_prices: dict[str, int]) -> int  # cents, int only
+   - discount_cents(subtotal_cents: int, line_count: int) -> int
+       1-2 lines: 0
+       3-5 lines: 5% of subtotal, floor to cent
+       6+ lines: 10% of subtotal, floor to cent
+   - tax_cents(taxable_cents: int) -> int  # rate 8.25%, round HALF_UP to nearest cent
+       Use Decimal with ROUND_HALF_UP; no float money math.
+
+5) checkout.py
+   - checkout(order: Order, unit_prices: dict[str, int], inventory: Inventory) -> dict
+       Returns {"subtotal": int, "discount": int, "tax": int, "total": int, "reservation": str}
+       total = subtotal - discount + tax (all cents, all ints)
+       Must reserve before pricing side-effects that assume stock (pricing is pure),
+       commit reservation only after totals computed successfully.
+       On any exception: release reservation and re-raise.
+
+6) cli.py
+   - JSON file format: {"order_id":"o1","lines":[{"sku":"A","qty":2}], "prices":{"A":1000}}
+   - Load order, prices, build Inventory from optional "stock" key defaulting from prices keys with on_hand=100 each unless specified.
+   - Print one JSON line to stdout with totals + reservation token.
+
+7) tests/test_fulfillment.py (agent must make these pass - do not weaken tests)
+   - test_tax_half_up: taxable 3 cents at 8.25% rounds to 0 or 1 correctly per HALF_UP
+   - test_discount_tiers: verify 2 vs 3 vs 6 line boundaries
+   - test_concurrent_last_unit: two threads try to reserve 1 unit each; exactly one succeeds
+   - test_checkout_commits: successful checkout reduces available stock persistently
+
+DELIVERABLE
+-----------
+All tests green:  python -m pytest order_sim_challenge/tests -q
+
+NOTES FOR STRESS
+----------------
+The starter files are intentionally wrong/incomplete. The coding agent should
+replace them with a correct design rather than patch minimally unless minimal
+patch still satisfies tests.

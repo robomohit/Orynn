@@ -1,0 +1,245 @@
+/* ============================================================
+   Liquid Glass - DASHBOARD + WIDGET (#vorb-root / .vcap)
+   Dashboard surfaces, onboarding, modals, and the capsule share this material.
+   Toggle off with: <body data-glass="off">
+   ============================================================ */
+
+:root {
+  --lg-blur: 24px;
+  --lg-saturate: 180%;
+  --lg-tint-dark:  rgba(18, 20, 26, 0.42);
+  --lg-tint-light: rgba(255, 255, 255, 0.38);
+  --lg-border-dark:  rgba(255, 255, 255, 0.14);
+  --lg-border-light: rgba(255, 255, 255, 0.55);
+  --lg-shadow-dark:  0 18px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35);
+  --lg-shadow-light: 0 18px 60px rgba(40,55,80,0.22), 0 2px 8px rgba(40,55,80,0.12);
+  --lg-panel-dark: rgba(18, 19, 24, 0.54);
+  --lg-panel-light: rgba(255, 255, 255, 0.62);
+  --lg-rail-dark: rgba(13, 14, 18, 0.52);
+  --lg-rail-light: rgba(248, 248, 246, 0.72);
+  --lg-hairline-dark: rgba(255, 255, 255, 0.11);
+  --lg-hairline-light: rgba(28, 32, 40, 0.12);
+}
+
+/* ---------- dashboard app surfaces ---------- */
+body[data-glass="on"]:not(.widget-shell) {
+  background: var(--bg-0);
+}
+
+body[data-glass="on"]:not(.widget-shell)::before {
+  display: none;
+  content: none;
+}
+
+body[data-glass="on"]:not(.widget-shell) .titlebar,
+body[data-glass="on"]:not(.widget-shell) .app-shell,
+body[data-glass="on"]:not(.widget-shell) .main,
+body[data-glass="on"]:not(.widget-shell) .composer-wrap {
+  background: transparent;
+}
+
+body[data-glass="on"]:not(.widget-shell) .titlebar {
+  border-bottom-color: var(--lg-hairline-dark);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+}
+
+body[data-glass="on"]:not(.widget-shell) .sidebar {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015)),
+    var(--lg-rail-dark);
+  border-right-color: var(--lg-hairline-dark);
+  backdrop-filter: blur(30px) saturate(170%);
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.04);
+}
+
+body[data-glass="on"]:not(.widget-shell) .sidebar-top,
+body[data-glass="on"]:not(.widget-shell) .sidebar-footer,
+body[data-glass="on"]:not(.widget-shell) .topbar,
+body[data-glass="on"]:not(.widget-shell) .composer-wrap {
+  border-color: var(--lg-hairline-dark);
+}
+
+body[data-glass="on"]:not(.widget-shell) .topbar {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.015)),
+    var(--lg-panel-dark);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
+
+body[data-glass="on"]:not(.widget-shell) .feed-scroll {
+  background: transparent;
+}
+
+body[data-glass="on"]:not(.widget-shell) .composer-wrap {
+  background:
+    linear-gradient(180deg, transparent, rgba(255,255,255,0.03)),
+    color-mix(in oklab, var(--bg-0) 72%, transparent);
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+}
+
+body[data-glass="on"]:not(.widget-shell) .composer,
+body[data-glass="on"]:not(.widget-shell) .modal,
+body[data-glass="on"]:not(.widget-shell) .toast,
+body[data-glass="on"]:not(.widget-shell) .cmdk,
+body[data-glass="on"]:not(.widget-shell) .cmdk-panel,
+body[data-glass="on"]:not(.widget-shell) .widget-surface,
+body[data-glass="on"]:not(.widget-shell) #tweaks,
+body[data-glass="on"]:not(.widget-shell) .project-folder-modal,
+body[data-glass="on"]:not(.widget-shell) .onb-card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.035)),
+    var(--lg-panel-dark) !important;
+  border-color: var(--lg-hairline-dark) !important;
+  box-shadow:
+    0 22px 70px rgba(0,0,0,0.38),
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 -1px 0 rgba(255,255,255,0.025) inset;
+  backdrop-filter: blur(28px) saturate(175%);
+  -webkit-backdrop-filter: blur(28px) saturate(175%);
+}
+
+body[data-glass="on"]:not(.widget-shell) .composer {
+  border-radius: 20px;
+}
+
+body[data-glass="on"]:not(.widget-shell) .nav-toggle,
+body[data-glass="on"]:not(.widget-shell) .sidebar-button,
+body[data-glass="on"]:not(.widget-shell) .compare-row,
+body[data-glass="on"]:not(.widget-shell) .provider-chip,
+body[data-glass="on"]:not(.widget-shell) .topbar-control,
+body[data-glass="on"]:not(.widget-shell) .mini-chip,
+body[data-glass="on"]:not(.widget-shell) .composer-toggle,
+body[data-glass="on"]:not(.widget-shell) .composer-select-label,
+body[data-glass="on"]:not(.widget-shell) .modal-btn,
+body[data-glass="on"]:not(.widget-shell) .onb-input,
+body[data-glass="on"]:not(.widget-shell) .onb-conn,
+body[data-glass="on"]:not(.widget-shell) .onb-seg {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.025)),
+    rgba(255,255,255,0.045);
+  border-color: var(--lg-hairline-dark);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+body[data-glass="on"]:not(.widget-shell) .feed-card:not(.is-active):hover,
+body[data-glass="on"]:not(.widget-shell) .history-item:hover,
+body[data-glass="on"]:not(.widget-shell) .sidebar-settings-btn:hover,
+body[data-glass="on"]:not(.widget-shell) .composer-icon-btn:hover {
+  background: rgba(255,255,255,0.055);
+}
+
+body[data-glass="on"]:not(.widget-shell) .onb-overlay {
+  background:
+    linear-gradient(140deg, rgba(14,18,22,0.82), rgba(11,11,13,0.94) 48%, rgba(20,16,22,0.86)),
+    var(--bg-0);
+}
+
+body[data-glass="on"]:not(.widget-shell) .onb-card {
+  width: min(720px, 100%);
+}
+
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) {
+  background: var(--bg-0);
+}
+
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell)::before {
+  display: none;
+  content: none;
+}
+
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .titlebar,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .sidebar-top,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .sidebar-footer,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .topbar,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .composer-wrap {
+  border-color: var(--lg-hairline-light);
+}
+
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .sidebar {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.42)),
+    var(--lg-rail-light);
+  border-right-color: var(--lg-hairline-light);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.54);
+}
+
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .topbar,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .composer,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .modal,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .toast,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .cmdk,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .cmdk-panel,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .widget-surface,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) #tweaks,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .project-folder-modal,
+[data-theme="light"] body[data-glass="on"]:not(.widget-shell) .onb-card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.84), rgba(255,255,255,0.46)),
+    var(--lg-panel-light) !important;
+  border-color: var(--lg-hairline-light) !important;
+  box-shadow:
+    0 18px 54px rgba(42,52,70,0.14),
+    0 1px 0 rgba(255,255,255,0.82) inset;
+}
+
+/* ---------- the capsule itself ---------- */
+body[data-glass="on"] #vorb-root .vcap {
+  position: relative;
+  isolation: isolate;
+  border-radius: 999px;
+  border: 1px solid var(--lg-border-dark);
+  background: var(--lg-tint-dark) !important;
+  backdrop-filter: url(#lg-refract) blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  box-shadow: var(--lg-shadow-dark);
+}
+[data-theme="light"] body[data-glass="on"] #vorb-root .vcap {
+  border-color: var(--lg-border-light);
+  background: var(--lg-tint-light) !important;
+  box-shadow: var(--lg-shadow-light);
+}
+
+/* the wet top highlight — the bit that sells "liquid" */
+body[data-glass="on"] #vorb-root .vcap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(180deg,
+      rgba(255,255,255,0.28) 0%,
+      rgba(255,255,255,0.06) 22%,
+      rgba(255,255,255,0)    52%,
+      rgba(255,255,255,0.10) 100%);
+  mix-blend-mode: overlay;
+}
+body[data-glass="on"] #vorb-root .vcap > * { position: relative; z-index: 1; }
+
+/* subtle chromatic edge — like glass refracting accent light */
+body[data-glass="on"] #vorb-root .vcap::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background: linear-gradient(135deg,
+      hsla(var(--accent-h, 200), 90%, 65%, 0.35),
+      transparent 40%,
+      hsla(280, 90%, 65%, 0.25) 100%);
+  filter: blur(8px);
+  opacity: 0.7;
+}
+
+/* Safari / Firefox fallback (no SVG-displacement backdrop) */
+@supports not (backdrop-filter: url(#lg-refract)) {
+  body[data-glass="on"] #vorb-root .vcap {
+    backdrop-filter: blur(26px) saturate(190%);
+    -webkit-backdrop-filter: blur(26px) saturate(190%);
+  }
+}

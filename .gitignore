@@ -1,0 +1,83 @@
+# Secrets and environment
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Build artifacts (PyInstaller)
+build/
+dist/
+*.manifest
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Project runtime artifacts
+workspace/
+test_workspace/
+chroma_memory/
+tasks/*.json
+!tasks/.gitkeep
+*.log
+workspace/logs/
+screenshots/
+docs/ui_audit/
+tmp/
+logs/
+diagnostics/
+docs/private/
+docs/local/
+docs/*_PRIVATE.md
+
+# Scratch/debug
+scratch/
+.claude/
+.Jules/
+scripts/local_*.txt
+scripts/*_prompt.local.txt
+temp_message.txt
+test.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Runtime state (written by the app at runtime; not source)
+connectors.json
+preferences.json
+clipboard_history.json
+form_profiles.json
+scheduled_recipes.json
+screen_watches.json
+trust_policies.json
+
+# Local screenshot/debug artifacts - ignore ALL root-level images (real app
+# images live under static/). Keeps stray capture files out of the repo.
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.webp
+
+# Scratch test scripts / one-off launchers at the repo root. The real test
+# suite lives in tests/ - root-level test_*.py are throwaway live scripts.
+/test_*.py
+/*_test.py
+/server_launcher.py
+/final_verify.py
+widget_state.json
+/_shot.py

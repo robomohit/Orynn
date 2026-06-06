@@ -1,0 +1,5 @@
+# Optional: semantic vector memory (set USE_CHROMA=1 in .env to enable)
+# Install with: pip install -r requirements-memory.txt
+-r requirements.txt
+chromadb>=0.5.0
+sentence-transformers>=3.0.0

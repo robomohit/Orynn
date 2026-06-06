@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Computer · Stream</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230A0F12'/%3E%3Crect x='14' y='15' width='36' height='27' rx='6' fill='none' stroke='%235BE0D0' stroke-width='5'/%3E%3Ccircle cx='32' cy='28.5' r='5' fill='%235BE0D0'/%3E%3Cpath d='M24 49h16M32 42v7' stroke='%235BE0D0' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;450;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="/static/vendor/mermaid.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/liquid-glass.css">
+<link rel="stylesheet" href="/static/dynamic.css">
+</head>
+<body data-glass="on">
+<!-- Liquid Glass refraction filter (referenced by backdrop-filter: url(#lg-refract)) -->
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden" focusable="false">
+  <defs>
+    <filter id="lg-refract" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="2" result="softNoise"/>
+      <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+</svg>
+<div class="titlebar" id="titlebar" data-os="win" hidden>
+  <div class="tb-left">
+    <span class="tb-appicon" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/><circle cx="12" cy="11" r="2.5"/></svg>
+    </span>
+    <div class="tb-title"><span id="tb-title-text">AI Computer</span></div>
+  </div>
+  <div class="tb-right">
+    <button class="tb-btn" id="tb-cmdk" type="button">Commands <kbd>Ctrl&nbsp;K</kbd></button>
+    <div class="tb-wincontrols">
+      <button class="tb-wc tb-wc-min" type="button" aria-label="Minimize" title="Minimize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="tb-wc tb-wc-max" type="button" aria-label="Maximize" title="Maximize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="tb-wc tb-wc-close" type="button" aria-label="Close" title="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1.5" y1="1.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1"/><line x1="8.5" y1="1.5" x2="1.5" y2="8.5" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="app-shell sb-on">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-controls">
+      <button class="sidebar-button" id="new-session-btn" type="button">
+        <span>New session</span>
+        <span>⌘N</span>
+      </button>
+
+      <button class="project-folder-trigger" id="project-folder-trigger" type="button" aria-label="Choose project folder">
+        <span class="project-folder-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2V16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/></svg>
+        </span>
+        <span class="project-folder-copy">
+          <span class="project-folder-label">Project Folder</span>
+          <span class="project-folder-name" id="project-folder-name">General mode</span>
+          <span class="project-folder-path" id="project-folder-path">Desktop + Home access</span>
+        </span>
+      </button>
+    </div>
+    <div class="history-search">
+      <input id="history-search" type="search" placeholder="Search history">
+    </div>
+    <div class="history-header">
+      <span>Sessions</span>
+      <span id="history-count">0</span>
+    </div>
+    <div class="history-list" id="task-history">
+      <div class="history-empty">Recent runs appear here. Click any session to replay the full stream.</div>
+    </div>
+    <div class="sidebar-foot">
+      <button class="sidebar-settings-btn" id="open-settings" type="button" aria-label="Open settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+      <div class="provider-chips" id="provider-chips"></div>
+    </div>
+  </aside>
+
+  <!-- First-run onboarding wizard (friendly, non-technical) -->
+  <div class="onb-overlay" id="onboarding" hidden>
+    <div class="onb-card">
+      <div class="onb-progress" id="onb-progress" aria-hidden="true"></div>
+
+      <section class="onb-step" data-step="1">
+        <div class="onb-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/><circle cx="12" cy="11" r="2.6"/></svg>
+        </div>
+        <h1 class="onb-title">Meet your AI Computer</h1>
+        <p class="onb-sub">Just tell it what you want, in plain words. It controls your apps, browses the web, and writes code — while you watch every step.</p>
+        <button class="onb-primary" type="button" data-onb-next>Get started</button>
+      </section>
+
+      <section class="onb-step" data-step="2" hidden>
+        <div class="onb-emoji" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v6"/><path d="M16 2v6"/><path d="M7 8h10v4a5 5 0 0 1-10 0z"/><path d="M12 17v5"/></svg>
+        </div>
+        <h1 class="onb-title">Switch on the AI</h1>
+        <p class="onb-sub">Paste a free key to power the assistant. It's free, takes about 30 seconds, and no card is needed.</p>
+        <button class="onb-link" id="onb-get-key" type="button">Get a free key →</button>
+        <input class="onb-input" id="onb-key" type="password" autocomplete="off" placeholder="Paste your key here">
+        <div class="onb-status" id="onb-key-status" role="status"></div>
+        <div class="onb-actions">
+          <button class="onb-ghost" type="button" data-onb-skip>I'll do this later</button>
+          <button class="onb-primary" id="onb-key-save" type="button">Continue</button>
+        </div>
+      </section>
+
+      <section class="onb-step" data-step="3" hidden>
+        <h1 class="onb-title">Make it yours</h1>
+        <p class="onb-sub">A couple of quick choices — you can change everything later in Settings.</p>
+        <div class="onb-pref">
+          <span class="onb-pref-label">Appearance</span>
+          <div class="onb-seg" id="onb-theme">
+            <button type="button" data-theme="auto" class="active">System</button>
+            <button type="button" data-theme="light">Light</button>
+            <button type="button" data-theme="dark">Dark</button>
+          </div>
+        </div>
+        <label class="onb-pref">
+          <span class="onb-pref-label">Let the AI talk back<span class="onb-pref-sub">Reads answers aloud + enables the mic</span></span>
+          <input type="checkbox" id="onb-voice" class="pref-switch">
+        </label>
+        <button class="onb-primary" type="button" data-onb-next>Continue</button>
+      </section>
+
+      <section class="onb-step" data-step="4" hidden>
+        <div class="onb-emoji onb-check" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+        </div>
+        <h1 class="onb-title">You're all set</h1>
+        <p class="onb-sub">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> anytime to summon the floating assistant. Let's go.</p>
+        <button class="onb-primary" id="onb-finish" type="button">Start using AI Computer</button>
+      </section>
+    </div>
+  </div>
+
+  <div class="overlay" id="settings-overlay" role="dialog" aria-label="Settings" aria-modal="true">
+    <div class="modal settings-modal">
+      <div class="settings-head">
+        <h3>Settings</h3>
+        <button class="t-close" id="settings-close" type="button" aria-label="Close settings">✕</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-group">
+          <div class="selector-label">Effort
+            <span class="effort-q" tabindex="0" role="img" aria-label="Effort picks a bigger model for harder tasks. Free models can't tune thinking, so this trades speed for capability.">?</span>
+          </div>
+          <div class="effort" id="effort" data-level="medium">
+            <div class="effort-head">
+              <span class="effort-name" id="effort-name">Medium</span>
+              <span class="effort-hint" id="effort-hint">Best all-round free model</span>
+            </div>
+            <div class="effort-track" id="effort-track" role="slider" tabindex="0"
+                 aria-valuemin="0" aria-valuemax="3" aria-valuenow="1" aria-label="Effort level">
+              <div class="effort-fill" id="effort-fill"></div>
+              <button class="effort-stop" type="button" data-i="0" aria-label="Low"></button>
+              <button class="effort-stop" type="button" data-i="1" aria-label="Medium"></button>
+              <button class="effort-stop" type="button" data-i="2" aria-label="High"></button>
+              <button class="effort-stop" type="button" data-i="3" aria-label="Max"></button>
+              <div class="effort-thumb" id="effort-thumb"></div>
+            </div>
+            <div class="effort-ends"><span>Faster</span><span>Smarter</span></div>
+          </div>
+          <details class="model-advanced">
+            <summary>Advanced: pick an exact model</summary>
+            <select id="model-id"></select>
+          </details>
+        </div>
+
+        <div class="settings-group" id="provider-key-group">
+          <div class="selector-label">OpenRouter key
+            <span class="key-state" id="key-state">checking…</span>
+          </div>
+          <p class="settings-hint">Powers the assistant on free models. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="key-link">Get a free key →</a></p>
+          <div class="key-row">
+            <input id="provider-key-input" class="pref-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new key to update">
+            <button id="provider-key-save" class="key-save" type="button">Save</button>
+          </div>
+          <p class="settings-hint key-status" id="provider-key-status" role="status"></p>
+        </div>
+
+        <div class="skills-section" id="preferences-section">
+          <div class="history-header"><span>Preferences</span></div>
+          <div class="prefs-grid">
+            <label class="pref-row">
+              <span class="pref-label">Appearance</span>
+              <select id="pref-theme" class="pref-select">
+                <option value="auto">Match system</option>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </label>
+            <label class="pref-row">
+              <span class="pref-label">Default mode</span>
+              <select id="pref-default-mode" class="pref-select">
+                <option value="auto">Auto-detect</option>
+                <option value="coding">Coding</option>
+                <option value="computer">Desktop control</option>
+                <option value="computer_use">Browser cowork</option>
+              </select>
+            </label>
+            <label class="pref-row pref-toggle">
+              <span><span class="pref-label">Speak replies aloud</span><span class="pref-sub">Read the agent's answer with your PC voice</span></span>
+              <input type="checkbox" id="pref-speak" class="pref-switch">
+            </label>
+            <label class="pref-row pref-toggle">
+              <span><span class="pref-label">Voice input</span><span class="pref-sub">Show the mic so you can talk to the agent</span></span>
+              <input type="checkbox" id="pref-voice-input" class="pref-switch">
+            </label>
+            <label class="pref-row pref-toggle">
+              <span><span class="pref-label">Glow the app being controlled</span><span class="pref-sub">Aqua outline around the target window</span></span>
+              <input type="checkbox" id="pref-glow" class="pref-switch">
+            </label>
+            <label class="pref-row pref-toggle">
+              <span><span class="pref-label">Always confirm sensitive actions</span><span class="pref-sub">Ask before send / post / buy / delete</span></span>
+              <input type="checkbox" id="pref-confirm" class="pref-switch">
+            </label>
+            <label class="pref-row">
+              <span><span class="pref-label">Desktop reliability</span><span class="pref-sub">Blank = free &amp; fast. Add a stronger model id for long multi-step tasks.</span></span>
+              <input type="text" id="pref-desktop-model" class="pref-input" placeholder="e.g. claude-3-5-sonnet-20241022 (optional)">
+            </label>
+          </div>
+          <p class="settings-hint" id="pref-saved-hint" style="opacity:0;transition:opacity .3s">Saved ✓</p>
+        </div>
+
+        <div class="settings-group" style="display:none">
+          <div class="selector-label">Mode</div>
+          <select id="mode-id">
+            <option value="auto">Auto detect</option>
+            <option value="coding">Coding</option>
+            <option value="computer">Desktop control</option>
+            <option value="computer_isolated">Isolated App control</option>
+            <option value="computer_use">Browser cowork</option>
+            <option value="explain">Explain my screen (read-only)</option>
+          </select>
+        </div>
+        <div class="selector-wrap" id="isolated-app-wrap" style="display:none">
+          <div class="selector-label">Target App (Locked)</div>
+          <input id="isolated-app-id" type="text" placeholder="e.g. Chrome, Notepad…">
+          <p style="font-size:var(--fs-label);color:var(--muted-2);margin-top:6px;line-height:1.4">The agent will only see and control this app.</p>
+        </div>
+        <div class="skills-section" id="readiness-section">
+          <div class="history-header">
+            <span>Readiness</span><span id="readiness-score">--</span>
+          </div>
+          <div class="readiness-grid" id="readiness-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+        <div class="skills-section" id="trust-section">
+          <div class="history-header">
+            <span>Trust Center</span><span id="trust-status">--</span>
+          </div>
+          <div class="trust-grid" id="trust-grid">
+            <!-- Rendered via JS -->
+          </div>
+          <div class="trust-lists">
+            <div class="trust-panel">
+              <div class="trust-panel-head">
+                <span>Pending</span><span id="trust-pending-count">0</span>
+              </div>
+              <div class="trust-list" id="trust-pending-list"></div>
+            </div>
+            <div class="trust-panel">
+              <div class="trust-panel-head">
+                <span>Consent Ledger</span><span id="trust-ledger-count">0</span>
+              </div>
+              <div class="trust-list" id="trust-ledger-list"></div>
+            </div>
+            <div class="trust-panel">
+              <div class="trust-panel-head">
+                <span>Active Tasks</span><span id="trust-active-count">0</span>
+              </div>
+              <div class="trust-list" id="trust-active-list"></div>
+            </div>
+          </div>
+          <p class="settings-hint trust-updated" id="trust-updated">Not loaded yet</p>
+        </div>
+        <div class="skills-section" id="skills-section">
+          <div class="history-header"><span>Expertise Library</span><span id="skill-count">0</span></div>
+          <div class="skills-grid" id="skills-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+        <div class="skills-section" id="mcp-section">
+          <div class="history-header"><span>Active MCP Servers</span><span id="mcp-count">0</span></div>
+          <div class="skills-grid" id="mcp-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+        <div class="skills-section" id="coding-backends-section">
+          <div class="history-header"><span>Coding Backends</span><span id="coding-backend-count">0</span></div>
+          <div class="skills-grid" id="coding-backends-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="main">
+    <div class="budget-bar" id="budget-bar" title="Token budget"></div>
+    <header class="topbar">
+      <div class="topbar-main">
+        <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Toggle navigation">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div class="topbar-title">
+          <div class="topbar-row">
+            <span class="topbar-dot" id="topbar-dot"></span>
+            <h2 id="task-title">Stream</h2>
+            <span class="topbar-ctx" id="topbar-ctx"></span>
+            <span class="topbar-control" id="topbar-control" hidden>
+              <span class="topbar-control-dot" aria-hidden="true"></span>
+              <span id="topbar-control-layer">Control</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="safety-strip">
+        <div class="controls" id="controls">
+          <button class="control-btn hidden" id="btn-pause" type="button">Pause</button>
+          <button class="control-btn hidden" id="btn-cancel" type="button">Cancel</button>
+          <button class="control-btn hidden" id="btn-retry" type="button">Retry</button>
+          <button class="control-btn hidden" id="btn-control-report" type="button">Control report</button>
+          <button class="control-btn hidden" id="btn-copy-log" type="button">Copy log</button>
+          <button class="control-btn hidden" id="btn-download-log" type="button">Download</button>
+          <button class="control-btn" id="btn-tweaks" type="button" aria-label="Tweaks">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="desktop-control-banner" id="desktop-control-banner" role="status">
+      <div class="desktop-control-copy">
+        <div class="desktop-control-title"><span class="desktop-control-dot"></span><span id="desktop-control-title">AI Computer is using your computer</span></div>
+        <div class="desktop-control-detail" id="desktop-control-detail">Desktop control is active.</div>
+      </div>
+      <button class="control-btn" id="desktop-control-stop" type="button">Stop</button>
+    </div>
+
+    <div class="feed-scroll" id="feed-scroll">
+      <div class="feed" id="feed">
+        <section class="welcome" id="welcome">
+          <div class="hello-eye">AI Computer</div>
+          <h3>What can I help you with?</h3>
+          <p>Describe a goal. I can read your screen, browse the web, or automate your desktop safely.</p>
+          <div class="example-grid">
+            <button class="example-btn" type="button" data-example="Explain what is on my screen.">
+              <div class="ex-body"><strong>Explain my screen</strong><span>Takes a screenshot and answers questions about what you're looking at.</span></div>
+            </button>
+            <button class="example-btn" type="button" data-example="Go to my Spotify and play a focus playlist.">
+              <div class="ex-body"><strong>Automate an app</strong><span>Takes control of a specific app to perform a task safely.</span></div>
+            </button>
+            <button class="example-btn" type="button" data-example="Search the web for recent news about AI agents and summarize it.">
+              <div class="ex-body"><strong>Research a topic</strong><span>Uses the browser to search the web and compile notes.</span></div>
+            </button>
+            <button class="example-btn" type="button" data-example="Refactor the current python file to use asyncio.">
+              <div class="ex-body"><strong>Help me code</strong><span>Writes, edits, and runs code in your workspace.</span></div>
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="Message AI Computer"></textarea>
+        <div class="composer-bottom">
+          <div class="composer-meta">
+            <div class="mini-chip"><kbd>↵</kbd> send</div>
+            <div class="mini-chip"><kbd>⇧↵</kbd> newline</div>
+            <div class="char-count" id="char-count"></div>
+          </div>
+          <div class="composer-options" aria-label="Task options" style="display:none">
+            <label class="composer-toggle"><input type="checkbox" id="plan-first-toggle"><span>Plan first</span></label>
+            <label class="composer-toggle"><input type="checkbox" id="notify-toggle"><span>Notify</span></label>
+            <label class="composer-toggle"><input type="checkbox" id="checkpoint-toggle"><span>Checkpoint</span></label>
+            <label class="composer-select-label"><span>Autonomy</span><select id="autonomy-level"><option value="balanced">Balanced</option><option value="careful">Careful</option><option value="fast">Fast</option></select></label>
+            <label class="composer-select-label"><span>Thinking</span><select id="thinking-budget"><option value="off">Off</option><option value="standard">Standard</option><option value="extended">Extended</option></select></label>
+          </div>
+          <div class="composer-actions">
+            <button class="composer-icon-btn" id="read-aloud-toggle" type="button" aria-label="Read replies aloud" title="Read agent replies aloud">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            </button>
+            <button class="composer-icon-btn" id="mic-btn" type="button" aria-label="Dictate by voice" title="Dictate (click to start/stop)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+            </button>
+            <button class="send-btn" id="send" type="button" aria-label="Start task (Ctrl+Enter)" title="Start task — Ctrl+Enter">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="statusbar" id="statusbar">
+    <div class="sb-item sb-status sb-status-ready" id="sb-status">
+      <span class="sb-dot"></span>
+      <span class="sb-val">Ready</span>
+    </div>
+    <div class="sb-item sb-mode clickable" id="sb-mode" title="Change mode (Ctrl+K)" style="display:none">
+      <span class="sb-label">mode</span>
+      <span class="sb-val" id="sb-mode-val">coding</span>
+    </div>
+    <div class="sb-item sb-model clickable" id="sb-model" title="Change model (Ctrl+K)">
+      <span class="sb-label">model</span>
+      <span class="sb-val" id="sb-model-val">—</span>
+    </div>
+    <div class="sb-spacer"></div>
+    <div class="sb-item sb-elapsed">
+      <span class="sb-label">elapsed</span>
+      <span class="sb-val" id="sb-elapsed-val">00:00</span>
+    </div>
+    <div class="sb-item sb-budget" id="sb-budget" title="Token budget">
+      <span class="sb-label">tokens</span>
+      <span class="sb-budget-bar"></span>
+      <span class="sb-val" id="sb-budget-val">0%</span>
+    </div>
+    <div class="sb-item clickable" id="sb-cmdk" title="Open command palette">
+      <span class="sb-label">Ctrl&nbsp;K</span>
+    </div>
+  </footer>
+</div>
+
+<!-- Floating AI Computer — liquid-glass command capsule -->
+<div id="vorb-root" aria-live="polite">
+  <div class="vcap" id="vpanel" role="dialog" aria-label="AI Computer">
+    <span class="vcap-sheen" aria-hidden="true"></span>
+    <div class="vcap-row" id="vcap-row">
+      <span class="vcap-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2.4"/><line x1="8" y1="20.5" x2="16" y2="20.5"/><line x1="12" y1="17" x2="12" y2="20.5"/><circle cx="12" cy="10.5" r="2.1"/></svg>
+      </span>
+      <div class="vcap-field">
+        <input type="text" id="vpanel-text" class="vcap-input" placeholder="Start a task&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <span class="vcap-status" id="vpanel-activity-text" aria-live="polite"></span>
+      </div>
+      <canvas class="vcap-wave" id="vcap-wave" width="148" height="34" aria-hidden="true"></canvas>
+      <button class="vcap-btn vcap-mic" id="vmic" type="button" aria-label="Tap to speak" title="Tap to speak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+      </button>
+      <button class="vcap-btn vcap-send" id="vpanel-send" type="button" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+      </button>
+      <button class="vcap-btn vcap-close" id="vpanel-close-shell" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="vcap-context" id="vcap-context" hidden>
+      <span class="vcap-chip vcap-scope" id="vcap-scope">Computer</span>
+      <span class="vcap-chip vcap-vision" id="vcap-vision">Ready</span>
+      <span class="vcap-chip vcap-phase" id="vcap-phase">Idle</span>
+      <span class="vcap-context-spacer" aria-hidden="true"></span>
+      <button class="vcap-mini" id="vcap-pause" type="button">Pause</button>
+      <button class="vcap-mini danger" id="vcap-stop" type="button">Stop</button>
+      <button class="vcap-mini" id="vcap-details" type="button">Details</button>
+    </div>
+    <div class="vcap-actions" id="vcap-actions" hidden aria-label="Context actions"></div>
+    <div class="vcap-reply" id="vcap-reply" hidden>
+      <span class="vcap-reply-dot" aria-hidden="true"></span>
+      <span class="vcap-reply-text" id="vcap-reply-text"></span>
+    </div>
+    <div id="vcap-strip" class="vcap-strip" hidden aria-live="polite"></div>
+  </div>
+</div>
+
+<div class="cmdk-overlay" id="cmdk" role="dialog" aria-label="Command palette">
+  <div class="cmdk-panel">
+    <div class="cmdk-input-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="cmdk-input" placeholder="Type a command or search…" autocomplete="off">
+      <kbd>esc</kbd>
+    </div>
+    <div class="cmdk-list" id="cmdk-list"></div>
+  </div>
+</div>
+
+<div class="cmdk-overlay" id="shortcut-help" role="dialog" aria-label="Keyboard shortcuts">
+  <div class="cmdk-panel">
+    <div class="cmdk-input-wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 18h.01"/><path d="M9.09 9a3 3 0 1 1 5.82 1c0 2-3 3-3 3"/></svg>
+      <input value="Keyboard shortcuts" aria-label="Keyboard shortcuts" readonly>
+      <kbd>?</kbd>
+    </div>
+    <div class="shortcut-list">
+      <div class="shortcut-row"><span>Send task</span><kbd>Enter</kbd></div>
+      <div class="shortcut-row"><span>New line</span><kbd>Shift+Enter</kbd></div>
+      <div class="shortcut-row"><span>Command palette</span><kbd>Ctrl+K</kbd></div>
+      <div class="shortcut-row"><span>Pause / resume</span><kbd>Space</kbd></div>
+      <div class="shortcut-row"><span>Close modal</span><kbd>Esc</kbd></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="approval">
+  <div class="modal">
+    <div class="eyebrow" style="color: var(--warn); font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-cap); text-transform: uppercase;">Approval required</div>
+    <h3 id="app-title">Action requires approval</h3>
+    <p id="app-reason">The agent wants to run something risky.</p>
+    <pre class="modal-code" id="app-code"></pre>
+    <textarea class="approval-plan-edit hidden" id="app-plan-edit" aria-label="Edit plan before approval"></textarea>
+    <div class="modal-actions">
+      <button class="modal-btn" id="app-deny" type="button">Deny</button>
+      <button class="modal-btn primary" id="app-approve" type="button">Approve</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="permission">
+  <div class="modal">
+    <div class="eyebrow" style="color: var(--accent); font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-cap); text-transform: uppercase;">Permission requested</div>
+    <h3 id="perm-title">Permission requested</h3>
+    <p id="perm-reason">The agent wants additional access.</p>
+    <pre class="modal-code" id="perm-code"></pre>
+    <div class="modal-actions">
+      <button class="modal-btn" id="perm-deny" type="button">Deny</button>
+      <button class="modal-btn primary" id="perm-approve" type="button">Allow</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="desktop-access">
+  <div class="modal">
+    <div class="eyebrow" style="color: var(--warn); font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-cap); text-transform: uppercase;">Desktop access</div>
+    <h3 id="desktop-access-title">Allow desktop control?</h3>
+    <p id="desktop-access-reason">AI Computer needs access to your desktop for this task.</p>
+    <div class="desktop-access-list" id="desktop-access-list"></div>
+    <p style="margin-top:12px">Only allow this when you are ready for AI Computer to view and control the selected desktop surface. You can stop the session at any time.</p>
+    <div class="modal-actions">
+      <button class="modal-btn" id="desktop-access-deny" type="button">Deny</button>
+      <button class="modal-btn primary" id="desktop-access-allow" type="button">Allow for this session</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="readiness-preflight">
+  <div class="modal">
+    <div class="eyebrow" id="readiness-preflight-eyebrow" style="color: var(--warn); font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-cap); text-transform: uppercase;">Preflight</div>
+    <h3 id="readiness-preflight-title">Check setup before running</h3>
+    <p id="readiness-preflight-reason">AI Computer found setup items that may affect this task.</p>
+    <div class="desktop-access-list readiness-preflight-list" id="readiness-preflight-list"></div>
+    <div class="modal-actions">
+      <button class="modal-btn" id="readiness-preflight-settings" type="button">Open Settings</button>
+      <button class="modal-btn" id="readiness-preflight-cancel" type="button">Cancel</button>
+      <button class="modal-btn primary" id="readiness-preflight-continue" type="button">Run Anyway</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lightweight workspace-folder dropdown (Codex-style; no in-app file explorer) -->
+<div class="folder-menu" id="project-folder-menu" role="menu" aria-label="Choose workspace folder" hidden>
+  <div class="folder-menu-head">Workspace folder</div>
+  <div class="folder-menu-items" id="folder-menu-items"></div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" id="lightbox-close" type="button" aria-label="Close">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+  <div class="lightbox-inner">
+    <img id="lightbox-img" alt="Screenshot preview">
+    <div class="lightbox-caption" id="lightbox-caption">Screenshot</div>
+  </div>
+</div>
+
+<div class="overlay" id="mcp-overlay">
+  <div class="modal" style="width: min(640px, 100%);">
+    <div class="eyebrow" style="color: var(--accent); font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-cap); text-transform: uppercase;">MCP Server Details</div>
+    <h3 id="mcp-modal-title">Server Name</h3>
+    <div id="mcp-modal-tools" style="max-height: 400px; overflow-y: auto; margin-top: 12px; display: grid; gap: 8px; padding-right: 8px;"></div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" id="mcp-modal-close" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<!-- Tweaks panel (vanilla, matches host protocol) -->
+<div id="tweaks" role="dialog" aria-label="Tweaks">
+  <header>
+    <span class="t-title">Tweaks</span>
+    <button class="t-close" id="tweaks-close" aria-label="Close Tweaks">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </header>
+  <div class="t-body">
+    <div class="t-section">
+      <div class="t-row"><span class="t-label">Theme</span></div>
+      <div class="t-seg" id="t-theme">
+        <button data-v="dark">Dark</button>
+        <button data-v="light">Light</button>
+      </div>
+    </div>
+    <div class="t-section">
+      <div class="t-row"><span class="t-label">Accent</span><span class="t-value" id="t-accent-val">220°</span></div>
+      <div class="t-swatches" id="t-swatches"></div>
+    </div>
+    <div class="t-section">
+      <div class="t-row"><span class="t-label">Glow intensity</span><span class="t-value" id="t-glow-val">1.0×</span></div>
+      <input type="range" id="t-glow" min="0" max="1.6" step="0.1" value="1">
+    </div>
+    <div class="t-section">
+      <div class="t-row"><span class="t-label">Density</span></div>
+      <div class="t-seg" id="t-density">
+        <button data-v="0.8">Cozy</button>
+        <button data-v="1">Default</button>
+        <button data-v="1.2">Roomy</button>
+      </div>
+    </div>
+    <div class="t-section">
+      <div class="t-row"><span class="t-label">Grain overlay</span></div>
+      <div class="t-seg" id="t-grain">
+        <button data-v="on">On</button>
+        <button data-v="off">Off</button>
+      </div>
+    </div>
+    <div class="t-section">
+      <div class="t-row"><span class="t-label">Token budget (demo)</span><span class="t-value" id="t-budget-val">42%</span></div>
+      <input type="range" id="t-budget" min="0" max="100" step="1" value="42">
+    </div>
+    <div class="t-section">
+      <div class="t-row"><span class="t-label">Demo stream</span></div>
+      <div class="t-seg" id="t-demo">
+        <button data-v="on">Play</button>
+        <button data-v="widgets">Widgets</button>
+        <button data-v="off">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js" defer></script>
+<script>
+// Native window controls for the frameless pywebview desktop app. The custom
+// titlebar min/max/close buttons drive the DesktopBridge. No-ops in a plain
+// browser (start_web.bat), where the browser supplies its own window chrome.
+(function () {
+  function api() { return (window.pywebview && window.pywebview.api) || null; }
+  function setDesktopChrome(enabled) {
+    var bar = document.getElementById('titlebar');
+    var shell = document.querySelector('.app-shell');
+    if (bar) bar.hidden = !enabled;
+    if (shell) shell.classList.toggle('no-titlebar', !enabled);
+    document.body.classList.toggle('desktop-shell', !!enabled);
+    var title = document.getElementById('tb-title-text');
+    if (title && enabled) title.textContent = 'AI Computer';
+  }
+  function wire(sel, method, fallback) {
+    var btn = document.querySelector(sel);
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var a = api();
+      if (a && typeof a[method] === 'function') { try { a[method](); return; } catch (e) {} }
+      if (fallback) try { fallback(); } catch (e) {}
+    });
+  }
+  function wireDrag() {
+    var bar = document.getElementById('titlebar');
+    if (!bar) return;
+    var dragging = false, lx = 0, ly = 0;
+    bar.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0) return;
+      // don't start a drag on the buttons (Commands / min / max / close)
+      if (e.target.closest && e.target.closest('.tb-right')) return;
+      var a = api();
+      if (!a || !a.move_window) return;   // browser mode — let the OS handle it
+      dragging = true; lx = e.screenX; ly = e.screenY;
+      try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    bar.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dx = e.screenX - lx, dy = e.screenY - ly;
+      if (dx || dy) {
+        var a = api();
+        if (a && a.move_window) a.move_window(dx, dy);
+        lx = e.screenX; ly = e.screenY;
+      }
+    });
+    function end(e) {
+      dragging = false;
+      try { bar.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    bar.addEventListener('pointerup', end);
+    bar.addEventListener('pointercancel', end);
+    // double-click titlebar to maximize/restore (standard desktop behaviour)
+    bar.addEventListener('dblclick', function (e) {
+      if (e.target.closest && e.target.closest('.tb-right')) return;
+      var a = api(); if (a && a.toggle_maximize) a.toggle_maximize();
+    });
+  }
+  function init() {
+    setDesktopChrome(!!api());
+    wire('.tb-wc-min', 'minimize', null);
+    wire('.tb-wc-max', 'toggle_maximize', null);
+    wire('.tb-wc-close', 'close', function () { try { window.close(); } catch (e) {} });
+    wireDrag();
+  }
+  window.addEventListener('pywebviewready', function () {
+    setDesktopChrome(true);
+  });
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>
