@@ -27,6 +27,23 @@ _log = logging.getLogger(__name__)
 _INTEGRATION_NAME = "Telegram"
 
 
+def _parse_id_list(value: str) -> set[int]:
+    ids: set[int] = set()
+    for part in (value or "").replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.add(int(part))
+        except ValueError:
+            _log.warning("Ignoring invalid Telegram allowlist id: %r", part)
+    return ids
+
+
+def _telegram_sender_allowed(chat_id: int | None, user_id: int | None, *, allowed_chat_ids: set[int], allowed_user_ids: set[int]) -> bool:
+    return (chat_id is not None and chat_id in allowed_chat_ids) or (user_id is not None and user_id in allowed_user_ids)
+
+
 async def consume_telegram_sse(
     message: Any,
     working_msg: Any,
@@ -169,6 +186,15 @@ async def start_telegram(agent_service: "AgentService", submit_task: Any | None 
     if not token:
         _log.info("%s integration disabled (no TELEGRAM_BOT_TOKEN in env)", _INTEGRATION_NAME)
         return
+    allowed_chat_ids = _parse_id_list(os.environ.get("TELEGRAM_ALLOWED_CHAT_IDS", ""))
+    allowed_user_ids = _parse_id_list(os.environ.get("TELEGRAM_ALLOWED_USER_IDS", ""))
+    if not allowed_chat_ids and not allowed_user_ids:
+        _log.warning(
+            "%s integration disabled: set TELEGRAM_ALLOWED_CHAT_IDS or "
+            "TELEGRAM_ALLOWED_USER_IDS before enabling remote task submission.",
+            _INTEGRATION_NAME,
+        )
+        return
 
     try:
         from telegram import Update
@@ -188,6 +214,16 @@ async def start_telegram(agent_service: "AgentService", submit_task: Any | None 
             return
         goal = update.message.text.strip()
         chat_id = update.message.chat_id
+        user_id = update.effective_user.id if update.effective_user else None
+        if not _telegram_sender_allowed(
+            chat_id,
+            user_id,
+            allowed_chat_ids=allowed_chat_ids,
+            allowed_user_ids=allowed_user_ids,
+        ):
+            _log.warning("Ignoring Telegram task from unauthorized chat=%s user=%s", chat_id, user_id)
+            await update.message.reply_text("This Orynn bot is restricted to approved users.")
+            return
         _log.debug("Telegram message from %s: %s", chat_id, goal[:80])
 
         # Openclaw-style streaming: one message edited as the agent works,

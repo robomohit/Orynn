@@ -66,3 +66,18 @@ async def test_browser_plugin(monkeypatch):
     await bp.browser_close()
     assert bp._browser is None
     assert "browser_open" in bp.register().handlers
+
+
+@pytest.mark.asyncio
+async def test_browser_open_blocks_local_file_schemes(monkeypatch):
+    bp._pw = bp._browser = bp._page = None
+
+    async def fail_if_browser_starts(*args, **kwargs):
+        raise AssertionError("browser should not start for blocked schemes")
+
+    monkeypatch.setattr(bp, "_ensure_browser", fail_if_browser_starts)
+
+    result = await bp.browser_open("file:///C:/Users/ACER/.ssh/id_rsa")
+
+    assert "Blocked URL scheme 'file'" in result
+    assert bp._browser is None

@@ -1888,8 +1888,13 @@ class ToolExecutor:
         """Return a unified diff between two files (capped at ~20k chars)."""
         try:
             import difflib
-            a_path = Path(path_a)
-            b_path = Path(path_b)
+            # Confine reads to allowed roots (same guard as read_file/write_file)
+            # so diff_files cannot be used to read arbitrary files (.env, keys).
+            try:
+                a_path = self._safe_path(path_a)
+                b_path = self._safe_path(path_b)
+            except ToolError as e:
+                return ToolResult(ok=False, output=str(e))
             if not a_path.exists():
                 return ToolResult(ok=False, output=f"path_a not found: {path_a}")
             if not b_path.exists():

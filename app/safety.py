@@ -25,8 +25,19 @@ class SafetyManager:
             import re
             raw_cmd = action.args.get("command", "")
             cmd = re.sub(r"\s+", " ", raw_cmd).lower().strip()
-            dangerous_patterns = ["rm -rf /", "format c:", "del /f /s", ":(){ :|:& };:",
-                                  "rd /s /q c:", "rmdir /s /q c:", "shutdown", "reboot"]
+            dangerous_patterns = [
+                # POSIX recursive/force delete + fork bomb
+                "rm -rf /", "rm -fr /", "rm -rf ~", "rm -rf .", "rm -rf *", ":(){ :|:& };:",
+                "chmod -r 000", "chown -r",
+                # disk / filesystem destruction
+                "mkfs", "dd if=", "of=/dev/sd", "> /dev/sd", "diskpart", "fdisk", "cipher /w",
+                # Windows recursive delete + format
+                "del /f /s", "del /s /q", "del /q /s", "rd /s", "rmdir /s",
+                "remove-item -recurse", "remove-item -r ", "ri -recurse",
+                "format c:", "format d:", "format e:",
+                # registry / account / power
+                "reg delete", "shutdown", "reboot",
+            ]
             if any(p in cmd for p in dangerous_patterns):
                 return ActionDecision(
                     danger=DangerLevel.high,

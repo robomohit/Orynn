@@ -199,6 +199,25 @@ def test_safety_and_permissions_classify_terminal_helpers():
     assert scope_for_action("lint_code") == PermissionScope.shell
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "Remove-Item -Recurse -Force C:\\Users\\ACER\\Documents",
+        "del /s /q C:\\Users\\ACER\\Documents\\*",
+        "diskpart /s wipe.txt",
+        "reg delete HKCU\\Software\\Orynn /f",
+    ],
+)
+def test_safety_flags_destructive_windows_commands(command):
+    decision = SafetyManager().evaluate(
+        Action(id="danger", type=ActionType.run_command, args={"command": command}),
+        safe_mode=False,
+    )
+
+    assert decision.danger.value == "high"
+    assert decision.requires_approval is True
+
+
 def test_safety_and_permissions_classify_folder_analysis_modes():
     s = SafetyManager()
 
@@ -235,6 +254,30 @@ def test_permissions_classify_filesystem_read_helpers():
     assert scope_for_action("file_grep") == PermissionScope.filesystem
     assert scope_for_action("text_view") == PermissionScope.filesystem
     assert scope_for_action("diff_files") == PermissionScope.filesystem
+
+
+@pytest.mark.asyncio
+async def test_diff_files_rejects_paths_outside_allowed_roots(workspace, tmp_path):
+    inside = workspace / "inside.txt"
+    inside.write_text("safe\n", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret\n", encoding="utf-8")
+
+    executor = ToolExecutor(
+        workspace,
+        home_dir=workspace,
+        text_editor=TextEditorTool(workspace, home_dir=workspace),
+    )
+    result = await executor.run_action(
+        Action(
+            id="diff",
+            type=ActionType.diff_files,
+            args={"path_a": str(inside), "path_b": str(outside)},
+        )
+    )
+
+    assert result.ok is False
+    assert "Path escapes allowed roots" in result.output
 
 
 def test_permissions_classify_privacy_sensitive_local_reads():

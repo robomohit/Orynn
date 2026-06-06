@@ -30,6 +30,12 @@ async def _ensure_browser(headless: Optional[bool] = None):
 
 
 async def browser_open(url: str, headless: Optional[bool] = None) -> str:
+    # Block non-web schemes (file:, javascript:, data:, about:) — they have no
+    # legitimate browsing use and are local-file-read / script-injection vectors.
+    from urllib.parse import urlsplit
+    scheme = (urlsplit(url).scheme or "").lower() if isinstance(url, str) else ""
+    if scheme and scheme not in ("http", "https"):
+        return f"Blocked URL scheme '{scheme}': only http(s) navigation is allowed."
     await _ensure_browser(headless)
     try:
         await _page.goto(url, wait_until="domcontentloaded", timeout=20000)

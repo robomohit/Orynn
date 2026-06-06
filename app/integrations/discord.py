@@ -33,6 +33,27 @@ _INTEGRATION_NAME = "Discord"
 _REACT_WORKING = "\N{THINKING FACE}"  # 🤔
 
 
+def _parse_id_list(value: str) -> set[int]:
+    ids: set[int] = set()
+    for part in (value or "").replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.add(int(part))
+        except ValueError:
+            _log.warning("Ignoring invalid Discord allowlist id: %r", part)
+    return ids
+
+
+def _discord_sender_allowed(author_id: int, channel_id: int, guild_id: int | None, *, allowed_user_ids: set[int], allowed_channel_ids: set[int], allowed_guild_ids: set[int]) -> bool:
+    return (
+        author_id in allowed_user_ids
+        or channel_id in allowed_channel_ids
+        or (guild_id is not None and guild_id in allowed_guild_ids)
+    )
+
+
 async def consume_discord_sse(
     channel: Any,
     working_msg: Any,
@@ -176,6 +197,18 @@ async def start_discord(agent_service: "AgentService", submit_task: Any | None =
         _log.info("%s integration disabled (no DISCORD_BOT_TOKEN in env)", _INTEGRATION_NAME)
         print("[Discord] disabled — no DISCORD_BOT_TOKEN in environment", flush=True)
         return
+    allowed_user_ids = _parse_id_list(os.environ.get("DISCORD_ALLOWED_USER_IDS", ""))
+    allowed_channel_ids = _parse_id_list(os.environ.get("DISCORD_ALLOWED_CHANNEL_IDS", ""))
+    allowed_guild_ids = _parse_id_list(os.environ.get("DISCORD_ALLOWED_GUILD_IDS", ""))
+    if not allowed_user_ids and not allowed_channel_ids and not allowed_guild_ids:
+        _log.warning(
+            "%s integration disabled: set DISCORD_ALLOWED_USER_IDS, "
+            "DISCORD_ALLOWED_CHANNEL_IDS, or DISCORD_ALLOWED_GUILD_IDS before "
+            "enabling remote task submission.",
+            _INTEGRATION_NAME,
+        )
+        print("[Discord] disabled — configure an allowed user/channel/guild id first", flush=True)
+        return
 
     try:
         import discord
@@ -209,6 +242,23 @@ async def start_discord(agent_service: "AgentService", submit_task: Any | None =
         is_dm = isinstance(message.channel, discord.DMChannel)
         is_mention = client.user is not None and client.user.mentioned_in(message)
         if not is_dm and not is_mention:
+            return
+        guild_id = message.guild.id if message.guild else None
+        if not _discord_sender_allowed(
+            message.author.id,
+            message.channel.id,
+            guild_id,
+            allowed_user_ids=allowed_user_ids,
+            allowed_channel_ids=allowed_channel_ids,
+            allowed_guild_ids=allowed_guild_ids,
+        ):
+            _log.warning(
+                "Ignoring Discord task from unauthorized author=%s channel=%s guild=%s",
+                message.author.id,
+                message.channel.id,
+                guild_id,
+            )
+            await message.channel.send("This Orynn bot is restricted to approved users/channels.")
             return
 
         # Strip the bot mention from the goal text
