@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Dashboard UI
+- Codex-inspired redesign: centered idle hero, flat background (no gradient wash), and quiet "reveal-on-hover" chrome so nothing is overloaded.
+- Contextual hero that names the active project ("What should we build in <folder>?").
+- Session history grouped by working folder as a project tree (folder glyph + nested chats), showing the 5 most recent with a "Show more" expander and folder-scoped search.
+- Done-state summary like Codex: a collapsible "Worked for Xm Ys" timeline plus an "N files changed" capstone listing every file the agent created/edited/deleted.
+- Hover-revealed message actions: copy the reply and rate it (thumbs wired to the feedback endpoint).
+- Replaced the heavy in-app folder browser with a lightweight dropdown (quick folders + native OS "Browse…" dialog).
+- Calmer, more professional motion (no blur/throb entrances) and a keyboard focus ring for all controls (`:focus-visible`), honoring `prefers-reduced-motion`.
+- Stall watchdog and rate-limit feedback so a running task never sits silently — it surfaces "free models are busy, retrying…" instead of looking frozen.
+
 ### Security
 - Hardened task identifiers to prevent path-like IDs from reaching task metadata or log file paths.
 - Removed API-key prefix/suffix logging and kept task initialization 500 responses generic.

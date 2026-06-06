@@ -1394,12 +1394,6 @@ def main(port: int = 8000) -> int:
                         self.finished.emit(f"Couldn't start: {r.text[:200]}")
                         self.runningChanged.emit(False)
                         return
-                    # debug: surface model + mode the server received
-                    print(f"[capsule] task {tid} sent mode={payload.get('mode')} "
-                          f"model={payload.get('model','<auto>')} "
-                          f"isolated={payload.get('isolated_app','-')} "
-                          f"folder={payload.get('project_folder','-')}",
-                          flush=True)
                     self.runningChanged.emit(True)
                     stream_state = self._recovery_state_from_log([])
                     stream_tid = tid
@@ -3253,8 +3247,6 @@ def main(port: int = 8000) -> int:
                 # layout grows the capsule by that much — without min==max,
                 # the layout collapses to the smaller of the two.
                 self.widget_scroll.setFixedHeight(target)
-                print(f"[capsule] _fit_widget_scroll cards={self.widget_layout.count()-1} "
-                      f"hint={hint_h} target={target}", flush=True)
             except Exception as exc:
                 print(f"[capsule] _fit_widget_scroll error: {exc}", flush=True)
 
@@ -3674,8 +3666,6 @@ def main(port: int = 8000) -> int:
             try:
                 if lname in ("mouse_click", "double_click", "left_click_drag"):
                     xy = parse_click_xy(output)
-                    print(f"[cursor] {lname} -> xy={xy} from {output[:60]!r}",
-                          flush=True)
                     if xy is not None:
                         verb = ("Double-clicked" if lname == "double_click"
                                 else "Dragged" if lname == "left_click_drag"
