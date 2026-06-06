@@ -49,6 +49,16 @@ def test_session_bootstrap_authenticates_without_revealing_api_key(monkeypatch):
     assert r.status_code == 200
 
 
+def test_session_bootstrap_rejects_non_loopback_clients(monkeypatch):
+    _, m = _client(monkeypatch)
+    remote_client = TestClient(m.app, client=("198.51.100.10", 12345))
+
+    response = remote_client.post("/api/session")
+
+    assert response.status_code == 403
+    assert "limited to localhost" in response.json()["detail"]
+
+
 def test_query_token_is_not_accepted_for_sse(monkeypatch):
     client, m = _client(monkeypatch)
     r = client.get("/api/tasks/nope/stream?token=token123")

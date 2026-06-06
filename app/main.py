@@ -278,6 +278,17 @@ def _valid_session_token(token: str) -> bool:
     return bool(expires_at and expires_at > now)
 
 
+def _is_loopback_client(request: Request) -> bool:
+    host = (request.client.host if request.client else "").strip().lower()
+    if host in {"localhost", "testclient"}:
+        return True
+    try:
+        import ipaddress
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def _is_authorized(request: Request, credentials: Optional[HTTPAuthorizationCredentials]) -> bool:
     bearer_token = credentials.credentials if credentials else ""
     if bearer_token == API_KEY or _valid_session_token(bearer_token):
@@ -1503,7 +1514,12 @@ async def memory_consolidate():
 
 
 @app.post("/api/session")
-async def create_session(response: Response):
+async def create_session(request: Request, response: Response):
+    if not _is_loopback_client(request) and os.environ.get("ORYNN_ALLOW_REMOTE_SESSION", "").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Session bootstrap is limited to localhost. Use Bearer auth or set ORYNN_ALLOW_REMOTE_SESSION=1.",
+        )
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=SESSION_TTL_SECONDS)
     _sessions[token] = expires_at
