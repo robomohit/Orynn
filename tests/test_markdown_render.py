@@ -21,9 +21,19 @@ def test_real_answer_string():
 
 def test_headings_and_bullets():
     out = md_to_safe_html("# Title\n- one\n- two")
-    assert "<b>Title</b>" in out
+    # Headings now render with a real size hierarchy, not flat bold.
+    assert "Title" in out
+    assert "font-size" in out and "font-weight:700" in out
+    assert "<b>Title</b>" not in out
     assert out.count("&bull;") == 2
     assert "<br>" in out
+
+
+def test_heading_levels_have_distinct_sizes():
+    h1 = md_to_safe_html("# Big")
+    h2 = md_to_safe_html("## Medium")
+    h3 = md_to_safe_html("### Small")
+    assert "1.34em" in h1 and "1.17em" in h2 and "1.02em" in h3
 
 
 def test_html_is_escaped_no_injection():

@@ -27,7 +27,14 @@ def md_to_safe_html(text: str) -> str:
         return f"\x00C{len(code_spans) - 1}\x00"
 
     s = re.sub(r"`([^`\n]+)`", _stash, s)
-    s = re.sub(r"(?m)^\s{0,3}#{1,6}\s+(.+?)\s*$", r"<b>\1</b>", s)
+
+    def _heading(m: re.Match[str]) -> str:
+        level = min(len(m.group(1)), 3)
+        size = {1: "1.34em", 2: "1.17em", 3: "1.02em"}[level]
+        return (f'<div style="font-size:{size};font-weight:700;'
+                f'margin:6px 0 2px;">{m.group(2)}</div>')
+
+    s = re.sub(r"(?m)^\s{0,3}(#{1,6})\s+(.+?)\s*$", _heading, s)
     s = re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", s)
     s = re.sub(r"(?<![\w*])\*([^*\n]+?)\*(?![\w*])", r"<i>\1</i>", s)
     s = re.sub(r"(?<![\w_])_([^_\n]+?)_(?![\w_])", r"<i>\1</i>", s)

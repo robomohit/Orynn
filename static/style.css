@@ -1400,6 +1400,25 @@
   }
   .message.assistant .md-ul { margin: 6px 0 10px; padding-left: 22px; }
   .message.assistant .md-ul li { margin: 2px 0; }
+  .message.assistant .md-ol { margin: 6px 0 10px; padding-left: 22px; }
+  .message.assistant .md-ol li { margin: 2px 0; }
+  /* Headings: a real size hierarchy so "# Title" reads as a heading, not bold text. */
+  .message.assistant h1.md-h1,
+  .message.assistant h2.md-h2,
+  .message.assistant h3.md-h3 {
+    margin: 14px 0 6px;
+    font-weight: 650;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .message.assistant h1.md-h1:first-child,
+  .message.assistant h2.md-h2:first-child,
+  .message.assistant h3.md-h3:first-child { margin-top: 0; }
+  .message.assistant h1.md-h1 { font-size: 1.34em; }
+  .message.assistant h2.md-h2 { font-size: 1.17em; }
+  .message.assistant h3.md-h3 { font-size: 1.02em; color: var(--ink-2); }
+  .message.assistant hr.md-hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
   .message.assistant code.md-code {
     font-family: var(--font-mono);
     font-size: 0.86em;

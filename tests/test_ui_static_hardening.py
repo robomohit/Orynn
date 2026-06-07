@@ -154,7 +154,7 @@ def test_assistant_markdown_is_sanitized_and_links_are_protocol_gated():
     assert "if (!/^(https?:\\/\\/|mailto:)/i.test(trimmed)) return '';" in js
     assert "['http:', 'https:', 'mailto:'].includes(parsed.protocol)" in js
     assert "const sanitizeRenderedMarkdown" in js
-    assert "const allowedTags = new Set(['A', 'BR', 'CODE', 'EM', 'LI', 'P', 'PRE', 'STRONG', 'UL']);" in js
+    assert "const allowedTags = new Set(['A', 'BR', 'CODE', 'EM', 'LI', 'P', 'PRE', 'STRONG', 'UL', 'OL', 'H1', 'H2', 'H3', 'HR']);" in js
     assert "child.setAttribute('target', '_blank')" in js
     assert "child.setAttribute('rel', 'noopener noreferrer')" in js
     assert "return sanitizeRenderedMarkdown(text);" in js

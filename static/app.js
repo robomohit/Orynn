@@ -720,12 +720,17 @@
 
   const sanitizeRenderedMarkdown = (html = '') => {
     if (typeof DOMParser === 'undefined') return String(html || '');
-    const allowedTags = new Set(['A', 'BR', 'CODE', 'EM', 'LI', 'P', 'PRE', 'STRONG', 'UL']);
+    const allowedTags = new Set(['A', 'BR', 'CODE', 'EM', 'LI', 'P', 'PRE', 'STRONG', 'UL', 'OL', 'H1', 'H2', 'H3', 'HR']);
     const allowedClasses = {
       A: new Set(['md-link']),
       CODE: new Set(['md-code']),
       PRE: new Set(['md-pre']),
       UL: new Set(['md-ul']),
+      OL: new Set(['md-ol']),
+      H1: new Set(['md-h1']),
+      H2: new Set(['md-h2']),
+      H3: new Set(['md-h3']),
+      HR: new Set(['md-hr']),
     };
     const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
     const root = doc.body.firstElementChild;
@@ -784,7 +789,7 @@
     text = esc(text);
     // 3. inline code `…` (content already escaped)
     text = text.replace(/`([^`\n]+)`/g, (_, c) => stash('<code class="md-code">' + c + '</code>', 'I'));
-    // 4. bold then italic
+    // 4. bold then italic, then links
     text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
@@ -792,20 +797,35 @@
       if (!safeHref) return label;
       return `<a class="md-link" href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     });
-    // 5. bullet lists — group consecutive "- "/"* " lines
-    text = text.replace(/(?:^|\n)((?:[-*] .+(?:\n|$))+)/g, (_, list) => {
-      const items = list.trim().split(/\n/).map((l) => '<li>' + l.replace(/^[-*] /, '') + '</li>').join('');
-      return '\n' + stash('<ul class="md-ul">' + items + '</ul>', 'U');
+    // 5. headings (# … ###### → h1–h3), isolated onto their own block
+    text = text.replace(/(?:^|\n)[ \t]{0,3}(#{1,6})[ \t]+([^\n]+?)[ \t]*(?=\n|$)/g, (_, hashes, content) => {
+      const level = Math.min(hashes.length, 3);
+      return '\n\n' + stash(`<h${level} class="md-h${level}">${content}</h${level}>`, 'H') + '\n\n';
     });
-    // 6. paragraphs + line breaks
+    // 6. horizontal rule (---, ***, ___ on their own line)
+    text = text.replace(/(?:^|\n)[ \t]{0,3}(?:-{3,}|\*{3,}|_{3,})[ \t]*(?=\n|$)/g, () => '\n\n' + stash('<hr class="md-hr">', 'R') + '\n\n');
+    // 7. ordered lists — group consecutive "1." / "1)" lines
+    text = text.replace(/(?:^|\n)((?:[ \t]*\d+[.)] .+(?:\n|$))+)/g, (_, list) => {
+      const items = list.trim().split(/\n/).map((l) => '<li>' + l.replace(/^[ \t]*\d+[.)] /, '') + '</li>').join('');
+      return '\n\n' + stash('<ol class="md-ol">' + items + '</ol>', 'O') + '\n\n';
+    });
+    // 8. bullet lists — group consecutive "- "/"* " lines
+    text = text.replace(/(?:^|\n)((?:[ \t]*[-*] .+(?:\n|$))+)/g, (_, list) => {
+      const items = list.trim().split(/\n/).map((l) => '<li>' + l.replace(/^[ \t]*[-*] /, '') + '</li>').join('');
+      return '\n\n' + stash('<ul class="md-ul">' + items + '</ul>', 'U') + '\n\n';
+    });
+    // 9. paragraphs + line breaks
     text = text.split(/\n{2,}/).map((p) => {
       const t = p.trim();
       if (!t) return '';
-      if (/^@@AIC@[BIU]\d+@@AIC@$/.test(t)) return t;
+      if (/^@@AIC@[A-Z]\d+@@AIC@$/.test(t)) return t;
       return '<p>' + t.replace(/\n/g, '<br>') + '</p>';
     }).join('');
-    // 7. restore stashed blocks/lists
-    text = text.replace(/@@AIC@[BIU](\d+)@@AIC@/g, (_, i) => blocks[+i] || '');
+    // 10. restore stashed blocks (iterative — blocks can nest, e.g. inline code
+    //     inside a heading or a list item).
+    for (let pass = 0; pass < 6 && text.indexOf('@@AIC@') !== -1; pass++) {
+      text = text.replace(/@@AIC@[A-Z](\d+)@@AIC@/g, (_, i) => blocks[+i] || '');
+    }
     return sanitizeRenderedMarkdown(text);
   };
 
