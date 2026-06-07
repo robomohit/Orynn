@@ -163,6 +163,21 @@ def get_tool_schemas(packs: List[str], exclude_actions: Optional[Iterable[Action
             seen_actions.add(action_type)
     return schemas
 
+# Unified tool surface — every capability in one set. The MODEL decides which
+# surface a task needs (desktop UIA, screen, browser, web research, files,
+# shell, editing) instead of being boxed into a single mode's tools. Platform/
+# vision pruning is applied separately via exclude_actions (e.g. a text-only
+# model drops the pixel/screenshot tools and drives the desktop blind by UIA).
+UNIFIED_PACKS = [
+    "core", "filesystem", "editing", "editing_extras", "terminal",
+    "uia", "computer", "browser", "web", "utilities",
+]
+
+
+def get_unified_packs() -> List[str]:
+    return list(UNIFIED_PACKS)
+
+
 def get_mode_packs(mode: str) -> List[str]:
     if mode in ("coding", "chat", "auto"):
         return ["core", "filesystem", "terminal", "editing", "editing_extras", "web", "utilities"]

@@ -1451,3 +1451,64 @@ def test_static_ui_avoids_innerhtml_for_untrusted_dynamic_sections():
     assert "grid.innerHTML = allSkills.map" not in html
     assert "grid.innerHTML = allMCPServers.map" not in html
     assert "toolsContainer.innerHTML = server.tools.map" not in html
+
+
+def _capture_tool_names(monkeypatch, service):
+    """Shared FakeProvider that records the tool schemas the reactive loop offers."""
+    captured = {"names": set()}
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "tier:uia"
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            captured["names"] = {t["function"]["name"] for t in tools}
+            yield {"type": "tool_call", "id": "c1", "name": "finish", "args": {"reason": "done"}, "thought": ""}
+
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: FakeProvider())
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_unified_surface_desktop_task_can_reach_browser_web_and_files(monkeypatch, workspace):
+    """A desktop task is no longer boxed into UIA-only — the model also gets
+    browser, web-research, file/shell, and make_subtasks tools and decides."""
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    captured = _capture_tool_names(monkeypatch, service)
+
+    await service.run_task("task-unified-desktop", "Open Notepad", mode="computer", model="tier:uia")
+
+    names = captured["names"]
+    # Desktop control stays available …
+    assert {"uia_find", "uia_click", "uia_type", "finish"} <= names
+    # … AND every other surface is now reachable by the model:
+    assert {"browser_open", "web_search", "read_file", "write_file", "run_command"} <= names
+    assert "make_subtasks" in names
+    # Text-only model still drives blind — no pixel/vision tools:
+    assert {"screenshot", "mouse_click", "computer"}.isdisjoint(names)
+
+
+@pytest.mark.asyncio
+async def test_unified_surface_coding_task_can_reach_desktop_and_browser(monkeypatch, workspace):
+    """A coding/chat task can reach desktop (UIA) and browser tools too."""
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    captured = _capture_tool_names(monkeypatch, service)
+
+    await service.run_task("task-unified-coding", "List files in the project", mode="coding", model="tier:uia")
+
+    names = captured["names"]
+    assert {"read_file", "write_file", "run_command", "finish"} <= names
+    assert {"uia_find", "browser_open", "web_search"} <= names
