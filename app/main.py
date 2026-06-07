@@ -609,6 +609,7 @@ def _start_task_from_spec(spec: Dict[str, Any]) -> TaskRecord:
         auto_commit=bool(spec.get("auto_commit")),
         autonomy_level=spec.get("autonomy_level") or "balanced",
         thinking_budget=spec.get("thinking_budget") or "off",
+        history=spec.get("history") or [],
     )
     _tasks[record.id] = record
     _save_task_record(record)
@@ -704,6 +705,9 @@ class TaskIn(BaseModel):
     autonomy_level: Literal["careful", "balanced", "fast"] = "balanced"
     thinking_budget: Literal["off", "standard", "extended"] = "off"
     readiness_override: bool = False
+    # Prior conversation turns ([{role: "user"|"assistant", content}]) so a
+    # follow-up message continues the chat instead of starting cold.
+    history: List[Dict[str, str]] = Field(default_factory=list)
 
 
 class TaskPreflightIn(BaseModel):
@@ -2106,6 +2110,7 @@ async def create_task(body: TaskIn):
             "auto_commit": body.auto_commit,
             "autonomy_level": body.autonomy_level,
             "thinking_budget": body.thinking_budget,
+            "history": body.history or [],
         }
         if active >= _MAX_ACTIVE_TASKS:
             context = AgentContext(

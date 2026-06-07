@@ -229,6 +229,29 @@ def _goal_requests_screen_context(goal: str) -> bool:
     return any(term in text for term in screen_terms)
 
 
+def _coerce_history_messages(history, *, max_messages: int = 16, max_chars: int = 6000) -> List[Dict[str, str]]:
+    """Sanitize prior conversation turns ([{role, content}]) into model messages so
+    a follow-up continues the chat. Keeps only user/assistant turns, trims each, and
+    caps the total so the seeded context stays bounded."""
+    if not history:
+        return []
+    out: List[Dict[str, str]] = []
+    for turn in history:
+        if not isinstance(turn, dict):
+            continue
+        role = str(turn.get("role") or "").strip().lower()
+        if role not in ("user", "assistant"):
+            continue
+        content = str(turn.get("content") or "").strip()
+        if not content:
+            continue
+        out.append({"role": role, "content": content[:2000]})
+    out = out[-max_messages:]
+    while len(out) > 1 and sum(len(m["content"]) for m in out) > max_chars:
+        out.pop(0)
+    return out
+
+
 def _tool_excludes_for_control_route(mode: str, model_sees: bool, goal: str = "") -> set[ActionType]:
     # Unified tool surface: the model may reach ANY surface (desktop/browser/web/
     # files/shell) and decides what a task needs. The only pruning is capability-
@@ -1246,6 +1269,7 @@ class AgentService:
         auto_commit: bool = False,
         autonomy_level: str = "balanced",
         thinking_budget: str = "off",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> TaskRecord:
         active_skills = list(active_skills or [])
         task_workspace = Path(project_folder).expanduser().resolve() if project_folder else self.home_dir
@@ -1301,6 +1325,7 @@ class AgentService:
                 auto_commit=bool(auto_commit),
                 autonomy_level=autonomy_level or "balanced",
                 thinking_budget=thinking_budget or "off",
+                history=history,
             )
         )
         return record
@@ -1554,6 +1579,7 @@ class AgentService:
         auto_commit: bool = False,
         autonomy_level: str = "balanced",
         thinking_budget: str = "off",
+        history: Optional[List[Dict[str, Any]]] = None,
     ):
         provider_override = None
         if not isinstance(screen_width, int) and hasattr(screen_width, "stream_chat"):
@@ -2115,7 +2141,10 @@ class AgentService:
                     pass
 
                 win_info = f"\nTarget window: {isolated_app}" if is_isolated else ""
-                messages = [{"role": "user", "content": f"{goal}{env_context}{auto_context}{control_context}{win_info}"}]
+                # Seed prior conversation turns so a follow-up message continues
+                # the chat with context (multi-turn) instead of starting cold.
+                _prior_turns = _coerce_history_messages(history)
+                messages = [*_prior_turns, {"role": "user", "content": f"{goal}{env_context}{auto_context}{control_context}{win_info}"}]
                 use_native_tools = len(tool_schemas) > 0 and inspect.isasyncgenfunction(
                     getattr(provider, "stream_chat_with_tools", None)
                 )

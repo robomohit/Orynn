@@ -3395,10 +3395,26 @@
     };
   };
 
+  // Gather the prior conversation (user + assistant turns) from the feed so a
+  // follow-up message continues the chat with context.
+  const collectConversation = (maxTurns = 16) => {
+    const out = [];
+    $('feed').querySelectorAll('.message.user, .message.assistant').forEach((el) => {
+      const role = el.classList.contains('user') ? 'user' : 'assistant';
+      const content = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (content) out.push({ role, content });
+    });
+    return out.slice(-maxTurns);
+  };
+
   const start = async () => {
     const goal = $('input').value.trim();
     if (!goal) return;
     if (task && sse) { toast('A task is already running. Cancel it before starting another.', 'warn'); return; }
+    // Multi-turn: if a conversation already exists in this view, continue it
+    // (keep the feed + send prior turns) instead of wiping it into a new chat.
+    const continuing = !!$('feed').querySelector('.message.user, .message.assistant');
+    const priorConversation = continuing ? collectConversation() : [];
     const requestedMode = 'auto';
     const requestedIsolatedApp = '';
     const requestedModel = selectedModelForRequest(requestedMode);
@@ -3415,7 +3431,7 @@
 
     task = Math.random().toString(36).slice(2);
     currentViewedTask = task;
-    resetTaskView();
+    resetTaskView(continuing ? { keepFeed: true } : undefined);
 
     appendMessage(goal, 'user');
     $('input').value = ''; updateCharCount(); autoGrow();
@@ -3429,7 +3445,7 @@
     $('btn-retry').classList.add('hidden');
     $('btn-copy-log').classList.add('hidden');
     $('btn-download-log').classList.add('hidden');
-    activeHistoryItem = addActiveHistoryItem(goal);
+    if (!continuing) activeHistoryItem = addActiveHistoryItem(goal);
 
     startTime = Date.now();
     timer = setInterval(updateClock, 1000);
@@ -3448,6 +3464,7 @@
       auto_commit: !!$('checkpoint-toggle')?.checked,
       autonomy_level: $('autonomy-level')?.value || 'careful',
       thinking_budget: $('thinking-budget')?.value || 'off',
+      history: priorConversation,
       readiness_override: !!readinessDecision.override
     };
 
