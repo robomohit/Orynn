@@ -3771,8 +3771,100 @@
     });
   }
 
+  async function playNotepadDemoStream() {
+    clearDemoStream();
+    task = 'demo-' + Math.random().toString(36).slice(2, 8);
+    currentViewedTask = task;
+    resetTaskView();
+    const goal = 'Open Notepad, type a short release note for Orynn, save it to Desktop as orynn-demo.txt, then tell me where it is.';
+    appendMessage(goal, 'user');
+    setTaskTitle(goal, { mode: 'computer_use', status: 'running' });
+    setStatus('running');
+    addActiveHistoryItem(goal);
+    startTime = Date.now();
+    timer = setInterval(updateClock, 1000);
+    updateClock();
+    setLiveStatus('Initializing', 'Starting desktop task…');
+
+    await delay(700);
+    setLiveStatus('Planning', 'Routing to Windows UI Automation.', '2s');
+    await delay(900);
+    processTaskEvent({
+      type: 'plan',
+      reasoning: 'Launch Notepad, focus the editor by accessible name, type the release note, then save to Desktop.',
+      sub_tasks: [
+        { id: 'n1', description: 'Launch Notepad' },
+        { id: 'n2', description: 'Type release note in the editor control' },
+        { id: 'n3', description: 'Save orynn-demo.txt to Desktop' },
+      ],
+    });
+
+    await delay(500);
+    processTaskEvent({ type: 'subtask', subtask_id: 'n1', status: 'running', worker_id: 'desktop-1' });
+    processTaskEvent({ type: 'action_start', action_id: 'np1', action_type: 'run_command', args_summary: 'start notepad' });
+    await delay(450);
+    processTaskEvent({ type: 'action_result', action_id: 'np1', action_type: 'run_command', ok: true, args_summary: 'Notepad launched' });
+
+    const notepadFindStart = {
+      type: 'status', tool: 'uia_find', kind: 'find', phase: 'start',
+      label: 'Text editor', target: 'Text editor', app: 'Notepad',
+      control_layer: 'UIA exact', control_reason: 'querying Windows accessibility tree',
+    };
+    const notepadFindResult = {
+      type: 'uia_control', tool: 'uia_find', kind: 'find', phase: 'result',
+      label: 'Text editor', target: 'Text editor',
+      rect: { left: 180, top: 140, width: 720, height: 420 },
+      app_rect: { left: 120, top: 80, width: 860, height: 560 },
+      app: 'Notepad', control_layer: 'UIA exact', control_reason: 'Windows accessibility tree',
+    };
+    processTaskEvent({ type: 'action_start', action_id: 'np2', action_type: 'uia_find', args_summary: 'Text editor · Notepad', overlay: notepadFindStart });
+    await delay(400);
+    processTaskEvent({ type: 'action_result', action_id: 'np2', action_type: 'uia_find', ok: true, args_summary: 'Text editor · Notepad', overlay: notepadFindResult, output: 'Found Text editor by accessible name.' });
+    processTaskEvent({ type: 'subtask', subtask_id: 'n1', status: 'done' });
+
+    await delay(350);
+    processTaskEvent({ type: 'subtask', subtask_id: 'n2', status: 'running', worker_id: 'desktop-1' });
+    const typeStart = {
+      type: 'status', tool: 'uia_type', kind: 'type', phase: 'start',
+      label: 'Text editor', target: 'Text editor', app: 'Notepad',
+      control_layer: 'UIA exact', control_reason: 'typing into named control',
+    };
+    processTaskEvent({ type: 'action_start', action_id: 'np3', action_type: 'uia_type', args_summary: 'Orynn release note · 142 chars', overlay: typeStart });
+    await delay(900);
+    processTaskEvent({
+      type: 'action_result', action_id: 'np3', action_type: 'uia_type', ok: true,
+      args_summary: 'Typed release note', overlay: { ...typeStart, phase: 'result', label: 'Typed release note' },
+      output: 'Orynn 1.1 — local Windows agent with UIA-first desktop control.',
+    });
+    processTaskEvent({ type: 'subtask', subtask_id: 'n2', status: 'done' });
+
+    await delay(350);
+    processTaskEvent({ type: 'subtask', subtask_id: 'n3', status: 'running', worker_id: 'desktop-1' });
+    processTaskEvent({ type: 'action_start', action_id: 'np4', action_type: 'uia_click', args_summary: 'Save · Notepad', overlay: { type: 'status', tool: 'uia_click', label: 'Save', target: 'Save', app: 'Notepad', control_layer: 'UIA exact', phase: 'start' } });
+    await delay(500);
+    processTaskEvent({ type: 'action_start', action_id: 'np5', action_type: 'uia_type', args_summary: 'orynn-demo.txt · Desktop' });
+    await delay(650);
+    processTaskEvent({ type: 'action_result', action_id: 'np5', action_type: 'uia_type', ok: true, args_summary: 'Saved orynn-demo.txt' });
+    processTaskEvent({ type: 'subtask', subtask_id: 'n3', status: 'done' });
+
+    await delay(400);
+    processTaskEvent({
+      type: 'reflection',
+      success: true,
+      reason: 'Saved release note to C:\\Users\\ACER\\Desktop\\orynn-demo.txt',
+      worker_id: 'desktop-1',
+    });
+    await delay(350);
+    processTaskEvent({
+      type: 'done',
+      complete: true,
+      reason: 'Saved orynn-demo.txt on your Desktop. Orynn drove Notepad via UI Automation control names — no screenshots.',
+    });
+  }
+
   window.__aiComputerPlayWidgetGallery = playWidgetGallery;
   window.__aiComputerPlayDemoStream = playDemoStream;
+  window.__aiComputerPlayNotepadDemoStream = playNotepadDemoStream;
   window.__aiComputerClearDemo = clearDemoStream;
 
   /* ---------------- init ---------------- */

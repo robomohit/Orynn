@@ -18,8 +18,10 @@
 > **An autonomous AI agent that controls your computer using plain English.** Give it a goal - it plans, acts, and shows you exactly what it is doing in real time, in a floating glass capsule that sits on top of your desktop.
 
 <p align="center">
-  <img src="docs/hero.svg" alt="Orynn controls Windows apps by UI Automation control names instead of screenshots" width="820">
+  <img src="docs/demo.gif" alt="Orynn plans the task, launches Notepad, types a release note, and saves it to the Desktop by driving Windows UI Automation control names instead of screenshots" width="820">
 </p>
+
+<p align="center"><sub>Orynn plans the task, launches Notepad, types the note, and saves it to your Desktop &mdash; clicking Windows controls <b>by name</b>, no screenshots.</sub></p>
 
 > Free to run on [OpenRouter](https://openrouter.ai)'s free-tier models (subject to their limits). Coding and browser modes work on Windows, macOS, and Linux; native desktop control is Windows-only.
 
