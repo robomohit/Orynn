@@ -373,10 +373,6 @@
             <label class="composer-select-label"><span>Access</span><select id="autonomy-level"><option value="careful">Ask for approval</option><option value="fast">Full access</option></select></label>
             <label class="composer-select-label"><span>Thinking</span><select id="thinking-budget"><option value="off">Off</option><option value="standard">Standard</option><option value="extended">Extended</option></select></label>
           </div>
-          <button class="composer-context-chip" id="composer-context-chip" type="button" title="Current mode and model">
-            <span id="composer-mode-label">Dynamic</span>
-            <span id="composer-model-label">Balanced</span>
-          </button>
           <div class="composer-actions">
             <button class="composer-icon-btn" id="composer-options-toggle" type="button" aria-label="Task options" title="Task options (plan, access, thinking)" aria-expanded="false">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="18" r="2"/></svg>
@@ -513,7 +509,6 @@
     <div class="eyebrow" style="color: var(--accent); font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-cap); text-transform: uppercase;">Permission requested</div>
     <h3 id="perm-title">Permission requested</h3>
     <p id="perm-reason">The agent wants additional access.</p>
-    <pre class="modal-code" id="perm-code"></pre>
     <div class="modal-actions">
       <button class="modal-btn" id="perm-deny" type="button">Deny</button>
       <button class="modal-btn primary" id="perm-approve" type="button">Allow</button>

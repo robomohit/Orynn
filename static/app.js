@@ -283,11 +283,22 @@
   let terminalStateKey = null;
   const actionCards = {};
   let lastActiveCard = null;
-  let activeTurnSummary = null; // Phase C1: groups tool actions between reasoning events
+  let workBuffer = null;
+  const getWorkBuffer = () => {
+    if (!workBuffer || !workBuffer.isConnected) {
+      workBuffer = document.createElement('div');
+      workBuffer.className = 'work-buffer';
+      const feed = $('feed');
+      if (feed) feed.appendChild(workBuffer);
+    }
+    return workBuffer;
+  };
   let liveAssistantEl = null;
   let liveAssistantText = '';
   let liveAssistantTaskId = '';
 
+  // Bucket a tool action_type into a coarse family. Used by the
+  // "files changed" capstone at done-time to detect file-edit actions.
   const _actionTypeLabel = (type = '') => {
     if (/run_command|bash|terminal/i.test(type)) return 'command';
     if (/read_file|write_file|edit_file|str_replace|create_file|delete_file|undo_edit|view_file/i.test(type)) return 'file';
@@ -297,126 +308,9 @@
     return 'step';
   };
 
-  // Phase C1: a "Step N" reasoning note is just an action announcement —
-  // the turn summary already covers it. Skipping it also prevents the
-  // turn from being fragmented into one-tool-per-summary.
+  // A "Step N" reasoning note is a bare action announcement; the live work
+  // buffer already shows the action card, so we drop it from the feed.
   const _isStepAnnouncement = (e) => /^step\s*\d+$/i.test(String(e && e.stage || '').trim());
-
-  const _turnSummaryText = (types, live) => {
-    const buckets = {};
-    types.forEach(t => { buckets[t] = (buckets[t] || 0) + 1; });
-    const parts = Object.entries(buckets).map(([t, n]) => {
-      if (t === 'command') return live ? `Running ${n > 1 ? n + ' commands' : 'command'}…` : `Ran ${n} command${n > 1 ? 's' : ''}`;
-      if (t === 'file') return live ? `Editing ${n > 1 ? n + ' files' : 'file'}…` : `Edited ${n} file${n > 1 ? 's' : ''}`;
-      if (t === 'search') return live ? 'Searching…' : `Searched ${n} time${n > 1 ? 's' : ''}`;
-      if (t === 'browser') return live ? 'Browsing…' : `${n} browser action${n > 1 ? 's' : ''}`;
-      if (t === 'desktop') return live ? 'Using desktop...' : `${n} desktop action${n > 1 ? 's' : ''}`;
-      if (t === 'action') return live ? 'Acting…' : `${n} action${n > 1 ? 's' : ''}`;
-      return live ? 'Working…' : `${n} step${n > 1 ? 's' : ''}`;
-    });
-    return parts.join(', ') || (live ? 'Working…' : `${types.length} step${types.length !== 1 ? 's' : ''}`);
-  };
-
-  // Phase C2: build a step-timeline inside the turn-summary body on first expand.
-  // Raw tool cards are hidden; one icon-gutter row per step is shown instead.
-  const _STEP_ICONS = { command: '$', file: '+', search: '?', browser: '@', desktop: '*', action: '*', step: '-' };
-  const _buildTurnTimeline = (body, steps) => {
-    if (!steps.length) return;
-    Array.from(body.children).forEach(c => { if (!c.classList.contains('turn-timeline')) c.style.display = 'none'; });
-    const tl = document.createElement('div');
-    tl.className = 'turn-timeline';
-    steps.forEach(s => {
-      const row = document.createElement('div');
-      row.className = 'turn-step';
-      const icon = document.createElement('span');
-      icon.className = 'turn-step-icon';
-      icon.textContent = _STEP_ICONS[_actionTypeLabel(s.actionType)] || _STEP_ICONS.step;
-      const content = document.createElement('div');
-      content.className = 'turn-step-content';
-      const lbl = document.createElement('span');
-      lbl.className = 'turn-step-label';
-      const finalState = s.stateEl ? s.stateEl.textContent : '';
-      lbl.textContent = (finalState && finalState !== 'Running') ? `${s.label} — ${finalState}` : s.label;
-      content.appendChild(lbl);
-      const sub = s.subtitleEl ? s.subtitleEl.textContent.trim() : s.summary;
-      if (sub) {
-        const subEl = document.createElement('span');
-        subEl.className = 'turn-step-sub';
-        subEl.textContent = sub;
-        content.appendChild(subEl);
-      }
-      const trace = s.traceEl ? (s.traceEl.dataset.traceSummary || s.traceEl.textContent.trim()) : '';
-      if (trace) {
-        const traceEl = document.createElement('span');
-        traceEl.className = 'turn-step-trace';
-        traceEl.textContent = trace;
-        content.appendChild(traceEl);
-      }
-      const rawOutput = s.outputEl ? s.outputEl.textContent.trim() : '';
-      if (rawOutput) {
-        const wrap = document.createElement('div');
-        wrap.className = 'turn-step-output-wrap';
-        const out = document.createElement('pre');
-        out.className = 'turn-step-output';
-        out.textContent = rawOutput.length > 2000 ? rawOutput.slice(0, 2000) + '\n…' : rawOutput;
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'ts-copy-btn';
-        copyBtn.type = 'button';
-        copyBtn.title = 'Copy output';
-        copyBtn.textContent = 'Copy';
-        copyBtn.onclick = () => {
-          navigator.clipboard.writeText(out.textContent).catch(() => {});
-          copyBtn.textContent = 'Copied!';
-          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-        };
-        wrap.appendChild(out);
-        wrap.appendChild(copyBtn);
-        content.appendChild(wrap);
-      }
-      row.appendChild(icon);
-      row.appendChild(content);
-      tl.appendChild(row);
-    });
-    body.appendChild(tl);
-  };
-
-  const startTurnSummary = () => {
-    if (activeTurnSummary) return activeTurnSummary;
-    removeWelcome();
-    const card = document.createElement('div');
-    card.className = 'turn-summary';
-    const headerEl = document.createElement('div');
-    headerEl.className = 'turn-summary-head';
-    const textSpan = document.createElement('span');
-    textSpan.className = 'turn-summary-text';
-    textSpan.textContent = 'Working…';
-    const chevronEl = document.createElement('span');
-    chevronEl.className = 'turn-summary-chevron';
-    chevronEl.textContent = '›';
-    headerEl.appendChild(textSpan);
-    headerEl.appendChild(chevronEl);
-    const body = document.createElement('div');
-    body.className = 'turn-summary-body collapsed';
-    const steps = []; // Phase C2: step data for timeline
-    headerEl.addEventListener('click', () => {
-      const isCollapsed = body.classList.toggle('collapsed');
-      card.classList.toggle('expanded', !isCollapsed);
-      if (!isCollapsed && !body.querySelector('.turn-timeline')) _buildTurnTimeline(body, steps); // Phase C2
-    });
-    card.appendChild(headerEl);
-    card.appendChild(body);
-    $('feed').appendChild(card);
-    scrollFeed();
-    activeTurnSummary = { card, body, textSpan, types: [], steps }; // Phase C2: steps
-    return activeTurnSummary;
-  };
-
-  const finalizeTurnSummary = () => {
-    if (!activeTurnSummary) return;
-    const { textSpan, types } = activeTurnSummary;
-    textSpan.textContent = _turnSummaryText(types, false) + ' ›';
-    activeTurnSummary = null;
-  };
 
   const WELCOME_HTML = document.getElementById('welcome').outerHTML;
   const PROJECT_FOLDER_STORAGE_KEY = 'ai-computer.project-folder.v1';
@@ -1049,7 +943,8 @@
     } else {
       el.textContent = text;
     }
-    $('feed').appendChild(el);
+    const target = (kind === 'system-note' || kind === 'reasoning') ? getWorkBuffer() : $('feed');
+    target.appendChild(el);
     pruneFeed();
     scrollFeed();
     return el;
@@ -1143,11 +1038,11 @@
     lastActiveCard = card || null;
   };
 
-  const createFeedCard = (className = '') => {
+  const createFeedCard = (className = '', container = $('feed')) => {
     removeWelcome();
     const card = document.createElement('div');
     card.className = `feed-card ${className}`.trim();
-    $('feed').appendChild(card);
+    if (container) container.appendChild(card);
     pruneFeed();
     setActiveCard(card);
     scrollFeed();
@@ -1516,6 +1411,21 @@
   };
 
   const renderHistoryItem = (taskRecord, makeActive = false) => {
+    // Dedup: never render the same task id twice (the tasks list + an
+    // auto-resumed active task can both ask to render the same record, which
+    // produced the duplicate "dispatch / Inspect the repo" rows). Reuse the
+    // existing row instead of stacking a copy.
+    const _existingId = taskRecord.id || '';
+    if (_existingId) {
+      const existing = findHistoryItem(_existingId);
+      if (existing) {
+        if (makeActive) {
+          historyItems.forEach((i) => i.classList.remove('active'));
+          existing.classList.add('active');
+        }
+        return existing;
+      }
+    }
     const item = document.createElement('button');
     item.type = 'button';
     const status = (taskRecord.status || '').toLowerCase();
@@ -1795,7 +1705,6 @@
       const detail = event.reason || event.explanation || `The agent needs ${event.scope || 'additional'} access.`;
       $('perm-title').textContent = `Allow ${event.scope || 'access'}?`;
       $('perm-reason').textContent = detail;
-      $('perm-code').textContent = JSON.stringify({ scope: event.scope, explanation: event.explanation || '' }, null, 2);
       $('permission').classList.add('show');
       window.pendingTaskId = taskId;
       window.pendingPermissionId = event.action_id;
@@ -1839,6 +1748,7 @@
   const finalizeLiveStatus = () => {
     if (!liveStatusCard || !liveStatusCard.isConnected) return;
     liveStatusCard.style.display = 'none';
+    liveStatusCard.remove();
     liveStatusCard = null;
     liveStatusMessage = '';
   };
@@ -1855,27 +1765,18 @@
   // Codex-style: when a turn finishes, fold the working steps (status notes,
   // reasoning, tool chatter) under a collapsed "Worked for Xm Ys ›" toggle and
   // leave the final answer below it.
-  const summarizeWork = (durationSec) => {
+  const summarizeWork = (durationSec) => { lastActionId = null;
+
     const feed = $('feed');
-    if (!feed) return;
-    const kids = Array.from(feed.children);
-    let startIdx = -1;
-    for (let i = kids.length - 1; i >= 0; i--) {
-      if (kids[i].classList?.contains('message') && kids[i].classList.contains('user')) { startIdx = i; break; }
+    if (!feed || !workBuffer || !workBuffer.isConnected) return;
+    
+    const steps = Array.from(workBuffer.children);
+    if (!steps.length) {
+      workBuffer.remove();
+      workBuffer = null;
+      return;
     }
-    const isStep = (el) => el.classList && (
-      el.classList.contains('status-row') ||
-      el.classList.contains('status-note') ||
-      el.classList.contains('turn-summary') ||
-      (el.classList.contains('message') && (
-        el.classList.contains('system-note') ||
-        el.classList.contains('system-success') ||
-        el.classList.contains('reasoning')))
-    );
-    const steps = [];
-    for (let i = startIdx + 1; i < kids.length; i++) {
-      if (isStep(kids[i]) && kids[i].style.display !== 'none') steps.push(kids[i]);
-    }
+
     const summary = document.createElement('div');
     summary.className = 'work-summary';
     const header = document.createElement('button');
@@ -1888,21 +1789,40 @@
     chev.className = 'work-chevron';
     chev.textContent = '›';
     header.append(dur, chev);
+    
     const body = document.createElement('div');
-    body.className = 'work-summary-body';
-    body.hidden = true;
-    if (steps.length) {
-      feed.insertBefore(summary, steps[0]);
-      steps.forEach((s) => body.appendChild(s));
-      header.addEventListener('click', () => {
-        body.hidden = !body.hidden;
-        summary.classList.toggle('open', !body.hidden);
-      });
+    body.className = 'work-summary-body collapsed';
+
+    const inner = document.createElement('div');
+    inner.className = 'work-summary-inner';
+    steps.forEach((s) => inner.appendChild(s));
+    body.appendChild(inner);
+    
+    header.addEventListener('click', () => {
+      const isCollapsed = body.classList.toggle('collapsed');
+      summary.classList.toggle('open', !isCollapsed);
+    });
+
+    summary.append(header, body);
+
+    let insertBefore = null;
+    const kids = Array.from(feed.children);
+    for (let i = kids.length - 1; i >= 0; i--) {
+      if (kids[i].classList && kids[i].classList.contains('message') && kids[i].classList.contains('assistant')) {
+        insertBefore = kids[i];
+      } else if (kids[i].classList?.contains('message') && kids[i].classList.contains('user')) {
+        break;
+      }
+    }
+
+    if (insertBefore) {
+      feed.insertBefore(summary, insertBefore);
     } else {
       feed.appendChild(summary);
-      header.classList.add('no-expand');
     }
-    summary.append(header, body);
+
+    workBuffer.remove();
+    workBuffer = null;
   };
 
   // ---- Codex-style "N files changed" capstone (real edited paths only) ----
@@ -1963,6 +1883,7 @@
     });
     wrap.append(head, body);
     feed.appendChild(wrap);
+    editedFiles.clear();
   };
 
   const createStateChip = (label, cls = '') => {
@@ -2044,7 +1965,7 @@
     if (note.live) { setLiveStatus(summary, detail, age); return; }
 
     finalizeLiveStatus();
-    const card = createFeedCard('reasoning-note');
+    const card = createFeedCard('reasoning-note', getWorkBuffer());
     const eyebrowLabel = note.stage
       ? note.stage.replace(/\s*\(WORKER-\d+\)\s*/i, '').trim() || 'Thinking'
       : 'Thinking';
@@ -2060,8 +1981,8 @@
     finalizeLiveStatus();
     const replacingPlan = !!(activePlanCard && activePlanCard.isConnected);
     if (replacingPlan) activePlanCard.classList.add('superseded');
-
-    activePlanCard = createFeedCard('plan-card');
+    activePlanCard = createFeedCard('plan-card', getWorkBuffer());
+    activePlanCard.id = '__plan__';
     const headBits = createCardHead({
       eyebrow: 'Plan',
       title: replacingPlan ? 'Updated plan' : 'Execution plan',
@@ -2133,22 +2054,6 @@
       return existing;
     }
 
-    // Phase C1: group into active turn summary
-    const turn = startTurnSummary();
-    turn.types.push(_actionTypeLabel(actionType));
-    turn.textSpan.textContent = _turnSummaryText(turn.types, true);
-    // Phase C2: record step data for timeline; refs filled after parts are created
-    const stepData = {
-      label: humanize(actionType || 'action'),
-      actionType: actionType || '',
-      summary: summary || '',
-      stateEl: null,
-      subtitleEl: null,
-      outputEl: null,
-      traceEl: null,
-    };
-    turn.steps.push(stepData);
-
     removeWelcome();
     const card = document.createElement('div');
     card.className = 'feed-card tool-card';
@@ -2185,18 +2090,16 @@
     inner.appendChild(output);
     inner.appendChild(details);
     card.appendChild(body);
-    turn.body.appendChild(card);
+    
+    // Append directly to work buffer so it's visible during stream
+    getWorkBuffer().appendChild(card);
+    pruneFeed();
+    scrollFeed();
 
     parts.head.addEventListener('click', () => {
       const collapsed = body.classList.toggle('collapsed');
       chevron.classList.toggle('open', !collapsed);
     });
-
-    // Phase C2: wire live DOM refs into stepData so timeline reads current values
-    stepData.stateEl = parts.stateEl;
-    stepData.subtitleEl = parts.subtitleEl;
-    stepData.outputEl = output;
-    stepData.traceEl = trace;
 
     const entry = {
       card, output, traceEl: trace, details,
@@ -2758,7 +2661,7 @@
     const rawType = event.widget || event.widget_type || event.kind || event.type || 'widget';
     const widgetType = String(rawType).replace(/-/g, '_');
     const data = event.data || event.payload || event;
-    const card = createFeedCard(`ai-widget-card widget-${widgetType}`);
+    const card = createFeedCard(`ai-widget-card widget-${widgetType}`, getWorkBuffer());
     const bits = createCardHead({
       eyebrow: event.eyebrow || 'Widget',
       title: event.title || widgetTitles[widgetType] || humanize(widgetType),
@@ -2778,7 +2681,7 @@
     finalizeLiveStatus();
     const success = reflection.success === true;
     const failure = reflection.success === false;
-    const card = createFeedCard(`reflection-card${success ? ' success' : failure ? ' failure' : ''}`);
+    const card = createFeedCard(`reflection-card${success ? ' success' : failure ? ' failure' : ''}`, getWorkBuffer());
     const bits = createCardHead({
       eyebrow: 'Reflection',
       title: success ? 'Subtask passed' : failure ? 'Needs another pass' : 'Reflection',
@@ -2815,7 +2718,7 @@
       screenshotStore.delete(oldKey);
     }
 
-    const card = createFeedCard('screenshot-card');
+    const card = createFeedCard('screenshot-card', getWorkBuffer());
     const isIsolated = payload.isolated || false;
     const bits = createCardHead({
       eyebrow: 'Preview',
@@ -2883,8 +2786,7 @@
     screenshotStore.clear(); lastActionId = null; terminalStateKey = null;
     editedFiles.clear();
     Object.keys(actionCards).forEach((k) => delete actionCards[k]);
-    lastActiveCard = null; activeTurnSummary = null;
-    taskWorkers = new Set(); $('feed')?.classList.remove('multi-worker');
+    lastActiveCard = null; taskWorkers = new Set(); $('feed')?.classList.remove('multi-worker');
     stopReplyStream();
     resetLiveAssistant();
 
@@ -2985,10 +2887,9 @@
       // Live reasoning (thought tokens, composing) shows immediately via setLiveStatus.
       if (event.live) { renderReasoning(event); return; }
       // C1: non-live step announcements are noise — the turn summary covers them.
-      if (_isStepAnnouncement(event)) return;
-      finalizeTurnSummary(); renderReasoning(event); return;
+      if (_isStepAnnouncement(event)) return; renderReasoning(event); return;
     }
-    if (event.type === 'plan') { clearTrustControls(actionCards.__plan__, '__plan__'); finalizeTurnSummary(); renderPlan(event); return; }
+    if (event.type === 'plan') { clearTrustControls(actionCards.__plan__, '__plan__'); renderPlan(event); return; }
 
     if (event.type === 'status') {
       if (event.heartbeat) return;
@@ -3015,8 +2916,11 @@
       if (shouldReuseLiveStatus(event.message || '')) {
         setLiveStatus(statusPhase(event.message || ''), event.message || '', Number.isFinite(event.elapsed_seconds) ? `${event.elapsed_seconds}s` : '');
       } else {
-        finalizeLiveStatus();
-        appendMessage(event.message || 'Agent update', 'system-note');
+        // All other status events also go through the live status card so
+        // the user always sees immediate feedback (e.g. "Got it — on it now").
+        // The live status card sits in the visible feed and gets replaced by
+        // the next status or finalized when tool work begins.
+        setLiveStatus(statusPhase(event.message || ''), event.message || '', Number.isFinite(event.elapsed_seconds) ? `${event.elapsed_seconds}s` : '');
       }
       return;
     }
@@ -3158,11 +3062,12 @@
     }
 
     if (event.type === 'terminal_output') {
+      let idToUse = event.action_id || `terminal-${Date.now()}`;
       const target = (event.action_id && actionCards[event.action_id])
         ? actionCards[event.action_id]
         : (lastActionId && actionCards[lastActionId])
           ? actionCards[lastActionId]
-          : ensureActionCard(event.action_id || `terminal-${Date.now()}`, 'run_command', event.command || '');
+          : (lastActionId = idToUse, ensureActionCard(idToUse, 'run_command', event.command || ''));
       if (event.command && !target.subtitleEl.textContent) target.subtitleEl.textContent = event.command;
       appendTerminalOutput(target, event.command || 'Command output', event.output || '', event.ok !== false, event.channel || 'stdout');
       return;
@@ -3177,8 +3082,8 @@
       return;
     }
 
-    if (event.type === 'screenshot') { finalizeTurnSummary(); renderScreenshot(event); return; }
-    if (event.type === 'reflection') { finalizeTurnSummary(); renderReflection(event); return; }
+    if (event.type === 'screenshot') { renderScreenshot(event); return; }
+    if (event.type === 'reflection') { renderReflection(event); return; }
 
     if (event.type === 'token_usage' || event.type === 'budget') {
       if (Number.isFinite(event.percent)) setBudget(event.percent);
@@ -3201,15 +3106,11 @@
       return;
     }
 
-    if (event.type === 'widget' || event.type === 'ui_widget') {
-      finalizeTurnSummary();
-      renderAgentWidget(event);
+    if (event.type === 'widget' || event.type === 'ui_widget') { renderAgentWidget(event);
       return;
     }
 
-    if (widgetRenderers[event.type]) {
-      finalizeTurnSummary();
-      renderAgentWidget({ ...event, widget: event.type });
+    if (widgetRenderers[event.type]) { renderAgentWidget({ ...event, widget: event.type });
       return;
     }
 
@@ -3227,9 +3128,7 @@
       return;
     }
 
-    if (event.type === 'approval_required') {
-      finalizeTurnSummary();
-      finalizeLiveStatus();
+    if (event.type === 'approval_required') { finalizeLiveStatus();
       const reason = event.reason || event.action?.explanation || 'High risk action requires approval.';
       const entry = ensureActionCard(event.action_id, event.action?.type || 'approval', reason);
       setActionState(entry, 'Waiting', 'waiting');
@@ -3279,9 +3178,7 @@
       return;
     }
 
-    if (event.type === 'permission_required') {
-      finalizeTurnSummary();
-      finalizeLiveStatus();
+    if (event.type === 'permission_required') { finalizeLiveStatus();
       const detail = event.reason || event.explanation || `The agent needs ${event.scope || 'additional'} access.`;
       const entry = ensureActionCard(event.action_id, 'request_permission', detail);
       setActionState(entry, 'Waiting', 'waiting');
@@ -3351,7 +3248,6 @@
         }
         $('perm-title').textContent = `Allow ${event.scope || 'access'}?`;
         $('perm-reason').textContent = detail;
-        $('perm-code').textContent = JSON.stringify({ scope: event.scope, explanation: event.explanation || '' }, null, 2);
         $('permission').classList.add('show');
         window.pendingTaskId = taskId;
         window.pendingPermissionId = event.action_id;
@@ -3386,12 +3282,12 @@
     if (event.type === 'error') {
       const errorKey = `error:${event.message || ''}`;
       if (terminalStateKey === errorKey) return;
-      terminalStateKey = errorKey;
-      finalizeTurnSummary();
-      finalizeLiveStatus();
+      terminalStateKey = errorKey; finalizeLiveStatus();
       finalizeAssistantDelta('', { taskId });
       clearLiveIndicators();
       setStatus('error');
+      const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
+      summarizeWork(elapsed);
       renderStatusNote('error', `Error: ${event.message || 'Unknown error.'}`);
       if (!replay) { markHistoryFinal('failed'); stopEverything(); }
       else showPostRunControls();
@@ -3401,9 +3297,7 @@
     if (event.type === 'done') {
       const doneKey = `done:${event.complete ? '1' : '0'}:${event.reason || ''}:${event.blocked ? '1' : '0'}`;
       if (terminalStateKey === doneKey) return;
-      terminalStateKey = doneKey;
-      finalizeTurnSummary();
-      finalizeLiveStatus();
+      terminalStateKey = doneKey; finalizeLiveStatus();
       clearLiveIndicators();
       if (event.complete) {
         setStatus('complete');
@@ -3419,7 +3313,13 @@
         if (isRealAnswer || liveReply) {
           const finalReply = isRealAnswer ? reply : liveReply;
           const finalized = finalizeAssistantDelta(finalReply, { taskId });
-          if (!finalized) attachMessageActions(appendMessage(finalReply, 'assistant'), { text: finalReply, taskId });
+          if (!finalized) {
+            // No real backend delta stream arrived (the web SSE delivers the
+            // answer whole in done.reason), so type it out synthetically.
+            // Replays of past logs still render instantly.
+            if (replay) attachMessageActions(appendMessage(finalReply, 'assistant'), { text: finalReply, taskId });
+            else streamInAssistantReply(finalReply, { taskId });
+          }
         }
         else renderStatusNote('success', 'Task completed successfully.');
         if (!replay) { markHistoryFinal('done'); stopEverything(); if (!suppressToasts) toast('Task complete.', 'ok'); }
@@ -3427,6 +3327,8 @@
       } else {
         setStatus('failed');
         finalizeAssistantDelta('', { taskId });
+        const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
+        summarizeWork(elapsed);
         renderFilesChanged();  // surface what was touched before the failure (if any)
         renderStatusNote('error', event.blocked ? `Request blocked: ${event.reason || 'This request could not be completed.'}` : `Task failed: ${event.reason || 'Unknown failure.'}`, [
           { label: 'Retry', onClick: () => retryTask() },
@@ -3440,12 +3342,12 @@
     if (event.type === 'cancelled') {
       const key = `cancelled:${event.message || ''}`;
       if (terminalStateKey === key) return;
-      terminalStateKey = key;
-      finalizeTurnSummary();
-      finalizeLiveStatus();
+      terminalStateKey = key; finalizeLiveStatus();
       finalizeAssistantDelta('', { taskId });
       clearLiveIndicators();
       setStatus('cancelled');
+      const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
+      summarizeWork(elapsed);
       renderStatusNote('cancelled', event.message || 'Task was cancelled.');
       if (!replay) { markHistoryFinal('cancelled'); stopEverything(); }
     }

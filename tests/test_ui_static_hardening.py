@@ -88,22 +88,8 @@ def test_project_folder_picker_is_present_and_persisted_client_side():
     assert "isGeneral: true" in html
 
 
-def test_phase_c1_turn_summary_present():
-    html = _read_all_static()
-
-    assert "turn-summary" in html
-    assert "turn-summary-head" in html
-    assert "turn-summary-body" in html
-    assert "startTurnSummary" in html
-    assert "finalizeTurnSummary" in html
-    assert "_turnSummaryText" in html
-    assert "activeTurnSummary" in html
-    assert "finalizeTurnSummary();" in html
-    assert "el.classList.contains('turn-summary')" in html
-    assert "el.classList.contains('status-note')" in html
-    assert "cleanFinalReplyText" in html
-    assert "isTerminalStatus(currentStatus) && !['done', 'error', 'cancelled'" in html
-    assert ".message.assistant.streaming::after" in html
+# NOTE: the verbose turn-summary + step-timeline + per-step copy-button UI was
+# simplified to the Codex-style work fold — see test_codex_work_summary_folding.
 
 
 def test_codex_work_summary_folding():
@@ -343,27 +329,6 @@ def test_phase_f_static_assets_split():
     assert "const init" in js, "main init function should be in app.js"
 
 
-def test_phase_c2_step_timeline_present():
-    """Phase C2: expandable step-timeline inside turn summaries."""
-    js = (_STATIC / "app.js").read_text(encoding="utf-8")
-    css = (_STATIC / "style.css").read_text(encoding="utf-8")
-    # JS: timeline builder and step data tracking
-    assert "_buildTurnTimeline" in js
-    assert "turn-timeline" in js
-    assert "turn-step" in js
-    assert "stepData" in js
-    assert "turn.steps.push(stepData)" in js
-    assert "_STEP_ICONS" in js
-    assert "traceEl" in js
-    assert "turn-step-trace" in js
-    # CSS: timeline layout classes
-    assert ".turn-timeline" in css
-    assert ".turn-step-icon" in css
-    assert ".turn-step-trace" in css
-    assert ".turn-step-output" in css
-    assert "max-height: 260px" in css
-
-
 def test_control_trace_surface_present():
     html = STATIC_HTML.read_text(encoding="utf-8")
     js = (_STATIC / "app.js").read_text(encoding="utf-8")
@@ -479,22 +444,6 @@ def test_liquid_glass_capsule_widget_present():
     assert ".vcap-context" in css
     assert ".vcap-action" in css
     assert "body.widget-shell #vorb-root" in css
-
-
-def test_turn_step_output_copy_button_present():
-    css = (_STATIC / "style.css").read_text(encoding="utf-8")
-    js = (_STATIC / "app.js").read_text(encoding="utf-8")
-
-    # CSS: copy button wrapper and hover-reveal classes
-    assert ".turn-step-output-wrap" in css
-    assert ".ts-copy-btn" in css
-    assert ".turn-step-output-wrap:hover .ts-copy-btn" in css
-
-    # JS: copy button construction and clipboard write
-    assert "turn-step-output-wrap" in js
-    assert "ts-copy-btn" in js
-    assert "navigator.clipboard.writeText" in js
-    assert "copyBtn.textContent = 'Copied!'" in js
 
 
 def test_free_model_premium_controls_present():

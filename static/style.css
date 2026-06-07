@@ -967,7 +967,11 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 480px;
+    /* Shrink responsively within the topbar row instead of holding a fixed
+       480px and clipping the model/control chips beside it. */
+    min-width: 0;
+    flex: 0 1 auto;
+    max-width: min(480px, 46vw);
   }
   .topbar-row { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
   .topbar-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -1641,8 +1645,7 @@
     transition: background var(--dur-fast) var(--ease-out);
   }
   .feed-card:not(.is-active):hover { background: var(--bg-2); }
-  .turn-summary-body .feed-card:hover { background: transparent; }
-
+  
   @keyframes card-appear {
     0%   { opacity: 0; transform: translateY(4px); }
     100% { opacity: 1; transform: translateY(0); }
@@ -2002,69 +2005,7 @@
   }
 
   /* Phase C1 — turn summary (collapses all tool actions into one muted line) */
-  .turn-summary { position: relative; padding-left: 24px; margin: 0; animation: feed-item-in 0.32s var(--ease-out) both; }
-  .turn-summary::before {
-    content: '';
-    position: absolute;
-    left: 4px; top: 14px;
-    width: 7px; height: 7px;
-    border-radius: 999px;
-    background: var(--bg-1);
-    border: 1px solid var(--line-3);
-    z-index: 1;
-  }
-  .turn-summary-head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 0 4px;
-    cursor: pointer;
-    user-select: none;
-  }
-  .turn-summary-text {
-    font-size: 13px;
-    color: var(--ink-3);
-    flex: 1;
-  }
-  .turn-summary-chevron {
-    font-size: 14px;
-    color: var(--ink-3);
-    line-height: 1;
-    transition: transform 0.15s ease;
-  }
-  .turn-summary.expanded .turn-summary-chevron { transform: rotate(90deg); }
-  .turn-summary-body { padding: 2px 0 4px 0; }
-  .turn-summary-body.collapsed { display: none; }
-  /* nested tool cards: compact one-line rows, no timeline decoration */
-  .turn-summary-body .feed-card { padding-left: 0; margin: 0; }
-  .turn-summary-body .feed-card::before { display: none; }
-  .turn-summary-body .feed-card.is-active::after { inset: -2px 0; }
-  /* drop the redundant "TOOL" eyebrow — context already makes it obvious */
-  .turn-summary-body .feed-card .eyebrow { display: none; }
-  /* title + args on ONE row */
-  .turn-summary-body .feed-card .card-meta {
-    display: flex;
-    flex-direction: row;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-  }
-  .turn-summary-body .feed-card .card-head { padding: 5px 0; gap: 8px; }
-  .turn-summary-body .feed-card .card-title {
-    font-size: 13px;
-    font-weight: 500;
-    flex-shrink: 0;
-  }
-  .turn-summary-body .feed-card .card-subtitle {
-    font-size: 12px;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin: 0;
-  }
-
+          .turn-summary.expanded       
   /* Phase C2: step-timeline inside expanded turn summaries */
   .turn-timeline { display: flex; flex-direction: column; gap: 2px; padding: 6px 0 4px; }
   .turn-step { display: flex; gap: 10px; align-items: flex-start; padding: 3px 16px; }
@@ -4909,30 +4850,27 @@
   .work-summary-head.no-expand .work-chevron { display: none; }
   .work-summary-body {
     margin-top: 6px;
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.2s ease, opacity 0.2s ease, margin 0.2s ease;
+    opacity: 1;
+  }
+  .work-summary-body.collapsed {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-top: 0;
+  }
+  .work-summary-inner {
+    overflow: hidden;
     padding: 2px 0 2px 14px;
     border-left: 2px solid var(--line);
+    min-height: 0;
   }
   .work-summary-body .message,
   .work-summary-body .status-row,
-  .work-summary-body .status-note,
-  .work-summary-body .turn-summary {
+  .work-summary-body .status-note {
     padding-top: 4px;
     padding-bottom: 4px;
-    font-size: var(--fs-sm);
-  }
-  .work-summary-body .turn-summary {
-    padding-left: 0;
-    margin: 0;
-  }
-  .work-summary-body .turn-summary::before {
-    display: none;
-  }
-  .work-summary-body .turn-summary-head {
-    padding: 3px 0;
-  }
-  .work-summary-body .turn-summary-text,
-  .work-summary-body .turn-summary-chevron {
-    color: var(--muted);
     font-size: var(--fs-sm);
   }
   .work-summary-body .status-note {
