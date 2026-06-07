@@ -845,6 +845,44 @@
     return el;
   };
 
+  // Codex-style: stream the final answer into a live bubble that grows and
+  // formats markdown as it types, instead of the whole reply popping in at once.
+  // (The thinking already streams live; this gives the answer the same feel.)
+  let _replyStreamTimer = null;
+  const stopReplyStream = () => {
+    if (_replyStreamTimer) { clearTimeout(_replyStreamTimer); _replyStreamTimer = null; }
+  };
+  const streamInAssistantReply = (text, { taskId = '' } = {}) => {
+    removeWelcome();
+    stopReplyStream();
+    const full = String(text);
+    const el = document.createElement('div');
+    el.className = 'message assistant streaming';
+    $('feed').appendChild(el);
+    pruneFeed();
+    const tokens = full.split(/(\s+)/);          // words + whitespace, preserved
+    const total = tokens.length;
+    const perTick = Math.max(1, Math.ceil(total / 60));  // ~60 steps, scales with length
+    let i = 0;
+    const finalize = () => {
+      _replyStreamTimer = null;
+      el.classList.remove('streaming');
+      el.innerHTML = renderMarkdown(full);       // clean final render
+      attachMessageActions(el, { text: full, taskId });
+      speakAgentReply(full);                      // read aloud once, if enabled
+      scrollFeed();
+    };
+    const tick = () => {
+      i = Math.min(total, i + perTick);
+      el.innerHTML = renderMarkdown(tokens.slice(0, i).join(''));
+      scrollFeed();
+      if (i < total) _replyStreamTimer = setTimeout(tick, 26);
+      else finalize();
+    };
+    tick();
+    return el;
+  };
+
   // Codex-style message footer: hover-revealed Copy + thumbs, attached to a reply.
   const _MSG_ICONS = {
     copy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
@@ -2614,6 +2652,7 @@
     Object.keys(actionCards).forEach((k) => delete actionCards[k]);
     lastActiveCard = null; activeTurnSummary = null;
     taskWorkers = new Set(); $('feed')?.classList.remove('multi-worker');
+    stopReplyStream();
 
     setStatus('ready');
     setMode($('mode-id').value || 'coding');
@@ -3051,7 +3090,12 @@
         // Fall back to the generic note only when there's no real answer.
         const reply = String(event.reason || '').trim();
         const isRealAnswer = reply.length > 12 && !/^(done|complete|completed|finished|task complete|ok)\.?$/i.test(reply);
-        if (isRealAnswer) attachMessageActions(appendMessage(reply, 'assistant'), { text: reply, taskId });
+        if (isRealAnswer) {
+          // Live runs: type the answer out with markdown forming as it goes.
+          // Replays of past logs render instantly (no fake typing of history).
+          if (replay) attachMessageActions(appendMessage(reply, 'assistant'), { text: reply, taskId });
+          else streamInAssistantReply(reply, { taskId });
+        }
         else appendMessage('Task completed successfully.', 'system-success');
         if (!replay) { markHistoryFinal('done'); stopEverything(); if (!suppressToasts) toast('Task complete.', 'ok'); }
         else showPostRunControls();

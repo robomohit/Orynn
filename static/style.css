@@ -1419,6 +1419,15 @@
   .message.assistant h2.md-h2 { font-size: 1.17em; }
   .message.assistant h3.md-h3 { font-size: 1.02em; color: var(--ink-2); }
   .message.assistant hr.md-hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+  /* Streaming reply: a blinking caret while the answer types out (Codex-style). */
+  .message.assistant.streaming p:last-child::after,
+  .message.assistant.streaming li:last-child::after {
+    content: '▋';
+    margin-left: 2px;
+    color: var(--accent);
+    animation: caret-blink 1.05s steps(2, start) infinite;
+  }
+  @keyframes caret-blink { 50% { opacity: 0; } }
   .message.assistant code.md-code {
     font-family: var(--font-mono);
     font-size: 0.86em;
