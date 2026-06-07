@@ -2135,6 +2135,48 @@
   #feed .worker-tag { display: none; }
   #feed.multi-worker .worker-tag { display: inline-flex; }
 
+  /* ── Codex-style stream declutter ──────────────────────────────────────
+     Flatten the agent-framework chrome: the reply is just prose (no "Agent"
+     label), eyebrows become quiet kickers instead of loud caps, the success
+     "Reflection" card folds into one dim line, the plan checklist loses its
+     dashed rules, and static chips read as quiet text rather than pills. */
+  .message.assistant::before { display: none; }
+
+  #feed .eyebrow {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: var(--fs-micro);
+    font-weight: 500;
+    color: var(--muted-3);
+  }
+
+  /* Plan: the title carries it — drop the redundant "PLAN" kicker. */
+  #feed .plan-card .eyebrow { display: none; }
+  #feed .plan-card .card-title { font-weight: 550; }
+
+  /* Success reflection → a single quiet line, not a labelled card. */
+  .reflection-card.success .eyebrow,
+  .reflection-card.success .state-chip { display: none; }
+  .reflection-card.success .card-title {
+    font-weight: 400;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+
+  /* Clean checklist — no dashed separators, tighter rhythm. */
+  #feed .subtask-item { border-bottom: 0; padding-top: 3px; padding-bottom: 3px; }
+
+  /* Static chips (e.g. "3 steps", "OK") → quiet text, not bordered pills.
+     Running/fail/waiting keep their colour because that state matters live. */
+  #feed .state-chip:not(.running):not(.fail):not(.waiting) {
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted-3);
+    padding-left: 0;
+    padding-right: 0;
+  }
+  #feed .state-chip:not(.running):not(.fail):not(.waiting)::before { display: none; }
+
   .worker-bg-1, .worker-bg-2, .worker-bg-3, .worker-bg-4, .worker-bg-5 { /* kept for JS compat */ }
 
   /* screenshots */
