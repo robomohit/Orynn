@@ -39,6 +39,7 @@ diagnostics/
 docs/private/
 docs/local/
 docs/*_PRIVATE.md
+benchmark-results/
 
 # Scratch/debug
 scratch/

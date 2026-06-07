@@ -118,7 +118,7 @@ app = FastAPI(title="Orynn", lifespan=_lifespan)
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# Serve bundled static assets (vendored JS/CSS, e.g. static/vendor/mermaid.min.js)
+# Serve bundled static assets (JS/CSS and any vendored frontend assets).
 # so the UI stays fully offline — no CDN dependency.
 from fastapi.staticfiles import StaticFiles
 import sys as _sys

@@ -1014,7 +1014,7 @@ def classify_task_complexity(goal: str) -> str:
     return "atomic" if len(g.split()) <= 20 else "complex"
 
 
-DEFAULT_OPENROUTER_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+DEFAULT_OPENROUTER_MODEL = "openrouter/openai/gpt-oss-120b:free"
 
 # Chain-level retry: when ALL models in the fallback chain are exhausted (e.g.
 # all 429'd), retry the whole chain this many times with exponential backoff
@@ -1025,7 +1025,8 @@ _CHAIN_RETRY_BACKOFFS = [10, 30]  # seconds between chain retry attempts
 # Speed tiers — each is an ordered free-model fallback chain. A user picks a
 # tier ("tier:quick" / "tier:balanced") instead of a raw model; the chain
 # survives the constant free-tier flakiness (most free models error at any
-# given moment). Latencies measured 2026-05-18 against OpenRouter free tier.
+# given moment). Desktop latencies measured 2026-06-07 against OpenRouter free
+# tier and real Windows UIA tasks.
 MODEL_TIERS: Dict[str, List[str]] = {
     # Quick — fast, lighter. Fine for simple/short tasks; weaker at hard coding.
     # NOTE: every model here MUST support native tool calling — a non-tool model
@@ -1035,20 +1036,20 @@ MODEL_TIERS: Dict[str, List[str]] = {
         "nvidia/nemotron-nano-9b-v2:free",         # nano fallback
         "openai/gpt-oss-120b:free",                # strong fallback
     ],
-    # Balanced — best free quality; ~8-21s. The sensible default.
+    # Balanced — best free quality. The sensible default.
     "balanced": [
-        "minimax/minimax-m2.5:free",               # ~9s — capable, mid speed
-        "openai/gpt-oss-120b:free",                # ~21s — strongest free
+        "openai/gpt-oss-120b:free",                # strongest reliable free default
+        "openai/gpt-oss-20b:free",                 # fast fallback
         "nvidia/nemotron-3-super-120b-a12b:free",  # heavy fallback
     ],
     # UIA — desktop control via UI Automation (text-only, NO vision needed).
-    # Benchmarked 2026-05-28 on a real uia_type tool call: gpt-oss both 3/3
-    # accurate; glm-4.5-air reliable; qwen/llama/minimax 429'd on free tier.
-    # Ordered fastest-accurate first.
+    # Real E2E 2026-06-07: gpt-oss-120b passed Notepad + Calculator; 20b was
+    # fastest but failed real verification/timeout; glm passed Notepad but not
+    # Calculator. Ordered reliable-first for medium/default desktop tasks.
     "uia": [
-        "openai/gpt-oss-20b:free",                 # ~3-7s, 3/3 correct tool calls
-        "openai/gpt-oss-120b:free",                # ~4-12s, 3/3 correct
-        "z-ai/glm-4.5-air:free",                   # ~6s, reliable find-first
+        "openai/gpt-oss-120b:free",                # safest free desktop model
+        "openai/gpt-oss-20b:free",                 # fast fallback / low effort
+        "z-ai/glm-4.5-air:free",                   # Notepad-capable fallback
         "nvidia/nemotron-3-super-120b-a12b:free",  # heavy last-resort
     ],
 }
@@ -1082,10 +1083,10 @@ _EFFORT_MODELS_GENERAL: Dict[str, str] = {
 }
 _EFFORT_MODELS_DESKTOP: Dict[str, str] = {
     # Desktop control needs tool-call-accurate models — keep to the UIA-proven set.
-    "low": "tier:uia",                                  # gpt-oss-20b first (fastest)
-    "medium": "tier:uia",
+    "low": "openai/gpt-oss-20b:free",                   # fastest; less reliable on complex desktop E2E
+    "medium": "tier:uia",                               # reliable-first UIA chain
     "high": "openai/gpt-oss-120b:free",
-    "max": "nvidia/nemotron-3-super-120b-a12b:free",
+    "max": "openai/gpt-oss-120b:free",
 }
 
 

@@ -55,17 +55,13 @@ def test_command_palette_rows_do_not_interpolate_model_labels_as_html():
     assert "hint.textContent = c.hint" in html
 
 
-def test_plan_mermaid_graph_escapes_model_provided_labels():
+def test_plan_checklist_renders_model_labels_as_text():
     js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
 
-    assert "const safeMermaidId" in js
-    assert "const safeMermaidLabel" in js
-    assert ".replace(/[<>{}\\[\\]()\"`'\\\\|;:\\n\\r]/g, ' ')" in js
-    assert "const safeId = safeMermaidId(subtask.id, `task${index}`)" in js
-    assert "const label = safeMermaidLabel(subtask.description)" in js
-    assert "const safeDep = safeMermaidId(dep, '')" in js
-    assert "if (!safeDep) return;" in js
-    assert "const prevSafeId = safeMermaidId(planSubtasks[index-1].id, `task${index - 1}`)" in js
+    assert "const safeMermaidId" not in js
+    assert "const safeMermaidLabel" not in js
+    assert "text.textContent = subtask.description" in js
+    assert "row.appendChild(text)" in js
     assert 'subtask.description.replace(/"/g' not in js
 
 
@@ -282,11 +278,12 @@ def test_task_start_is_gated_by_readiness_preflight():
     assert ".readiness-preflight-row.warning" in css
 
 
-def test_mermaid_is_self_hosted():
+def test_mermaid_dependency_is_removed():
     html = _read_all_static()
 
+    assert "mermaid" not in html.lower()
     assert "cdn.jsdelivr.net/npm/mermaid" not in html
-    assert '/static/vendor/mermaid.min.js' in html
+    assert '/static/vendor/mermaid.min.js' not in html
 
 
 def test_shortcut_help_overlay_is_present_and_question_mark_wired():

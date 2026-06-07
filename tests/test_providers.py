@@ -186,6 +186,13 @@ def test_allowed_models_empty_allows_all(monkeypatch):
     assert "google/gemma-4-31b-it:free" in result
 
 
+def test_free_tiers_track_current_benchmark_defaults():
+    from app.providers import MODEL_TIERS
+
+    assert MODEL_TIERS["uia"][0] == "openai/gpt-oss-120b:free"
+    assert "minimax/minimax-m2.5:free" not in MODEL_TIERS["balanced"]
+
+
 def test_allowed_models_permits_matching_model(monkeypatch):
     """Requests matching the allow-list succeed; non-matching fallbacks are stripped."""
     monkeypatch.setenv("ALLOWED_MODELS", "google/gemma-4-31b-it:free")

@@ -348,6 +348,103 @@ def test_uia_click_sequence_stops_on_miss(monkeypatch, tmp_path):
     assert res.data["clicked"] == 1  # only Two landed before the miss
 
 
+def test_uia_click_sequence_calculator_uses_keyboard_fallback(monkeypatch, tmp_path):
+    import app.widget.desktop_features as df
+
+    monkeypatch.setattr(df, "invoke_ui_element",
+                        lambda q, a: {"ok": False, "error": "no UIA control matched"})
+    monkeypatch.setattr(df, "ocr_find_in_app", lambda q, a: {"ok": False})
+    monkeypatch.setattr(df, "app_window_rect",
+                        lambda a: {"left": 0, "top": 0, "width": 400, "height": 300})
+
+    sent = []
+    clip = {"value": "old clipboard"}
+
+    def hotkey(*keys):
+        sent.append(("hotkey", keys))
+        if keys == ("ctrl", "c"):
+            clip["value"] = "4183"
+
+    fake_pyautogui = types.SimpleNamespace(
+        press=lambda key: sent.append(("press", key)),
+        write=lambda text, interval=0: sent.append(("write", text, interval)),
+        hotkey=hotkey,
+    )
+    fake_pyperclip = types.SimpleNamespace(
+        paste=lambda: clip["value"],
+        copy=lambda value: clip.update(value=value),
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake_pyautogui)
+    monkeypatch.setitem(sys.modules, "pyperclip", fake_pyperclip)
+
+    ex = _ex(tmp_path)
+    monkeypatch.setattr(
+        ex,
+        "focus_window",
+        lambda app: tools_mod.ToolResult(ok=True, output=f"Focused {app}"),
+    )
+
+    res = ex.uia_click_sequence(
+        ["Four", "Seven", "Multiply", "Eight", "Nine", "Equals"],
+        "Calculator",
+        read_result="Display",
+    )
+
+    assert res.ok is True
+    assert res.data["fallback"] == "calculator_keyboard"
+    assert res.data["expression"] == "47*89="
+    assert res.data["result"] == "4183"
+    assert ("press", "escape") in sent
+    assert ("write", "47*89=", 0.02) in sent
+
+
+def test_uia_click_sequence_calculator_fallback_on_wrong_display(monkeypatch, tmp_path):
+    import app.widget.desktop_features as df
+
+    monkeypatch.setattr(df, "invoke_ui_element",
+                        lambda q, a: {"ok": True, "target": q})
+    monkeypatch.setattr(df, "app_window_rect",
+                        lambda a: {"left": 0, "top": 0, "width": 400, "height": 300})
+    monkeypatch.setattr(df, "find_ui_elements",
+                        lambda q, a, n: {"ok": True, "items": [{"name": "Display is 0"}]})
+
+    sent = []
+    clip = {"value": "old clipboard"}
+
+    def hotkey(*keys):
+        sent.append(("hotkey", keys))
+        if keys == ("ctrl", "c"):
+            clip["value"] = "4183"
+
+    monkeypatch.setitem(sys.modules, "pyautogui", types.SimpleNamespace(
+        press=lambda key: sent.append(("press", key)),
+        write=lambda text, interval=0: sent.append(("write", text, interval)),
+        hotkey=hotkey,
+    ))
+    monkeypatch.setitem(sys.modules, "pyperclip", types.SimpleNamespace(
+        paste=lambda: clip["value"],
+        copy=lambda value: clip.update(value=value),
+    ))
+
+    ex = _ex(tmp_path)
+    monkeypatch.setattr(
+        ex,
+        "focus_window",
+        lambda app: tools_mod.ToolResult(ok=True, output=f"Focused {app}"),
+    )
+
+    res = ex.uia_click_sequence(
+        ["Four", "Seven", "Multiply", "Eight", "Nine", "Equals"],
+        "Calculator",
+        read_result="Display",
+    )
+
+    assert res.ok is True
+    assert res.data["fallback"] == "calculator_keyboard"
+    assert res.data["result"] == "4183"
+    assert ("write", "47*89=", 0.02) in sent
+
+
 def test_uia_click_sequence_adds_electron_hint_on_hard_miss(monkeypatch, tmp_path):
     import app.widget.desktop_features as df
 

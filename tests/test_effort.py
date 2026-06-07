@@ -38,8 +38,8 @@ def test_low_is_a_fast_small_model_and_max_is_heavy():
 
 
 def test_desktop_keeps_tool_accurate_models():
-    # Low/Medium desktop stay on the curated UIA chain (tool-call accurate).
-    assert effort_model("low", "computer") == "tier:uia"
+    # Low stays snappy; Medium desktop uses the reliable-first UIA chain.
+    assert effort_model("low", "computer") == "openai/gpt-oss-20b:free"
     assert effort_model("medium", "computer_isolated") == "tier:uia"
 
 

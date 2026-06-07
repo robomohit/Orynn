@@ -120,6 +120,66 @@ _TEXT_ONLY_DESKTOP_TOOL_EXCLUDES = _VISUAL_DESKTOP_ACTION_TYPES | {
     ActionType.ui_critique,
 }
 
+MAKE_SUBTASKS_TOOL_NAME = "make_subtasks"
+MAKE_SUBTASKS_TOOL_SCHEMA: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": MAKE_SUBTASKS_TOOL_NAME,
+        "description": (
+            "Optionally decompose a genuinely complex desktop task into worker subtasks. "
+            "Use only when parallel or dependency-based execution is worth the extra structure; "
+            "simple desktop goals should use UIA tools directly."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "execution_mode": {"type": "string", "enum": ["serial", "parallel"]},
+                "max_parallel_workers": {"type": "number"},
+                "subtasks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "description": {"type": "string"},
+                            "depends_on": {"type": "array", "items": {"type": "string"}},
+                            "write_scope": {"type": "array", "items": {"type": "string"}},
+                            "actions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "type": {"type": "string"},
+                                        "args": {"type": "object"},
+                                        "explanation": {"type": "string"},
+                                        "requires_approval": {"type": "boolean"},
+                                    },
+                                    "required": ["type"],
+                                    "additionalProperties": True,
+                                },
+                            },
+                        },
+                        "required": ["id", "description"],
+                        "additionalProperties": True,
+                    },
+                },
+            },
+            "required": ["subtasks"],
+            "additionalProperties": True,
+        },
+    },
+}
+
+MAKE_SUBTASKS_TOOL_GUIDANCE = (
+    "- make_subtasks: {\"subtasks\": [{\"id\": str, \"description\": str, "
+    "\"depends_on\": [str], \"actions\": [action objects]}], \"execution_mode\": "
+    "\"serial\"|\"parallel\", \"max_parallel_workers\": int} - optional decomposition "
+    "for genuinely complex desktop work. Skip it for simple app-control goals; call "
+    "uia_find/uia_click/uia_type/etc directly instead. If you include actions, workers "
+    "will execute them with the existing parallel/dependency machinery."
+)
+
 # Coding/dev tools that live in the `terminal` pack (kept for run_command to
 # launch apps) but are never useful for DESKTOP APP CONTROL. Excluding them
 # shrinks the tool list the model sees every turn — faster + less distracting.
@@ -1224,6 +1284,224 @@ class AgentService:
             await self._emit(task_id, "token_budget", {"used": used, "budget": budget, "exhausted": False, "warning": True})
         return False
 
+    def _subtask_plan_from_tool_args(self, args: Dict[str, Any]) -> HierarchicalPlan:
+        raw_subtasks = args.get("subtasks") or args.get("sub_tasks") or []
+        if not isinstance(raw_subtasks, list) or not raw_subtasks:
+            raise ValueError("make_subtasks requires a non-empty subtasks array.")
+
+        sub_tasks: List[SubTask] = []
+        for idx, raw in enumerate(raw_subtasks, start=1):
+            if not isinstance(raw, dict):
+                raise ValueError(f"Subtask {idx} must be an object.")
+            subtask_id = str(raw.get("id") or f"step-{idx}").strip() or f"step-{idx}"
+            description = str(raw.get("description") or "").strip()
+            if not description:
+                raise ValueError(f"Subtask {subtask_id} requires a description.")
+
+            actions: List[Action] = []
+            raw_actions = raw.get("actions") or []
+            if raw_actions and not isinstance(raw_actions, list):
+                raise ValueError(f"Subtask {subtask_id} actions must be an array.")
+            for action_idx, raw_action in enumerate(raw_actions, start=1):
+                if not isinstance(raw_action, dict):
+                    raise ValueError(f"Action {action_idx} for {subtask_id} must be an object.")
+                action_type = str(raw_action.get("type") or raw_action.get("name") or "").strip()
+                if not action_type:
+                    raise ValueError(f"Action {action_idx} for {subtask_id} requires a type.")
+                action_args = raw_action.get("args") if isinstance(raw_action.get("args"), dict) else {}
+                actions.append(Action(
+                    id=str(raw_action.get("id") or f"{subtask_id}-act-{action_idx}"),
+                    type=ActionType(action_type),
+                    args=action_args,
+                    explanation=str(raw_action.get("explanation") or description),
+                    requires_approval=bool(raw_action.get("requires_approval", False)),
+                ))
+
+            sub_tasks.append(SubTask(
+                id=subtask_id,
+                description=description,
+                depends_on=[str(dep) for dep in (raw.get("depends_on") or [])],
+                write_scope=[str(path) for path in (raw.get("write_scope") or [])],
+                actions=actions,
+            ))
+
+        execution_mode = str(args.get("execution_mode") or "serial").lower()
+        if execution_mode not in {"serial", "parallel"}:
+            execution_mode = "serial"
+        try:
+            max_parallel_workers = max(1, int(args.get("max_parallel_workers") or 1))
+        except Exception:
+            max_parallel_workers = 1
+
+        return HierarchicalPlan(
+            reasoning=str(args.get("reasoning") or "Model-requested decomposition."),
+            sub_tasks=sub_tasks,
+            execution_mode=execution_mode,
+            max_parallel_workers=max_parallel_workers,
+            overall_complete=False,
+        )
+
+    async def _emit_subtask_plan(self, task_id: str, plan: HierarchicalPlan, *, source: str = MAKE_SUBTASKS_TOOL_NAME) -> None:
+        await self._emit(task_id, "plan", {
+            "reasoning": plan.reasoning,
+            "execution_mode": plan.execution_mode,
+            "max_parallel_workers": plan.max_parallel_workers,
+            "source": source,
+            "sub_tasks": [
+                {
+                    "id": sub_task.id,
+                    "description": sub_task.description,
+                    "depends_on": list(sub_task.depends_on or []),
+                    "status": sub_task.status.value if isinstance(sub_task.status, TaskStatus) else str(sub_task.status),
+                }
+                for sub_task in plan.sub_tasks
+            ],
+        })
+
+    @staticmethod
+    def _write_scopes_conflict(left: SubTask, right: SubTask) -> bool:
+        left_scope = [str(path).strip().lower() for path in (left.write_scope or []) if str(path).strip()]
+        right_scope = [str(path).strip().lower() for path in (right.write_scope or []) if str(path).strip()]
+        if not left_scope or not right_scope:
+            return True
+        for lhs in left_scope:
+            for rhs in right_scope:
+                lhs_base = lhs.rstrip("/\\")
+                rhs_base = rhs.rstrip("/\\")
+                if (
+                    lhs == rhs
+                    or lhs.startswith(rhs_base + "/")
+                    or lhs.startswith(rhs_base + "\\")
+                    or rhs.startswith(lhs_base + "/")
+                    or rhs.startswith(lhs_base + "\\")
+                ):
+                    return True
+        return False
+
+    async def _execute_subtask_plan(
+        self,
+        *,
+        task_id: str,
+        plan: HierarchicalPlan,
+        provider: PlannerProvider,
+        mode: str,
+        screen_width: int,
+        screen_height: int,
+        complexity: str,
+        system_prompt_extension: Optional[str],
+        auto_approve: bool,
+        model_sees: bool,
+        goal: str,
+        emit_plan: bool = True,
+    ) -> Dict[str, Any]:
+        if emit_plan:
+            await self._emit_subtask_plan(task_id, plan)
+        if not plan.sub_tasks:
+            return {"complete": False, "reason": "No subtasks were supplied.", "history": [], "results": []}
+
+        missing_actions = [sub_task.id for sub_task in plan.sub_tasks if not sub_task.actions]
+        if missing_actions:
+            return {
+                "complete": False,
+                "reason": (
+                    "Subtasks were recorded for the checklist, but no worker actions were supplied "
+                    f"for: {', '.join(missing_actions)}. Continue with normal reactive tools."
+                ),
+                "history": [],
+                "results": [],
+            }
+
+        history: List[str] = []
+
+        async def _run_subtask(idx: int, sub_task: SubTask) -> bool:
+            worker = SubTaskWorker(
+                worker_id=f"worker-{idx + 1}",
+                task_id=task_id,
+                sub_task=sub_task,
+                agent_service=self,
+                mode=mode,
+                screen_dims=(screen_width, screen_height),
+                complexity=complexity,
+                system_prompt_extension=system_prompt_extension,
+                auto_approve=auto_approve,
+                model_sees=model_sees,
+                goal=goal,
+            )
+            return await worker.run(provider, history)
+
+        max_workers = max(1, int(plan.max_parallel_workers or 1))
+        pending: List[tuple[int, SubTask]] = list(enumerate(plan.sub_tasks))
+        done_by_id: Dict[str, bool] = {}
+        results: List[Optional[bool]] = [None] * len(plan.sub_tasks)
+        allow_parallel = str(plan.execution_mode or "serial").lower() == "parallel"
+
+        while pending:
+            ready: List[tuple[int, SubTask]] = []
+            still_pending: List[tuple[int, SubTask]] = []
+            progressed = False
+
+            for idx, sub_task in pending:
+                deps = list(sub_task.depends_on or [])
+                if any(done_by_id.get(dep) is False for dep in deps):
+                    done_by_id[sub_task.id] = False
+                    results[idx] = False
+                    progressed = True
+                    continue
+                if all(done_by_id.get(dep) is True for dep in deps):
+                    ready.append((idx, sub_task))
+                else:
+                    still_pending.append((idx, sub_task))
+
+            pending = still_pending
+            if not ready:
+                if not pending:
+                    break
+                ready = [pending.pop(0)]
+
+            batch: List[tuple[int, SubTask]] = []
+            if allow_parallel:
+                for item in ready:
+                    if len(batch) >= max_workers:
+                        pending.insert(0, item)
+                        continue
+                    if any(self._write_scopes_conflict(item[1], chosen[1]) for chosen in batch):
+                        pending.append(item)
+                        continue
+                    batch.append(item)
+                if not batch:
+                    batch = [ready[0]]
+                    pending.extend(ready[1:])
+            else:
+                batch = [ready[0]]
+                pending = ready[1:] + pending
+
+            batch_results = await asyncio.gather(
+                *(_run_subtask(idx, sub_task) for idx, sub_task in batch),
+                return_exceptions=False,
+            )
+            progressed = True
+            for (idx, sub_task), ok in zip(batch, batch_results):
+                done_by_id[sub_task.id] = bool(ok)
+                results[idx] = bool(ok)
+                if not ok and not allow_parallel:
+                    for blocked_idx, blocked_task in pending:
+                        results[blocked_idx] = False
+                        done_by_id[blocked_task.id] = False
+                    pending = []
+                    break
+
+            if not progressed:
+                break
+
+        subtask_results = [bool(result) for result in results if result is not None]
+        complete = bool(subtask_results) and all(subtask_results)
+        final_entries = [entry for entry in history if entry.startswith("[FINAL] ")]
+        if final_entries:
+            reason = final_entries[-1].replace("[FINAL] ", "", 1).strip()
+        else:
+            reason = "Subtasks completed." if complete else "One or more subtasks failed."
+        return {"complete": complete, "reason": reason, "history": history, "results": subtask_results}
+
     async def run_task(
         self,
         task_id: str,
@@ -1507,10 +1785,10 @@ class AgentService:
             # Classify task complexity
             complexity = classify_task_complexity(goal)
             if is_isolated:
-                # Isolated mode: always use the fast path to avoid LLM planning latency
+                # Keep isolated desktop tasks lean; decomposition is model-selected via make_subtasks.
                 complexity = "atomic"
 
-            # Planning
+            # Environment context
             _goal_needs_tree = any(kw in goal.lower() for kw in ("file", "directory", "project", "folder"))
             env_context = ""
             project_folder_selected = bool(environment_payload.get("project_folder_selected"))
@@ -1540,163 +1818,12 @@ class AgentService:
             else:
                 screenshot_b64 = await asyncio.to_thread(_capture_screenshot_b64, screen_width, screen_height)
 
-            memories = await asyncio.to_thread(self.memory.search, goal, 5)
-            mem_context = "\n".join(f"- {getattr(m, 'content', m)}" for m in memories) if memories else None
             prior_sessions = await asyncio.to_thread(self.memory.recall_sessions, goal, 5)
             relevant_history_block = (
                 "<relevant_history>\n"
                 + "\n".join(f"- {getattr(s, 'content', s)}" for s in prior_sessions)
                 + "\n</relevant_history>"
             ) if prior_sessions else ""
-
-            if mode in ("computer", "computer_isolated"):
-                try:
-                    if complexity == "atomic":
-                        from .providers import _extract_json, _normalize_hierarchical_plan, get_tool_guidance, get_mode_packs
-                        packs = get_mode_packs(mode)
-                        plan_tool_excludes = _tool_excludes_for_control_route(mode, _model_sees, goal)
-                        prompt = f"Goal: {goal}\n\nReturn one concise JSON plan using only these tools:\n{get_tool_guidance(packs, exclude_actions=plan_tool_excludes)}"
-                        # Run the blocking (sync httpx) LLM call off the event loop so
-                        # SSE streams and other tasks are not frozen during planning.
-                        raw_plan = await asyncio.to_thread(provider._call_llm, "You are a fast-path planning agent. Return only JSON.", prompt, screenshot_b64)
-                        plan = HierarchicalPlan.model_validate(_normalize_hierarchical_plan(_extract_json(raw_plan)))
-                    else:
-                        plan = await asyncio.to_thread(
-                            provider.plan_hierarchical,
-                            goal,
-                            latest_screenshot_b64=screenshot_b64,
-                            memory_context=mem_context,
-                            mode=mode,
-                            system_prompt_extension=skill_instructions or None,
-                            exclude_actions=_tool_excludes_for_control_route(mode, _model_sees, goal),
-                        )
-
-                    history: List[str] = []
-                    final_reason = ""
-
-                    async def _run_subtask(idx: int, sub_task: SubTask) -> bool:
-                        worker = SubTaskWorker(
-                            worker_id=f"worker-{idx + 1}",
-                            task_id=task_id,
-                            sub_task=sub_task,
-                            agent_service=self,
-                            mode=mode,
-                            screen_dims=(screen_width, screen_height),
-                            complexity=complexity,
-                            system_prompt_extension=skill_instructions or None,
-                            auto_approve=is_auto_approve,
-                            model_sees=_model_sees,
-                            goal=goal,
-                        )
-                        return await worker.run(provider, history)
-
-                    def _write_scopes_conflict(left: SubTask, right: SubTask) -> bool:
-                        left_scope = [str(path).strip().lower() for path in (left.write_scope or []) if str(path).strip()]
-                        right_scope = [str(path).strip().lower() for path in (right.write_scope or []) if str(path).strip()]
-                        if not left_scope or not right_scope:
-                            return True
-                        for lhs in left_scope:
-                            for rhs in right_scope:
-                                if lhs == rhs or lhs.startswith(rhs.rstrip("/\\") + "/") or rhs.startswith(lhs.rstrip("/\\") + "/"):
-                                    return True
-                        return False
-
-                    async def _execute_subtasks() -> List[bool]:
-                        if not plan.sub_tasks:
-                            return []
-
-                        max_workers = max(1, int(plan.max_parallel_workers or 1))
-                        pending: List[tuple[int, SubTask]] = list(enumerate(plan.sub_tasks))
-                        done_by_id: Dict[str, bool] = {}
-                        results: List[Optional[bool]] = [None] * len(plan.sub_tasks)
-                        allow_parallel = str(plan.execution_mode or "serial").lower() == "parallel"
-
-                        while pending:
-                            ready: List[tuple[int, SubTask]] = []
-                            still_pending: List[tuple[int, SubTask]] = []
-                            progressed = False
-
-                            for idx, sub_task in pending:
-                                deps = list(sub_task.depends_on or [])
-                                if any(done_by_id.get(dep) is False for dep in deps):
-                                    done_by_id[sub_task.id] = False
-                                    results[idx] = False
-                                    progressed = True
-                                    continue
-                                if all(done_by_id.get(dep) is True for dep in deps):
-                                    ready.append((idx, sub_task))
-                                else:
-                                    still_pending.append((idx, sub_task))
-
-                            pending = still_pending
-                            if not ready:
-                                if not pending:
-                                    break
-                                ready = [pending.pop(0)]
-
-                            batch: List[tuple[int, SubTask]] = []
-                            if allow_parallel:
-                                for item in ready:
-                                    if len(batch) >= max_workers:
-                                        pending.insert(0, item)
-                                        continue
-                                    if any(_write_scopes_conflict(item[1], chosen[1]) for chosen in batch):
-                                        pending.append(item)
-                                        continue
-                                    batch.append(item)
-                                if not batch:
-                                    batch = [ready[0]]
-                                    pending.extend(ready[1:])
-                            else:
-                                batch = [ready[0]]
-                                pending = ready[1:] + pending
-
-                            batch_results = await asyncio.gather(
-                                *(_run_subtask(idx, sub_task) for idx, sub_task in batch),
-                                return_exceptions=False,
-                            )
-                            progressed = True
-                            for (idx, sub_task), ok in zip(batch, batch_results):
-                                done_by_id[sub_task.id] = bool(ok)
-                                results[idx] = bool(ok)
-                                if not ok and not allow_parallel:
-                                    for blocked_idx, blocked_task in pending:
-                                        results[blocked_idx] = False
-                                        done_by_id[blocked_task.id] = False
-                                    pending = []
-                                    break
-
-                            if not progressed:
-                                break
-
-                        return [bool(result) for result in results if result is not None]
-
-                    subtask_results = await _execute_subtasks()
-                    all_success = all(subtask_results)
-                    final_entries = [entry for entry in history if entry.startswith("[FINAL] ")]
-                    if final_entries:
-                        final_reason = final_entries[-1].replace("[FINAL] ", "", 1).strip()
-
-                    if final_reason:
-                        complete = all_success
-                        reason = final_reason
-                    else:
-                        # C5: Replace LLM evaluate() call with simple heuristic — saves one round-trip
-                        complete = all_success
-                        reason = "Task complete." if complete else "Task failed."
-                    self._finalize(task_id, "done" if complete else "failed", reason)
-                    await self._emit(task_id, "done", {
-                        "complete": complete,
-                        "reason": reason,
-                        "finished_at": datetime.now(timezone.utc).isoformat(),
-                    })
-                    await asyncio.to_thread(self.memory.summarize_session, task_id, goal, complete, reason, mode)
-                    await asyncio.to_thread(self.memory.add, "task_outcome", f"Outcome: {complete}. Goal: {goal}. Reason: {reason}")
-                    await self._emit(task_id, "usage_update", {"total_tokens": provider.total_tokens})
-                    asyncio.create_task(asyncio.to_thread(self.memory.maybe_auto_consolidate))
-                    return
-                except Exception as planning_err:
-                    await self._emit(task_id, "status", {"message": f"Structured planning failed; using streaming loop. ({planning_err})"})
 
             if screenshot_b64:
                 from .providers import _get_active_window_rect
@@ -1718,6 +1845,9 @@ class AgentService:
                 # ── Mode-specific system prompts ──────────────────────────────
                 _is_computer_desktop = mode in ("computer", "computer_isolated")
                 _is_browser_use = mode == "computer_use"
+                if _is_computer_desktop:
+                    tool_guidance = f"{MAKE_SUBTASKS_TOOL_GUIDANCE}\n{tool_guidance}" if tool_guidance else MAKE_SUBTASKS_TOOL_GUIDANCE
+                    tool_schemas = [MAKE_SUBTASKS_TOOL_SCHEMA, *tool_schemas]
 
                 if _is_browser_use:
                     system = (
@@ -1759,6 +1889,9 @@ class AgentService:
                         "You are Orynn — a desktop automation agent controlling a real Windows PC "
                         "through Windows UI Automation (UIA). You drive apps by the NAME of their on-screen "
                         "controls — no screenshots, no pixel coordinates, no guessing.\n\n"
+                        "Plan only when it helps: for simple desktop goals, call UIA tools directly. "
+                        "Use make_subtasks only when a task genuinely benefits from worker decomposition; "
+                        "do not spend a turn planning routine app-control actions.\n\n"
                         "DESKTOP CONTROL WORKFLOW:\n"
                         "1. If the target app is already open, go straight to step 3. To open an app, use "
                         "run_command with the Windows `start` command (e.g. run_command {\"command\": \"start notepad\"}). "
@@ -2270,6 +2403,83 @@ class AgentService:
                     _recent_calls.append(_call_key)
                     if len(_recent_calls) > 5:
                         _recent_calls.pop(0)
+
+                    if action_type == MAKE_SUBTASKS_TOOL_NAME:
+                        action_id = f"act-{step}"
+                        _arg_summary = _summarize_args(action_type, args)
+                        await self._emit(task_id, "intent", {
+                            "action_id": action_id,
+                            "action_type": action_type,
+                            "explanation": thought_text,
+                            "args_preview": _arg_summary,
+                        })
+                        await self._emit(task_id, "status", {"message": "Decomposing task into worker subtasks."})
+                        await self._emit(task_id, "action_start", {
+                            "action_id": action_id,
+                            "action_type": action_type,
+                            "explanation": thought_text,
+                            "args_summary": _arg_summary,
+                        })
+                        try:
+                            plan = self._subtask_plan_from_tool_args(args)
+                            subtask_result = await self._execute_subtask_plan(
+                                task_id=task_id,
+                                plan=plan,
+                                provider=provider,
+                                mode=mode,
+                                screen_width=screen_width,
+                                screen_height=screen_height,
+                                complexity="complex",
+                                system_prompt_extension=skill_instructions or None,
+                                auto_approve=is_auto_approve,
+                                model_sees=_model_sees,
+                                goal=goal,
+                                emit_plan=True,
+                            )
+                            worker_results = list(subtask_result.get("results") or [])
+                            tool_ok = all(worker_results) if worker_results else True
+                            obs_text = (
+                                f"make_subtasks recorded {len(plan.sub_tasks)} subtasks. "
+                                f"{subtask_result.get('reason') or ''}"
+                            ).strip()
+                            if worker_results:
+                                obs_text += f"\nWorker results: {worker_results}"
+                        except Exception as e:
+                            tool_ok = False
+                            obs_text = f"make_subtasks failed: {e}"
+
+                        await self._emit(task_id, "action_result", {
+                            "action_id": action_id,
+                            "action_type": action_type,
+                            "ok": tool_ok,
+                            "output": obs_text,
+                            "args_summary": _arg_summary,
+                        })
+                        if use_native_tools and tool_call_id:
+                            messages.append({
+                                "role": "assistant",
+                                "content": thought_text,
+                                "tool_calls": [{
+                                    "id": tool_call_id,
+                                    "type": "function",
+                                    "function": {"name": action_type, "arguments": json.dumps(args)},
+                                }],
+                            })
+                            messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": obs_text})
+                        else:
+                            messages.append({
+                                "role": "assistant",
+                                "content": f"<thought>{thought_text}</thought>\n<action type=\"{action_type}\">\n{json.dumps(args)}\n</action>",
+                            })
+                            messages.append({"role": "user", "content": f"<observation>\n{obs_text}\n</observation>"})
+                        if hasattr(provider, "_total_input_tokens"):
+                            provider._total_input_tokens += len(messages[-1].get("content", "")) // 4
+                        if hasattr(provider, "_total_output_tokens"):
+                            provider._total_output_tokens += len(thought_text) // 4
+                        if await self._check_token_budget(task_id, provider, token_budget):
+                            return
+                        await self._emit(task_id, "usage_update", {"total_tokens": provider.total_tokens})
+                        continue
 
                     try:
                         act = Action(id=f"act-{step}", type=AT(action_type), args=args, explanation=thought_text)

@@ -592,6 +592,60 @@ def test_bash_gui_launch_waits_for_window_and_tracks_pid(workspace, monkeypatch)
     assert 4242 in t._started_pids
 
 
+def test_run_command_bare_gui_app_uses_detached_launch(workspace, monkeypatch):
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    t.set_isolated_hwnd(None, "Notepad")
+    popen_calls = []
+
+    monkeypatch.setattr(t, "_iter_matching_windows", lambda title: [])
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda *args, **kwargs: popen_calls.append((args, kwargs)) or types.SimpleNamespace(pid=999),
+    )
+    monkeypatch.setattr(
+        t,
+        "wait_for_window",
+        lambda title, timeout=10.0, paint_seconds=0.35: ToolResult(
+            ok=True,
+            output="Window ready: 'Untitled - Notepad' (pid 4242)",
+            data={"hwnd": 55, "pid": 4242, "title": "Untitled - Notepad"},
+        ),
+    )
+
+    result = t.run_command("notepad")
+
+    assert result.ok
+    assert popen_calls
+    assert popen_calls[0][0][0] == "notepad"
+    assert "Window ready" in result.output
+
+
+def test_start_calculator_launch_is_normalized_to_calc(workspace, monkeypatch):
+    t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
+    popen_calls = []
+
+    monkeypatch.setattr(t, "_iter_matching_windows", lambda title: [])
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda *args, **kwargs: popen_calls.append((args, kwargs)) or types.SimpleNamespace(pid=999),
+    )
+    monkeypatch.setattr(
+        t,
+        "wait_for_window",
+        lambda title, timeout=10.0, paint_seconds=0.35: ToolResult(
+            ok=True,
+            output="Window ready: 'Calculator' (pid 4242)",
+            data={"hwnd": 55, "pid": 4242, "title": "Calculator"},
+        ),
+    )
+
+    result = t.run_command("start calculator")
+
+    assert result.ok
+    assert popen_calls[0][0][0] == "start calc"
+    assert "Window ready" in result.output
+
+
 def test_isolated_click_uses_window_rect_for_secondary_monitor(workspace, monkeypatch):
     t = ToolExecutor(workspace, text_editor=TextEditorTool(workspace))
     t.set_isolated_hwnd(55, "Notepad")

@@ -626,7 +626,7 @@ async def test_screen_context_emits_screenshot_and_updates_vision_context(monkey
 
 
 @pytest.mark.asyncio
-async def test_atomic_text_only_desktop_planning_prompt_omits_visual_fallback_guidance(monkeypatch, workspace):
+async def test_text_only_desktop_tool_schema_omits_visual_fallback_guidance(monkeypatch, workspace):
     service = AgentService(workspace, log_emitter=DummyLogEmitter())
 
     monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
@@ -635,28 +635,27 @@ async def test_atomic_text_only_desktop_planning_prompt_omits_visual_fallback_gu
     monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
 
     class FakeProvider:
-        total_tokens = 0
         model = "tier:uia"
-        prompt = ""
 
-        def _call_llm(self, system, prompt, screenshot_b64=None):
+        def __init__(self):
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+            self.tool_names = []
+
+        @property
+        def total_tokens(self):
+            return self._total_input_tokens + self._total_output_tokens
+
+        def _call_llm(self, *args, **kwargs):
+            raise AssertionError("desktop route must not make an upfront planning call")
+
+        def plan_hierarchical(self, *args, **kwargs):
+            raise AssertionError("desktop route must not call the hierarchical planner upfront")
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
             assert screenshot_b64 is None
-            self.prompt = prompt
-            return json.dumps({
-                "reasoning": "finish directly",
-                "execution_mode": "serial",
-                "sub_tasks": [{
-                    "id": "step-1",
-                    "description": "Finish",
-                    "depends_on": [],
-                    "actions": [{
-                        "id": "finish-1",
-                        "type": "finish",
-                        "args": {"reason": "done"},
-                        "explanation": "Finish",
-                    }],
-                }],
-            })
+            self.tool_names = [tool["function"]["name"] for tool in tools]
+            yield {"type": "tool_call", "id": "call-finish", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
 
     provider = FakeProvider()
     monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
@@ -670,14 +669,15 @@ async def test_atomic_text_only_desktop_planning_prompt_omits_visual_fallback_gu
 
     await service.run_task("task-atomic-uia-prompt", "Use Discord", mode="computer", model="tier:uia")
 
-    assert "uia_find:" in provider.prompt
-    assert "electron_unlock:" in provider.prompt
-    assert "screenshot:" not in provider.prompt
-    assert "mouse_click:" not in provider.prompt
-    assert "computer:" not in provider.prompt
-    assert "pixel_color_at:" not in provider.prompt
-    assert "ui_critique:" not in provider.prompt
-    assert "screen_context:" not in provider.prompt
+    assert "make_subtasks" in provider.tool_names
+    assert "uia_find" in provider.tool_names
+    assert "electron_unlock" in provider.tool_names
+    assert "screenshot" not in provider.tool_names
+    assert "mouse_click" not in provider.tool_names
+    assert "computer" not in provider.tool_names
+    assert "pixel_color_at" not in provider.tool_names
+    assert "ui_critique" not in provider.tool_names
+    assert "screen_context" not in provider.tool_names
 
 
 def test_providers_module_exposes_asyncio():
@@ -722,40 +722,41 @@ def test_control_layer_is_declared_on_start_overlays():
 
 
 @pytest.mark.asyncio
-async def test_structured_desktop_finish_finalizes_without_reflection(monkeypatch, workspace):
+async def test_reactive_desktop_finish_finalizes_without_reflection(monkeypatch, workspace):
     service = AgentService(workspace, log_emitter=DummyLogEmitter())
     monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "complex")
-    monkeypatch.setattr("app.agent._capture_screenshot_b64", lambda sw, sh: "fake-shot")
-    monkeypatch.setattr("app.agent._get_active_window_rect", lambda sw, sh: None)
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
     monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
 
     class FakeProvider:
-        total_tokens = 0
+        model = "tier:uia"
+
+        def __init__(self):
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+
+        @property
+        def total_tokens(self):
+            return self._total_input_tokens + self._total_output_tokens
 
         def plan_hierarchical(self, *args, **kwargs):
-            return HierarchicalPlan(
-                reasoning="finish directly",
-                sub_tasks=[
-                    SubTask(
-                        id="step-1",
-                        description="Answer from observed screen",
-                        actions=[
-                            Action(
-                                id="finish-1",
-                                type=ActionType.finish,
-                                args={"reason": "Desktop task is complete."},
-                                explanation="Finish after verification",
-                            )
-                        ],
-                    )
-                ],
-            )
+            raise AssertionError("desktop route must not call hierarchical planning upfront")
 
         def reflect_on_subtask(self, *args, **kwargs):
             raise AssertionError("finish should not enter reflection")
 
         def evaluate(self, *args, **kwargs):
             raise AssertionError("finish should not enter evaluation")
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            yield {
+                "type": "tool_call",
+                "id": "finish-call",
+                "name": "finish",
+                "args": {"reason": "Desktop task is complete."},
+                "thought": "Finish after verification",
+            }
 
     finalizations = []
 
@@ -767,7 +768,7 @@ async def test_structured_desktop_finish_finalizes_without_reflection(monkeypatc
     monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
     monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: finalizations.append(args))
 
-    await service.run_task("task-structured-finish", "Take a screenshot and finish", mode="computer")
+    await service.run_task("task-reactive-finish", "Take a screenshot and finish", mode="computer")
 
     assert finalizations
     assert finalizations[-1][1] == "done"

@@ -505,7 +505,26 @@ class ToolExecutor:
         return bool(re.match(
             r'^(start\s+\S|explorer\s|cmd\s*/c\s+start|powershell(?:\.exe)?\s+-command\s+"?start(?:-process)?)',
             stripped,
+        )) or bool(re.match(
+            r'^(notepad(?:\.exe)?|calc(?:\.exe)?|calculator:|mspaint(?:\.exe)?|paint(?:\.exe)?)(?:\s|$)',
+            stripped,
         ))
+
+    def _normalize_gui_launch_command(self, command: str) -> str:
+        stripped = (command or "").strip()
+        calculator_aliases = (
+            (r"^calculator(?::|(?:\.exe)?)$", "start calc"),
+            (r"^start\s+(?:\"[^\"]*\"\s+)?calculator(?::|(?:\.exe)?)$", "start calc"),
+            (r"^cmd\s*/c\s+start\s+calculator(?::|(?:\.exe)?)$", "cmd /c start calc"),
+            (
+                r'^powershell(?:\.exe)?\s+-command\s+"?start(?:-process)?\s+calculator(?::|(?:\.exe)?)"?$',
+                "powershell -command Start-Process calc",
+            ),
+        )
+        for pattern, replacement in calculator_aliases:
+            if re.match(pattern, stripped, flags=re.IGNORECASE):
+                return replacement
+        return command
 
     def _guess_launch_target_title(self, command: str) -> str:
         if self._isolated_app:
@@ -515,6 +534,7 @@ class ToolExecutor:
             r'^(?:cmd\s*/c\s+)?start\s+(?:"[^"]*"\s+)?(?P<target>\S+)',
             r'^explorer\s+(?P<target>\S+)',
             r'^powershell(?:\.exe)?\s+-command\s+"?start(?:-process)?\s+(?P<target>\S+)',
+            r'^(?P<target>notepad(?:\.exe)?|calc(?:\.exe)?|calculator:?|mspaint(?:\.exe)?|paint(?:\.exe)?)(?:\s|$)',
         ]
         target = ""
         for pattern in patterns:
@@ -1169,6 +1189,7 @@ class ToolExecutor:
         reuse = self._reuse_existing_window(command)
         if reuse is not None:
             return reuse
+        command = self._normalize_gui_launch_command(command)
         try:
             popen_kwargs = {
                 "shell": True,
@@ -2548,6 +2569,168 @@ class ToolExecutor:
             pass
         return None
 
+    def _is_calculator_target(self, app: str) -> bool:
+        title = (app or self._isolated_app or "").strip().lower()
+        return "calculator" in title or title == "calc"
+
+    def _calculator_key_for_target(self, target: str) -> Optional[str]:
+        raw = str(target or "").strip()
+        if not raw:
+            return None
+        norm = raw.lower().replace("_", " ").replace("-", " ")
+        norm = norm.replace("\u00d7", " x ").replace("\u00f7", " / ")
+        norm = re.sub(r"\b(button|digit|number|key)\b", " ", norm)
+        norm = re.sub(r"\s+", " ", norm).strip()
+        digit_words = {
+            "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+            "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+        }
+        aliases = {
+            **digit_words,
+            "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
+            "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
+            "plus": "+", "add": "+", "addition": "+", "+": "+",
+            "minus": "-", "subtract": "-", "subtraction": "-", "-": "-",
+            "multiply": "*", "multiply by": "*", "times": "*", "x": "*", "*": "*",
+            "divide": "/", "divide by": "/", "division": "/", "/": "/",
+            "decimal": ".", "decimal point": ".", "point": ".", ".": ".",
+            "equals": "=", "equal": "=", "enter": "=", "=": "=",
+            "clear": "CLEAR", "clear entry": "CLEAR", "ce": "CLEAR", "c": "CLEAR",
+        }
+        return aliases.get(norm)
+
+    def _calculator_expression_from_targets(self, targets: list[str]) -> Optional[str]:
+        keys: list[str] = []
+        for target in targets:
+            key = self._calculator_key_for_target(target)
+            if key is None:
+                return None
+            if key == "CLEAR":
+                continue
+            keys.append(key)
+        expr = "".join(keys)
+        if not any(ch.isdigit() for ch in expr):
+            return None
+        return expr
+
+    def _calculator_expected_result(self, expression: str) -> str:
+        expr = (expression or "").strip().rstrip("=")
+        if not expr or not re.fullmatch(r"[0-9+\-*/().\s]+", expr):
+            return ""
+        try:
+            import ast
+            import operator
+
+            ops = {
+                ast.Add: operator.add,
+                ast.Sub: operator.sub,
+                ast.Mult: operator.mul,
+                ast.Div: operator.truediv,
+            }
+
+            def eval_node(node):
+                if isinstance(node, ast.Expression):
+                    return eval_node(node.body)
+                if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                    return node.value
+                if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+                    return -eval_node(node.operand)
+                if isinstance(node, ast.BinOp) and type(node.op) in ops:
+                    return ops[type(node.op)](eval_node(node.left), eval_node(node.right))
+                raise ValueError("unsupported calculator expression")
+
+            value = eval_node(ast.parse(expr, mode="eval"))
+            if isinstance(value, float) and value.is_integer():
+                return str(int(value))
+            return ("%s" % value).rstrip("0").rstrip(".")
+        except Exception:
+            return ""
+
+    def _calculator_result_matches(self, observed: str, expected: str) -> bool:
+        if not expected:
+            return True
+        normalized_observed = re.sub(r"[^0-9.\-]", "", observed or "")
+        normalized_expected = re.sub(r"[^0-9.\-]", "", expected)
+        return bool(normalized_observed) and normalized_observed == normalized_expected
+
+    def _calculator_clipboard_result(self) -> str:
+        try:
+            import pyautogui
+            import pyperclip
+        except ImportError:
+            return ""
+        try:
+            previous = pyperclip.paste()
+        except Exception:
+            previous = None
+        try:
+            pyautogui.hotkey("ctrl", "c")
+            time.sleep(0.12)
+            return str(pyperclip.paste() or "").strip()
+        except Exception:
+            return ""
+        finally:
+            if previous is not None:
+                try:
+                    pyperclip.copy(previous)
+                except Exception:
+                    pass
+
+    def _calculator_sequence_fallback(self, targets: list[str], app: str,
+                                      read_result: str = "") -> Optional[ToolResult]:
+        if not self._is_calculator_target(app):
+            return None
+        expression = self._calculator_expression_from_targets(targets)
+        if not expression:
+            return None
+        try:
+            import pyautogui
+        except ImportError:
+            return None
+
+        focused = self.focus_window(app or "Calculator")
+        if not focused.ok:
+            return None
+        try:
+            pyautogui.press("escape")
+            time.sleep(0.05)
+            pyautogui.write(expression, interval=0.02)
+            time.sleep(0.15)
+        except Exception as exc:
+            return ToolResult(ok=False, output=f"Calculator keyboard fallback failed: {exc}")
+
+        result = self._calculator_clipboard_result() if read_result else ""
+        app_rect = self._app_rect_payload(app)
+        steps = [f"{target}=key" for target in targets]
+        data = {
+            "ok": True,
+            "clicked": len(targets),
+            "total": len(targets),
+            "steps": steps,
+            "failed": None,
+            "fallback": "calculator_keyboard",
+            "expression": expression,
+        }
+        if result:
+            data["result"] = result
+        head = f"Clicked {len(targets)}/{len(targets)} in sequence via Calculator keyboard"
+        data["overlay"] = _overlay_payload(
+            "app_focus" if app_rect else "status",
+            "uia_click_sequence",
+            "click",
+            head,
+            target=(targets[-1] if targets else ""),
+            app_rect=app_rect,
+            phase="done",
+            fallback_reason="calculator_keyboard",
+            control_layer="Calculator keyboard",
+            control_reason="Calculator controls were not enumerable through UIA/OCR, so the sequence was entered as keystrokes",
+        )
+        out = head + "\n" + " -> ".join(steps) + self._app_rect_token(app, app_rect)
+        if result:
+            out += f"\nResult - {read_result}: {result}"
+        return ToolResult(ok=True, output=out, data=data)
+
     def uia_click_sequence(self, targets, app: str = "", stop_on_error: bool = True,
                            read_result: str = ""):
         """Click a whole ORDERED list of controls in ONE call (each resolved by
@@ -2585,6 +2768,10 @@ class ToolExecutor:
                         break
             time.sleep(0.06)  # let each click register before the next
         ok = failed is None
+        if not ok:
+            calc_fallback = self._calculator_sequence_fallback(targets, app, read_result)
+            if calc_fallback is not None:
+                return calc_fallback
         app_rect = self._app_rect_payload(app)
         head = (f"Clicked {clicked}/{len(targets)} in sequence"
                 + ("" if ok else f"; STOPPED at '{failed}' (not found)"))
@@ -2614,6 +2801,15 @@ class ToolExecutor:
                 val = (items[0].get("name") or "").strip() if items else ""
                 if val:
                     data["result"] = val
+                    if self._is_calculator_target(app):
+                        expression = self._calculator_expression_from_targets(targets)
+                        expected = self._calculator_expected_result(expression or "")
+                        if expected and not self._calculator_result_matches(val, expected):
+                            calc_fallback = self._calculator_sequence_fallback(
+                                targets, app, read_result
+                            )
+                            if calc_fallback is not None:
+                                return calc_fallback
                     out += f"\nResult — {read_result}: {val}"
                 else:
                     out += (f"\n(Could not read '{read_result}' — uia_find it to "

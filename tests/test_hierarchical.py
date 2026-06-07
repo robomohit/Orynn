@@ -1,55 +1,144 @@
-import pytest
-import time
 import asyncio
+import time
+
+import pytest
+
 from app.agent import AgentService
 from app.log_emitter import log_emitter
-from app.models import Action, ActionType, HierarchicalPlan, SubTask
+from app.models import ActionType, ToolResult
+
+
+class MakeSubtasksProvider:
+    model = "tier:uia"
+
+    def __init__(self, make_subtasks_args):
+        self.make_subtasks_args = make_subtasks_args
+        self.turn = 0
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+
+    @property
+    def total_tokens(self):
+        return self._total_input_tokens + self._total_output_tokens
+
+    def _call_llm(self, *args, **kwargs):
+        raise AssertionError("make_subtasks must be optional, not an upfront planner call")
+
+    def plan_hierarchical(self, *args, **kwargs):
+        raise AssertionError("make_subtasks must be optional, not an upfront planner call")
+
+    def reflect_on_subtask(self, *args, **kwargs):
+        return {"success": True}
+
+    async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+        turn = self.turn
+        self.turn += 1
+        if turn == 0:
+            yield {
+                "type": "tool_call",
+                "id": "make-subtasks",
+                "name": "make_subtasks",
+                "args": self.make_subtasks_args,
+                "thought": "This needs worker decomposition.",
+            }
+            return
+        yield {
+            "type": "tool_call",
+            "id": "finish-call",
+            "name": "finish",
+            "args": {"reason": "done"},
+            "thought": "Workers finished.",
+        }
+
+
+def _make_subtasks_args(*, execution_mode="serial", max_parallel_workers=1, subtasks=None):
+    return {
+        "execution_mode": execution_mode,
+        "max_parallel_workers": max_parallel_workers,
+        "subtasks": subtasks or [
+            {
+                "id": "s1",
+                "description": "d1",
+                "actions": [{"id": "a1", "type": "wait_action", "args": {"seconds": 0}}],
+            }
+        ],
+    }
+
+
+def _setup_desktop_run(monkeypatch, service, provider):
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
 
 @pytest.mark.asyncio
-async def test_hierarchical_success(monkeypatch, workspace):
-    s = AgentService(workspace, log_emitter=log_emitter)
-    
-    plan = HierarchicalPlan(
-        reasoning="r",
-        sub_tasks=[SubTask(id="s1", description="d1", actions=[Action(id="a1", type=ActionType.wait_action, args={"seconds": 0})])],
-        overall_complete=False
-    )
-    
-    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
-    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
-    monkeypatch.setattr("app.providers.PlannerProvider.evaluate", lambda *a, **k: {"complete": True, "reason": "done"})
-    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
+async def test_make_subtasks_success_runs_workers_and_finishes(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=log_emitter)
+    provider = MakeSubtasksProvider(_make_subtasks_args())
+    _setup_desktop_run(monkeypatch, service, provider)
 
-    await s.run_task("t1", "refactor", mode="computer")
-    out = s.memory.search("task_outcome")
-    assert any("Outcome: True" in m.content for m in out)
+    ran_actions = []
+    events = []
+    finalizations = []
+
+    async def fake_run_action(self, action, **kwargs):
+        ran_actions.append(action.id)
+        if action.type == ActionType.finish:
+            return ToolResult(ok=True, output=action.args.get("reason", "done"))
+        return ToolResult(ok=True, output=action.id)
+
+    async def capture_emit(task_id, event, data):
+        events.append(event)
+
+    monkeypatch.setattr("app.tools.ToolExecutor.run_action", fake_run_action)
+    monkeypatch.setattr(service, "_emit", capture_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: finalizations.append(args))
+
+    await service.run_task("t1", "refactor", mode="computer")
+
+    assert "a1" in ran_actions
+    assert "plan" in events
+    assert "subtask" in events
+    assert finalizations[-1][1] == "done"
+
 
 @pytest.mark.asyncio
-async def test_hierarchical_retry(monkeypatch, workspace):
-    s = AgentService(workspace, log_emitter=log_emitter)
-    plan = HierarchicalPlan(
-        reasoning="r",
-        sub_tasks=[SubTask(id="s2", description="d2", actions=[Action(id="a2", type=ActionType.wait_action, args={"seconds": 0})])],
-        overall_complete=False
-    )
-    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
+async def test_make_subtasks_retry_uses_existing_worker_reflection(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=log_emitter)
+    provider = MakeSubtasksProvider(_make_subtasks_args())
+    _setup_desktop_run(monkeypatch, service, provider)
 
-    reflections = [{"success": False, "reason": "fail", "retry_actions": [{"type": "wait_action", "args": {"seconds": 0}}]}, {"success": True}]
-    def mock_reflect(*a, **k):
+    reflections = [
+        {"success": False, "reason": "fail", "retry_actions": [{"type": "wait_action", "args": {"seconds": 0}}]},
+        {"success": True},
+    ]
+
+    def mock_reflect(*args, **kwargs):
         return reflections.pop(0)
 
-    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", mock_reflect)
-    monkeypatch.setattr("app.providers.PlannerProvider.evaluate", lambda *a, **k: {"complete": True, "reason": "done"})
-    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
+    provider.reflect_on_subtask = mock_reflect
+    ran_waits = []
 
-    await s.run_task("t2", "refactor", mode="computer")
-    out = s.memory.search("task_outcome")
-    assert any("Outcome: True" in m.content for m in out)
+    async def fake_run_action(self, action, **kwargs):
+        if action.type == ActionType.finish:
+            return ToolResult(ok=True, output=action.args.get("reason", "done"))
+        ran_waits.append(action.id)
+        if len(ran_waits) == 1:
+            return ToolResult(ok=False, output="failed once")
+        return ToolResult(ok=True, output="retry ok")
+
+    monkeypatch.setattr("app.tools.ToolExecutor.run_action", fake_run_action)
+
+    await service.run_task("t2", "refactor", mode="computer")
+
+    assert len(ran_waits) == 2
+    assert not reflections
 
 
 @pytest.mark.asyncio
 async def test_phase_updates_emit_progress(monkeypatch, workspace):
-    s = AgentService(workspace, log_emitter=log_emitter)
+    service = AgentService(workspace, log_emitter=log_emitter)
     seen = []
 
     async def capture(task_id, event, data):
@@ -60,129 +149,119 @@ async def test_phase_updates_emit_progress(monkeypatch, workspace):
         await original_sleep(0)
 
     original_sleep = __import__("asyncio").sleep
-    monkeypatch.setattr(s, "_emit", capture)
+    monkeypatch.setattr(service, "_emit", capture)
     monkeypatch.setattr("app.agent.asyncio.sleep", fast_sleep)
 
     def slow_fn():
         time.sleep(0.03)
         return "ok"
 
-    result = await s._run_with_phase_updates("task", "Thinking", "Still planning", slow_fn, heartbeat_seconds=0)
+    result = await service._run_with_phase_updates("task", "Thinking", "Still planning", slow_fn, heartbeat_seconds=0)
     assert result == "ok"
     assert any(msg == "Thinking" for msg in seen)
     assert any("Still planning" in msg for msg in seen)
 
 
 @pytest.mark.asyncio
-async def test_hierarchical_parallel_plan_respects_dependencies(monkeypatch, workspace):
-    s = AgentService(workspace, log_emitter=log_emitter)
-    order = []
-
-    plan = HierarchicalPlan(
-        reasoning="r",
+async def test_make_subtasks_parallel_plan_respects_dependencies(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=log_emitter)
+    provider = MakeSubtasksProvider(_make_subtasks_args(
         execution_mode="parallel",
         max_parallel_workers=2,
-        sub_tasks=[
-            SubTask(
-                id="s2",
-                description="second",
-                depends_on=["s1"],
-                actions=[Action(id="a2", type=ActionType.wait_action, args={"seconds": 0})],
-            ),
-            SubTask(
-                id="s1",
-                description="first",
-                actions=[Action(id="a1", type=ActionType.wait_action, args={"seconds": 0})],
-            ),
+        subtasks=[
+            {
+                "id": "s2",
+                "description": "second",
+                "depends_on": ["s1"],
+                "actions": [{"id": "a2", "type": "wait_action", "args": {"seconds": 0}}],
+            },
+            {
+                "id": "s1",
+                "description": "first",
+                "actions": [{"id": "a1", "type": "wait_action", "args": {"seconds": 0}}],
+            },
         ],
-        overall_complete=False,
-    )
+    ))
+    _setup_desktop_run(monkeypatch, service, provider)
 
-    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
-    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
-    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
+    order = []
 
     async def fake_run_action(self, action, **kwargs):
-        order.append(action.id)
-        return type("Res", (), {"ok": True, "output": action.id, "base64_image": None, "data": None})()
+        if action.type == ActionType.wait_action:
+            order.append(action.id)
+        if action.type == ActionType.finish:
+            return ToolResult(ok=True, output=action.args.get("reason", "done"))
+        return ToolResult(ok=True, output=action.id)
 
     monkeypatch.setattr("app.tools.ToolExecutor.run_action", fake_run_action)
 
-    await s.run_task("dep-plan", "refactor", mode="computer")
+    await service.run_task("dep-plan", "refactor", mode="computer")
 
     assert order == ["a1", "a2"]
 
 
 @pytest.mark.asyncio
-async def test_hierarchical_parallel_plan_runs_disjoint_write_scopes_concurrently(monkeypatch, workspace):
-    s = AgentService(workspace, log_emitter=log_emitter)
+async def test_make_subtasks_parallel_plan_runs_disjoint_write_scopes_concurrently(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=log_emitter)
+    provider = MakeSubtasksProvider(_make_subtasks_args(
+        execution_mode="parallel",
+        max_parallel_workers=2,
+        subtasks=[
+            {
+                "id": "s1",
+                "description": "left",
+                "write_scope": ["src/a.py"],
+                "actions": [{"id": "a1", "type": "wait_action", "args": {"seconds": 0}}],
+            },
+            {
+                "id": "s2",
+                "description": "right",
+                "write_scope": ["src/b.py"],
+                "actions": [{"id": "a2", "type": "wait_action", "args": {"seconds": 0}}],
+            },
+        ],
+    ))
+    _setup_desktop_run(monkeypatch, service, provider)
+
     peak_active = 0
     active = 0
 
-    plan = HierarchicalPlan(
-        reasoning="r",
-        execution_mode="parallel",
-        max_parallel_workers=2,
-        sub_tasks=[
-            SubTask(
-                id="s1",
-                description="left",
-                write_scope=["src/a.py"],
-                actions=[Action(id="a1", type=ActionType.wait_action, args={"seconds": 0})],
-            ),
-            SubTask(
-                id="s2",
-                description="right",
-                write_scope=["src/b.py"],
-                actions=[Action(id="a2", type=ActionType.wait_action, args={"seconds": 0})],
-            ),
-        ],
-        overall_complete=False,
-    )
-
-    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
-    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
-    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
-
     async def fake_run_action(self, action, **kwargs):
         nonlocal active, peak_active
+        if action.type == ActionType.finish:
+            return ToolResult(ok=True, output=action.args.get("reason", "done"))
         active += 1
         peak_active = max(peak_active, active)
         await asyncio.sleep(0.02)
         active -= 1
-        return type("Res", (), {"ok": True, "output": action.id, "base64_image": None, "data": None})()
+        return ToolResult(ok=True, output=action.id)
 
     monkeypatch.setattr("app.tools.ToolExecutor.run_action", fake_run_action)
 
-    await s.run_task("parallel-plan", "refactor", mode="computer")
+    await service.run_task("parallel-plan", "refactor", mode="computer")
 
     assert peak_active >= 2
 
 
 @pytest.mark.asyncio
-async def test_hierarchical_plan_emits_usage_update(monkeypatch, workspace):
-    """usage_update must be emitted when hierarchical plan completes (AI-32)."""
-    s = AgentService(workspace, log_emitter=log_emitter)
-
-    plan = HierarchicalPlan(
-        reasoning="r",
-        sub_tasks=[SubTask(id="s1", description="d1", actions=[Action(id="a1", type=ActionType.wait_action, args={"seconds": 0})])],
-        overall_complete=False,
-    )
-    monkeypatch.setattr("app.providers.PlannerProvider.plan_hierarchical", lambda *a, **k: plan)
-    monkeypatch.setattr("app.providers.PlannerProvider.reflect_on_subtask", lambda *a, **k: {"success": True})
-    monkeypatch.setattr("app.providers.PlannerProvider.evaluate", lambda *a, **k: {"complete": True, "reason": "done"})
-    monkeypatch.setattr("app.providers._capture_screenshot_b64", lambda *a, **k: None)
+async def test_make_subtasks_emits_usage_update(monkeypatch, workspace):
+    service = AgentService(workspace, log_emitter=log_emitter)
+    provider = MakeSubtasksProvider(_make_subtasks_args())
+    _setup_desktop_run(monkeypatch, service, provider)
 
     emitted_events = []
-    _orig_emit = s._emit
 
     async def capture_emit(task_id, event, data):
         emitted_events.append(event)
-        return await _orig_emit(task_id, event, data)
 
-    monkeypatch.setattr(s, "_emit", capture_emit)
+    async def fake_run_action(self, action, **kwargs):
+        if action.type == ActionType.finish:
+            return ToolResult(ok=True, output=action.args.get("reason", "done"))
+        return ToolResult(ok=True, output=action.id)
 
-    await s.run_task("t-usage", "refactor", mode="computer")
+    monkeypatch.setattr(service, "_emit", capture_emit)
+    monkeypatch.setattr("app.tools.ToolExecutor.run_action", fake_run_action)
 
-    assert "usage_update" in emitted_events, "usage_update must be emitted at hierarchical plan completion"
+    await service.run_task("t-usage", "refactor", mode="computer")
+
+    assert "usage_update" in emitted_events
