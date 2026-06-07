@@ -2,7 +2,7 @@
   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
     "theme": "dark",
     "accentHue": 176,
-    "glow": 0,
+    "glow": 0.55,
     "density": 1,
     "grain": "off",
     "budgetPct": 44
@@ -4454,6 +4454,16 @@
   $('btn-copy-log').onclick = copyCurrentLog;
   $('btn-download-log').onclick = downloadCurrentLog;
   $('new-session-btn').onclick = newSession;
+  // Composer: collapse the task options (plan/autonomy/thinking) behind a toggle
+  // so the idle input stays clean; reveal them on demand.
+  const _optToggle = $('composer-options-toggle');
+  if (_optToggle) _optToggle.onclick = () => {
+    const composer = _optToggle.closest('.composer');
+    if (!composer) return;
+    const open = composer.classList.toggle('show-options');
+    _optToggle.classList.toggle('on', open);
+    _optToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
   $('history-search').addEventListener('input', filterHistory);
   $('nav-toggle').onclick = () => document.body.classList.toggle('nav-open');
   $('lightbox-close').onclick = closeLightbox;

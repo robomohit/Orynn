@@ -12,8 +12,8 @@
     /* density driver */
     --density: 1;
 
-    /* glow intensity driver (0..1.6) — set to 0 for clean tool aesthetic */
-    --glow: 0;
+    /* glow intensity driver (0..1.6) — subtle ambient accent bleed keeps the UI "alive" */
+    --glow: 0.55;
 
     /* radii — tight. Codex isn't bubbly. */
     --r-xs: 4px;
@@ -68,8 +68,8 @@
 
     --accent: hsl(var(--accent-h) var(--accent-s) var(--accent-l));
     --accent-soft: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.14);
-    --accent-glow-1: transparent;
-    --accent-glow-2: transparent;
+    --accent-glow-1: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.40);
+    --accent-glow-2: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.18);
     --accent-on: #fff;
 
     --ok: hsl(150 62% 58%);
@@ -116,8 +116,8 @@
 
     --accent: hsl(var(--accent-h) calc(var(--accent-s) - 18%) calc(var(--accent-l) - 14%));
     --accent-soft: hsl(var(--accent-h) var(--accent-s) calc(var(--accent-l) - 8%) / 0.12);
-    --accent-glow-1: transparent;
-    --accent-glow-2: transparent;
+    --accent-glow-1: hsl(var(--accent-h) var(--accent-s) calc(var(--accent-l) - 10%) / 0.22);
+    --accent-glow-2: hsl(var(--accent-h) var(--accent-s) calc(var(--accent-l) - 10%) / 0.10);
     --accent-on: #fff;
 
     --ok: hsl(150 58% 36%);
@@ -1297,7 +1297,7 @@
 
   .message {
     width: 100%;
-    padding: 10px 0;
+    padding: 14px 0;
     line-height: 1.65;
     font-size: var(--fs-md);
     white-space: pre-wrap;
@@ -1305,6 +1305,10 @@
     position: relative;
     padding-left: 24px;
   }
+  /* Breathing room between conversation turns — a clear rhythm, not a tight list. */
+  .message + .message { margin-top: 6px; }
+  .message.assistant { margin-bottom: 6px; }
+  .feed-card { margin-top: 4px; }
   .message::before {
     content: '';
     position: absolute;
@@ -3074,6 +3078,11 @@
     flex-wrap: wrap;
     min-width: 180px;
   }
+  /* Keep the idle composer a clean input: the task options (plan/autonomy/
+     thinking) collapse behind the options toggle and reveal on demand. */
+  .composer .composer-options { display: none; }
+  .composer.show-options .composer-options { display: flex; }
+  #composer-options-toggle.on { color: var(--accent); background: var(--accent-soft); }
   .composer-toggle,
   .composer-select-label {
     display: inline-flex;
