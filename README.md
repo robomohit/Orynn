@@ -120,13 +120,18 @@ chmod +x setup.sh && ./setup.sh
 
 ### 2. Add your API key
 
-Open `.env` and paste in at least one key:
+Open `.env` and paste in **at least one** key - both have free tiers:
 
 ```env
-OPENROUTER_API_KEY=sk-or-v1-...   # free tier - recommended
+OPENROUTER_API_KEY=sk-or-v1-...   # free - widest model selection + auto-fallback
+GROQ_API_KEY=gsk_...              # free - dramatically faster (sub-second) responses
 ```
 
-> Get a free-tier key at [openrouter.ai](https://openrouter.ai/). Availability and rate limits are controlled by OpenRouter.
+> Get a free OpenRouter key at [openrouter.ai/keys](https://openrouter.ai/keys), or a
+> free Groq key at [console.groq.com/keys](https://console.groq.com/keys). OpenRouter
+> has the widest free-model selection and automatic fallback across models; **Groq is
+> much faster** but has no cross-provider fallback. Set whichever fits - if you set
+> both, OpenRouter takes precedence. All free tiers carry the provider's own rate limits.
 
 ### 3. Launch
 
