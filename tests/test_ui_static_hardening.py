@@ -115,6 +115,25 @@ def test_codex_work_summary_folding():
     assert ".work-summary-head.no-expand" in css, "no-expand variant missing"
 
 
+def test_worked_for_capstone_when_minimal_stream_suppresses_work():
+    """Minimal stream hides the per-step working cards, so a finished
+    desktop/coding turn has nothing to fold. A 'Worked for X' capstone must
+    still appear when the turn did real tool work — but never for a plain chat."""
+    js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
+    css = (_STATIC / "style.css").read_text(encoding="utf-8")
+
+    # Work is tracked on action_start (the suppressed event) and reset per turn.
+    assert "_turnDidWork = false" in js, "_turnDidWork not declared/reset"
+    assert "event.type === 'action_start') _turnDidWork = true" in js, \
+        "_turnDidWork not set when a suppressed action_start fires"
+    # collapseWorkIntoFold emits the capstone only when work happened (gated, not for chat).
+    assert "work-capstone" in js, "work-capstone not emitted from JS"
+    assert "_turnDidWork && elapsedSeconds >= 3" in js, \
+        "capstone must be gated on real work + a non-trivial duration"
+    # CSS: the quiet capstone has its own rule.
+    assert ".work-capstone" in css, "work-capstone CSS rule missing"
+
+
 def test_phase_e_typography_whitespace():
     html = _read_all_static()
 

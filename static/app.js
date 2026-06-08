@@ -297,6 +297,11 @@
   const actionCards = {};
   let lastActiveCard = null;
   let workBuffer = null;
+  // Minimal stream suppresses the per-step working cards, so the feed has no
+  // visible evidence a turn did real work. Track it here (set on action_start)
+  // so a finished desktop/coding run can still show a quiet "Worked for X"
+  // capstone, while a plain chat stays bare. Reset per turn in resetTaskView.
+  let _turnDidWork = false;
   const getWorkBuffer = () => {
     if (!workBuffer || !workBuffer.isConnected) {
       workBuffer = document.createElement('div');
@@ -1811,10 +1816,24 @@
     const work = [...feed.children].filter((el) =>
       el.nodeType === 1 &&
       !el.classList.contains('work-fold') &&
+      !el.classList.contains('work-capstone') &&
       !(el.classList.contains('message') &&
         (el.classList.contains('user') || el.classList.contains('assistant')))
     );
-    if (!work.length) return;
+    if (!work.length) {
+      // Minimal stream suppressed the working cards, so there's nothing to fold.
+      // If the agent actually did tool work (not a plain chat), still leave a
+      // quiet "Worked for X" capstone above the answer so a desktop/coding run
+      // shows it did something. Skip near-instant turns to avoid noise.
+      if (_turnDidWork && elapsedSeconds >= 3) {
+        const cap = document.createElement('div');
+        cap.className = 'work-capstone';
+        cap.textContent = `Worked for ${fmtWorkDuration(elapsedSeconds)}`;
+        feed.appendChild(cap);
+        scrollFeed();
+      }
+      return;
+    }
     const fold = document.createElement('div');
     fold.className = 'work-fold';
     const head = document.createElement('button');
@@ -2872,6 +2891,7 @@
     setControlSurface();
     planSubtasks = []; currentSubtaskIdx = 0; subtaskEls = {};
     screenshotStore.clear(); lastActionId = null; terminalStateKey = null;
+    _turnDidWork = false;
     editedFiles.clear();
     Object.keys(actionCards).forEach((k) => delete actionCards[k]);
     lastActiveCard = null; taskWorkers = new Set(); $('feed')?.classList.remove('multi-worker');
@@ -2966,7 +2986,11 @@
     // Minimal stream: collapse planning/working/reflection events into one
     // glowing "Thinking…" indicator (heartbeats keep it alive). The user message,
     // the final answer, terminal states, and interactive prompts still render.
-    if (_MIN_SUPPRESS.has(event.type)) { if (!replay) showThinking(); return; }
+    if (_MIN_SUPPRESS.has(event.type)) {
+      if (event.type === 'action_start') _turnDidWork = true;
+      if (!replay) showThinking();
+      return;
+    }
 
     const agentTextTypes = new Set(['agent', 'agent_delta', 'assistant_delta', 'agentMessage/delta', 'item/agentMessage/delta']);
     if (agentTextTypes.has(event.type)) {

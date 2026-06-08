@@ -1535,6 +1535,15 @@
   .work-fold-body { margin-top: 4px; padding-left: 10px; border-left: 1px solid var(--line); }
   .work-fold-body[hidden] { display: none; }
 
+  /* Quiet "Worked for X" capstone for runs whose working cards were suppressed
+     by the minimal stream (a desktop/coding turn that did real tool work). No
+     chevron — there's nothing to expand, it's just a calm "it did work" note. */
+  .work-capstone {
+    margin: 2px 0 8px; padding: 4px 0;
+    color: var(--muted-2); font-size: var(--fs-sm); font-family: var(--font-ui);
+    letter-spacing: 0.01em;
+  }
+
   /* Interactive approval/permission cards have their own buttons — drop the
      whole-card hover highlight (it sat misaligned against the inner boxes). */
   .feed-card:has([data-trust-controls]):hover,
