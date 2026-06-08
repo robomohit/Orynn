@@ -1514,7 +1514,6 @@
     background-clip: text;
     -webkit-text-fill-color: transparent;
     animation: thinking-sweep 1.6s linear infinite;
-    filter: drop-shadow(0 0 calc(7px * var(--glow, 0.6)) var(--accent-glow-1));
   }
   .status-row.thinking-min .status-title::after { content: '…'; }
   @keyframes thinking-sweep {
