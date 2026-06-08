@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Conversation & stream
+- Minimal stream: planning/working/reflection chrome collapses into a single calm "Thinking…" indicator with a moving accent shimmer; on completion the working/approval cards fold into "Worked for X" and only the answer text remains.
+- The final answer streams in token-by-token (typing reveal) with live markdown formatting.
+- Proper markdown rendering — real heading hierarchy (H1–H3), ordered + bullet lists, horizontal rules — in both the web dashboard and the Qt capsule.
+- Multi-turn chat: a follow-up message continues the conversation with prior context instead of starting a new one; clicking a continued chat in the sidebar replays the whole thread.
+- Sidebar: repeated identical runs collapse into one "×N" row.
+- Settings reorganized into General / Permissions / Extensions tabs.
+
+### Agent
+- Unified tool surface: the model gets the full tool catalogue (UIA desktop, screen, browser, web research, files, shell) and decides which a task needs, instead of mode-gated tool sets.
+- Planning is model-decided: no forced upfront plan for desktop tasks; decomposition is an optional `make_subtasks` tool the model calls only when worthwhile.
+
+### Onboarding & reliability
+- Onboarding steers new users to a free **and fast** Groq key (accepts an OpenRouter or Groq key, auto-detected by prefix).
+- More persistent chain retry on free-tier rate-limit storms so a transient 429 wave recovers into a (slow) success instead of failing the task.
+
+### Visual polish
+- Ambient accent glow enabled, dark default theme, decluttered composer (task options behind a toggle), feed breathing room, and removed the unused 3.2 MB mermaid dependency.
+
+### Docs
+- Animated demo GIF as the README hero.
+
 ### Dashboard UI
 - Codex-inspired redesign: centered idle hero, flat background (no gradient wash), and quiet "reveal-on-hover" chrome so nothing is overloaded.
 - Contextual hero that names the active project ("What should we build in <folder>?").
