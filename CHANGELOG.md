@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Connectors & free-model focus
+- **Real API connectors** — weather (Open-Meteo), Wikipedia, Hacker News, GitHub (public repos), and dictionary. Each is a single no-auth API call that returns real structured data, auto-linked with zero setup. This is the surface that stays reliable on a fast free model — one call → real data — unlike the multi-step web-UI driving that derails. Verified live on Groq (London weather, topic summaries, repo stars/issues).
+- Reframed the idle dashboard around the reliable free-model use-cases: instant connector answers (weather / explain a topic / trending in tech / check a repo) plus a quick desktop task and run-code.
+
 ### Conversation & stream
 - Minimal stream: planning/working/reflection chrome collapses into a single calm "Thinking…" indicator with a moving accent shimmer; on completion the working/approval cards fold into "Worked for X" and only the answer text remains.
 - Even when the minimal stream suppressed every working card, a finished desktop/coding turn now leaves a quiet "Worked for X" capstone above the answer (a plain chat stays bare).

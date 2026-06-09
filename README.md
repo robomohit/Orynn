@@ -36,9 +36,10 @@
 Most computer-use agents take a **screenshot every step** and guess pixel coordinates - slow, expensive, and brittle. Orynn drives native Windows apps through **UI Automation**: it clicks controls **by name** (no screenshots, no pixel guessing), so it is faster, cheaper, and far more reliable. It only falls back to on-screen-text OCR, then pixels, when a control genuinely is not in the accessibility tree.
 
 - **UIA-first desktop control** - drives Notepad, Excel, Word, Discord, Spotify, VS Code, and other Windows apps by control name.
+- **Instant answers, zero setup** - built-in free connectors (weather, Wikipedia, Hacker News, GitHub, dictionary) return real data in **one call** - the reliable pattern on a fast free model, no logins or API keys.
+- **Fast on free models** - prefers **Groq** (sub-second, ~10-25× faster than free OpenRouter in our benchmark) and auto-falls-back to OpenRouter's `:free` chain; or run fully local with **Ollama**.
 - **Floating glass capsule** - frameless, translucent, always-on-top; press `Ctrl+Shift+Space` to summon it.
-- **Runs free** - defaults to OpenRouter `:free` models end to end.
-- **Uses your browser** - for web tasks (Gmail, Maps, GitHub, and more) it drives Chrome the way you would, with no extra accounts to connect.
+- **Uses your browser** - for richer web tasks (Gmail, Maps, and more) it drives Chrome the way you would, with no extra accounts to connect.
 - **Watch it work** - live action ticker and an aqua glow around the app it is touching.
 
 ## Why Orynn?
