@@ -1603,6 +1603,8 @@
     if (!count) return;
     count.textContent = String(historyItems.length);
     count.title = `${historyItems.length} session${historyItems.length === 1 ? '' : 's'}`;
+    // An empty-state "0" badge reads like a stuck notification — hide it.
+    count.style.display = historyItems.length ? '' : 'none';
   };
 
   const bindHistoryItem = (element, taskId) => {
@@ -4856,6 +4858,12 @@
   $('btn-copy-log').onclick = copyCurrentLog;
   $('btn-download-log').onclick = downloadCurrentLog;
   $('new-session-btn').onclick = newSession;
+  // Platform-aware shortcut label: the handler accepts Ctrl and Cmd alike, but
+  // showing ⌘ on Windows reads as broken. HTML defaults to Ctrl+N (Windows-first).
+  if (/Mac|iP(hone|ad|od)/.test(navigator.platform || '')) {
+    const kbd = $('new-session-kbd');
+    if (kbd) kbd.textContent = '⌘N';
+  }
   $('composer-context-chip')?.addEventListener('click', () => $('open-settings')?.click());
   // Composer: collapse the task options (plan/autonomy/thinking) behind a toggle
   // so the idle input stays clean; reveal them on demand.

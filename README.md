@@ -38,6 +38,7 @@ Most computer-use agents take a **screenshot every step** and guess pixel coordi
 - **UIA-first desktop control** - drives Notepad, Excel, Word, Discord, Spotify, VS Code, and other Windows apps by control name.
 - **Instant answers, zero setup** - built-in free connectors (weather, Wikipedia, Hacker News, GitHub, dictionary) return real data in **one call** - the reliable pattern on a fast free model, no logins or API keys.
 - **Fast on free models** - prefers **Groq** (sub-second, ~10-25× faster than free OpenRouter in our benchmark) and auto-falls-back to OpenRouter's `:free` chain; or run fully local with **Ollama**.
+- **Works while you keep working** - UIA reads and button presses target windows directly (no cursor), text lands via background UIA writes when the app allows it, and anything that truly needs your keyboard or mouse politely waits for your hands to pause first.
 - **Floating glass capsule** - frameless, translucent, always-on-top; press `Ctrl+Shift+Space` to summon it.
 - **Uses your browser** - for richer web tasks (Gmail, Maps, and more) it drives Chrome the way you would, with no extra accounts to connect.
 - **Watch it work** - live action ticker and an aqua glow around the app it is touching.

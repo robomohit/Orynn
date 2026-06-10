@@ -2,6 +2,82 @@
 
 ## Unreleased
 
+### Background agent (input politeness)
+- **Fixed silent pixel-click degradation of every "UIA" click.** The
+  uiautomation lib defines `GetInvokePattern()` only on its typed control
+  subclasses; our tree walks return generic `Control` wrappers, so the call
+  raised `AttributeError`, was swallowed, and EVERY uia_click/sequence fell
+  back to real-mouse coordinate clicks — which require the window visible and
+  silently click whatever covers it (the root cause of the live-run "8 clicks
+  ok, display still 0"). A universal `_uia_pattern()` accessor (GetPattern by
+  PatternId) restores true InvokePattern delivery: verified live, a chained
+  calculation lands on a MINIMIZED Calculator with zero mouse movement. Also
+  added a TogglePattern tier for checkboxes/switches.
+- **Chained-expression verification** — `uia_click_sequence`'s calculator
+  read-back check now evaluates chained input ('12+8=' then '×5=') instead of
+  silently skipping verification when the expression contains a mid-sequence
+  '='; a wrong display now triggers the keyboard self-correction. Verified
+  live on Groq Llama-3.3-70b: (12+8)×5 → verified 100 in 2 actions / 34s
+  (June 6 baseline: 86–180s, 9–18 tool failures, zero correct results).
+- **Background typing tier** — `uia_type` now tries a UIA `ValuePattern`
+  write with read-back verification BEFORE the focus+paste path: on native
+  edit controls the text lands with zero focus steal and zero keyboard
+  hijack, so the agent can fill fields while the user keeps working. React/
+  Electron inputs that desync on value writes are detected by the read-back
+  and fall through to the proven focus+paste tier.
+- **Input-politeness guard** — every action that hijacks the real keyboard or
+  mouse (focus+paste typing, `keyboard_type`, `key_combo`, pixel clicks, OCR
+  fallbacks, the Calculator keystroke fallback) now waits — bounded, never a
+  deadlock — for the user's hands to pause before acting, and reports when it
+  waited. The guard discriminates the agent's own synthetic input from the
+  user's via the last-input timestamp, so multi-step runs don't throttle
+  themselves. Disable with `ORYNN_INPUT_POLITE=0`.
+
+### Small-model reliability (prompt + loop)
+- Desktop system prompt rewritten small-model-first (about half the size):
+  a CORE KIT prior, a decision table with canonical examples, a plan-ledger
+  protocol (the model restates its numbered plan position every turn, so the
+  plan re-enters context and multi-clause goals don't lose their second
+  clause), a failure budget (same target failed twice → switch approach;
+  three approaches → finish honestly), and an anti-cheat rule (answers must
+  be read from the app's UI, never computed in the shell).
+- XML fallback prompt pins the exact output format with a canonical example
+  (strict one-line JSON, one action per turn) for models whose native tool
+  calling hiccups.
+- Goal re-anchor: the original goal is re-injected into every 4th desktop
+  observation so fast free models stop drifting to the last observation.
+- Desktop observation cap raised 1000 → 1600 chars so control menus and
+  teaching errors survive truncation.
+- Fixed `uia_click_sequence`'s native tool schema omitting `read_result` —
+  tool-calling models could never use the verify-in-the-same-call pattern.
+
+### Free-model reliability (desktop control)
+- **Control menu on window-ready** — `wait_for_window`, `focus_window`, and app
+  launches now attach a "Visible controls" list (real UIA control names) to the
+  tool result, so the model picks names off a menu instead of guessing. The
+  calculator e2e runs showed free models burning 10+ steps guessing names
+  ("Four"/"4"/"digit"/"×") that they could simply have read.
+- **Teaching miss errors** — a `uia_find` miss now returns the nearest real
+  control names (fuzzy-matched) plus the window's actual interactive controls,
+  instead of a bare "no UIA control matched".
+- **Zombie-window immunity** — UIA root selection now demotes DWM-cloaked
+  frames (suspended/zombie UWP windows that shadow the live app with an
+  identical title) and requires real content beyond title-bar chrome; searches
+  fall through to the runner-up window on a total miss instead of dying inside
+  an empty frame.
+- **Finish evidence gate** — a desktop-mode `finish` with zero successful
+  desktop actions is bounced once with instructions to do and verify the task
+  (kills the "Done." empty-finish failure class seen on small free models);
+  a second finish is always allowed through.
+- **Keyboard-first guidance** — the desktop prompt now steers the model to one
+  keyboard action over click-chains when the app accepts keystrokes, and to
+  pick control names from the attached menus.
+
+### Benchmark honesty
+- `scripts/benchmark_tasks.py` now records a `route` summary per task and flags
+  desktop runs whose answer was computed via shell instead of the app UI
+  (`verified_desktop_path` / `route.warning`); BENCHMARKS.md documents the rule.
+
 ### Connectors & free-model focus
 - **Real API connectors** — weather (Open-Meteo), Wikipedia, Hacker News, GitHub (public repos), and dictionary. Each is a single no-auth API call that returns real structured data, auto-linked with zero setup. This is the surface that stays reliable on a fast free model — one call → real data — unlike the multi-step web-UI driving that derails. Verified live on Groq (London weather, topic summaries, repo stars/issues).
 - Reframed the idle dashboard around the reliable free-model use-cases: instant connector answers (weather / explain a topic / trending in tech / check a repo) plus a quick desktop task and run-code.
