@@ -34,6 +34,13 @@ Orynn should publish honest numbers, not vibes. This document defines the benchm
 - Include hardware, Windows version, model ids, and date.
 - Report failures, not just wins.
 - Do not claim "best" without published methodology and raw results.
+- **Verify the path, not just the answer.** A desktop task only counts as a
+  desktop-control success if the agent actually interacted with the app UI
+  (`verified_desktop_path: true` in the harness output). A correct answer
+  computed via the shell (e.g. evaluating 47*89 in PowerShell instead of
+  pressing Calculator buttons) is a task success but NOT a desktop-control
+  win, and must be reported separately. The harness flags these runs with a
+  `route.warning`.
 
 ## Automation
 

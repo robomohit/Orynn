@@ -56,13 +56,50 @@ def _json_request(base: str, method: str, path: str, api_key: str, payload: dict
         raise RuntimeError(f"{method} {path} failed: HTTP {exc.code}: {body}") from exc
 
 
-def _stream_until_done(base: str, api_key: str, task_id: str, timeout_s: float) -> dict:
+# Successful actions in these types prove the DESKTOP path was exercised. A
+# "done" whose answer came from run_command (e.g. the model computing 47*89 in
+# the shell instead of the Calculator UI) must NOT count as a desktop win — an
+# early e2e run scored exactly that as a pass.
+DESKTOP_INTERACTION_TYPES = {
+    "uia_click", "uia_click_sequence", "uia_type",
+    "mouse_click", "double_click", "right_click", "middle_click",
+    "left_click_drag", "keyboard_type", "type_with_delay", "computer",
+}
+
+
+def _route_summary(action_results: list[dict], mode: str) -> dict:
+    interactions = sum(
+        1 for a in action_results
+        if a.get("ok") and a.get("action_type") in DESKTOP_INTERACTION_TYPES
+    )
+    shell_answers = sum(
+        1 for a in action_results
+        if a.get("ok") and a.get("action_type") in {"run_command", "bash"}
+        and "Launched (fire-and-forget)" not in str(a.get("output") or "")
+    )
+    summary = {
+        "desktop_interactions": interactions,
+        "non_launch_shell_results": shell_answers,
+    }
+    if mode == "desktop":
+        summary["verified_desktop_path"] = interactions > 0
+        if interactions == 0 and shell_answers > 0:
+            summary["warning"] = (
+                "result likely computed via shell, not the app UI — "
+                "do not report this as a desktop-control success"
+            )
+    return summary
+
+
+def _stream_until_done(base: str, api_key: str, task_id: str, timeout_s: float,
+                       mode: str = "auto") -> dict:
     req = request.Request(
         base.rstrip("/") + f"/api/tasks/{task_id}/stream",
         headers={"Authorization": f"Bearer {api_key}"},
     )
     started = time.perf_counter()
     events: list[dict] = []
+    action_results: list[dict] = []
     screenshots = 0
     tool_failures = 0
     with request.urlopen(req, timeout=timeout_s) as resp:
@@ -85,8 +122,10 @@ def _stream_until_done(base: str, api_key: str, task_id: str, timeout_s: float) 
             events.append({"type": event_type, "data": payload})
             if event_type == "screenshot":
                 screenshots += 1
-            if event_type == "action_result" and payload.get("ok") is False:
-                tool_failures += 1
+            if event_type == "action_result":
+                action_results.append(payload)
+                if payload.get("ok") is False:
+                    tool_failures += 1
             if event_type in {"done", "error", "cancelled"}:
                 return {
                     "terminal_event": event_type,
@@ -94,6 +133,7 @@ def _stream_until_done(base: str, api_key: str, task_id: str, timeout_s: float) 
                     "events": len(events),
                     "screenshots": screenshots,
                     "tool_failures": tool_failures,
+                    "route": _route_summary(action_results, mode),
                     "final": payload,
                 }
     return {
@@ -102,6 +142,7 @@ def _stream_until_done(base: str, api_key: str, task_id: str, timeout_s: float) 
         "events": len(events),
         "screenshots": screenshots,
         "tool_failures": tool_failures,
+        "route": _route_summary(action_results, mode),
         "final": {},
     }
 
@@ -124,7 +165,8 @@ def run_benchmark(base: str, api_key: str, tasks: list[dict], timeout_s: float) 
                 "plan_first": False,
             },
         )
-        stream = _stream_until_done(base, api_key, task_id, timeout_s)
+        stream = _stream_until_done(base, api_key, task_id, timeout_s,
+                                    mode=task.get("mode", "auto"))
         stream["submit_to_terminal_s"] = round(time.perf_counter() - started, 3)
         results.append({"task": task, "task_id": task_id, **stream})
     return {
