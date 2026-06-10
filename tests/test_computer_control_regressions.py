@@ -548,7 +548,9 @@ async def test_vision_desktop_tool_schemas_keep_visual_fallback_tools(monkeypatc
 
     await service.run_task("task-vision-tools", "Click the highlighted button", mode="computer", model="openrouter/openai/gpt-4o")
 
-    assert provider.screenshots_seen == ["vision-shot"]
+    # Two model turns: the first finish carries no desktop interaction, so the
+    # evidence gate bounces it once; the second finish is allowed through.
+    assert provider.screenshots_seen == ["vision-shot", "vision-shot"]
     assert {"screenshot", "mouse_click", "keyboard_type", "computer"} <= provider.tool_names
     assert {"uia_find", "uia_click", "electron_unlock"} <= provider.tool_names
 
@@ -898,7 +900,9 @@ async def test_text_only_desktop_model_skips_automatic_screenshots(monkeypatch, 
     await service.run_task("task-desktop-text-only", "Click and verify", mode="computer", model="tier:uia")
 
     assert capture_calls["count"] == 0
-    assert provider.screenshots_seen == [None, None]
+    # Three turns: the pixel click is route-guarded (no evidence), so the first
+    # finish is bounced by the evidence gate; the second finish goes through.
+    assert provider.screenshots_seen == [None, None, None]
 
 
 @pytest.mark.asyncio
@@ -915,7 +919,7 @@ async def test_text_only_desktop_route_guards_premature_pixel_click(monkeypatch,
 
         def __init__(self):
             self.turn = 0
-            self.last_observation = ""
+            self.observations = []
             self._total_input_tokens = 0
             self._total_output_tokens = 0
 
@@ -930,8 +934,8 @@ async def test_text_only_desktop_route_guards_premature_pixel_click(monkeypatch,
                     "thought": "click it",
                 }
                 return
-            self.last_observation = messages[-1]["content"]
-            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+            self.observations.append(messages[-1]["content"])
+            yield {"type": "tool_call", "id": f"call-{self.turn}", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
 
     provider = FakeProvider()
     monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
@@ -959,7 +963,10 @@ async def test_text_only_desktop_route_guards_premature_pixel_click(monkeypatch,
     await service.run_task("task-desktop-guard", "Click and verify", mode="computer", model="tier:uia")
 
     assert calls == [ActionType.finish]
-    assert "[control-route guard]" in provider.last_observation
+    # Turn 2 sees the guard message; the evidence gate bounces that finish, so
+    # turn 3 sees the bounce and its finish goes through.
+    assert "[control-route guard]" in provider.observations[0]
+    assert "[finish rejected]" in provider.observations[-1]
     guarded = [data for event, data in events if event == "action_result" and data["action_type"] == "mouse_click"]
     assert guarded
     assert guarded[-1]["ok"] is False
@@ -981,7 +988,7 @@ async def test_text_only_desktop_route_guards_unadvertised_screen_context(monkey
 
         def __init__(self):
             self.turn = 0
-            self.last_observation = ""
+            self.observations = []
             self._total_input_tokens = 0
             self._total_output_tokens = 0
 
@@ -990,8 +997,8 @@ async def test_text_only_desktop_route_guards_unadvertised_screen_context(monkey
             if self.turn == 1:
                 yield {"type": "tool_call", "id": "call-1", "name": "screen_context", "args": {}, "thought": "look"}
                 return
-            self.last_observation = messages[-1]["content"]
-            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+            self.observations.append(messages[-1]["content"])
+            yield {"type": "tool_call", "id": f"call-{self.turn}", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
 
     provider = FakeProvider()
     monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
@@ -1019,7 +1026,9 @@ async def test_text_only_desktop_route_guards_unadvertised_screen_context(monkey
     await service.run_task("task-screen-context-guard", "Use Calculator", mode="computer", model="tier:uia")
 
     assert calls == [ActionType.finish]
-    assert "[control-route guard]" in provider.last_observation
+    # Guarded screen_context is no evidence — the gate bounces the first finish.
+    assert "[control-route guard]" in provider.observations[0]
+    assert "[finish rejected]" in provider.observations[-1]
     guarded = [data for event, data in events if event == "action_result" and data["action_type"] == "screen_context"]
     assert guarded
     assert guarded[-1]["ok"] is False
@@ -1042,7 +1051,7 @@ async def test_isolated_hung_app_hint_is_added_to_observation(monkeypatch, works
 
         def __init__(self):
             self.turn = 0
-            self.last_observation = ""
+            self.observations = []
             self._total_input_tokens = 0
             self._total_output_tokens = 0
 
@@ -1051,8 +1060,8 @@ async def test_isolated_hung_app_hint_is_added_to_observation(monkeypatch, works
             if self.turn == 1:
                 yield {"type": "tool_call", "id": "call-1", "name": "mouse_click", "args": {"x": 40, "y": 30}, "thought": "click"}
                 return
-            self.last_observation = messages[-1]["content"]
-            yield {"type": "tool_call", "id": "call-2", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
+            self.observations.append(messages[-1]["content"])
+            yield {"type": "tool_call", "id": f"call-{self.turn}", "name": "finish", "args": {"reason": "done"}, "thought": "done"}
 
     provider = FakeProvider()
     monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
@@ -1073,8 +1082,10 @@ async def test_isolated_hung_app_hint_is_added_to_observation(monkeypatch, works
 
     await service.run_task("task-isolated-hung", "Use notepad", mode="computer_isolated", isolated_app="Notepad")
 
-    assert "force_close_window" in provider.last_observation
-    assert "Untitled - Notepad" in provider.last_observation
+    # The hung-app hint rides on the guarded click's observation (turn 2); the
+    # evidence gate then bounces that finish, so a later turn may exist too.
+    assert any("force_close_window" in obs for obs in provider.observations)
+    assert any("Untitled - Notepad" in obs for obs in provider.observations)
 
 
 def test_persistent_logs_omit_raw_screenshot_payload(tmp_path, monkeypatch):
@@ -1516,3 +1527,309 @@ async def test_dynamic_surface_starts_without_desktop_until_requested(monkeypatc
     assert {"read_file", "write_file", "run_command", "finish"} <= names
     assert {"browser_open", "web_search", "enable_desktop_control"} <= names
     assert "uia_find" not in names
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Free-model reliability: finish gate + teaching miss errors + control menu
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_finish_gate_bounces_unearned_desktop_finish(monkeypatch, workspace):
+    """A desktop-mode finish with zero successful interactions is bounced once
+    (with instructions), then allowed through — never deadlocks the loop."""
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "tier:uia"
+
+        def __init__(self):
+            self.calls = 0
+            self.last_messages = []
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.calls += 1
+            self.last_messages = list(messages)
+            yield {"type": "tool_call", "id": f"call-{self.calls}", "name": "finish",
+                   "args": {"reason": "done"}, "thought": ""}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    finalizations = []
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: finalizations.append(args))
+
+    await service.run_task("task-finish-gate", "Type hello into Notepad", mode="computer", model="tier:uia")
+
+    assert provider.calls == 2  # bounced once, then allowed through
+    bounce_msgs = [m for m in provider.last_messages
+                   if "[finish rejected]" in str(m.get("content", ""))]
+    assert bounce_msgs, "second turn should carry the finish-rejected observation"
+    assert finalizations and finalizations[-1][1] == "done"
+
+
+def test_uia_miss_error_lists_real_controls():
+    """A uia_find miss must teach: nearest real names + the actual control menu,
+    instead of the bare 'no match' that sends free models into guess loops."""
+    from app.widget.desktop_features import _miss_error
+
+    class FakeCtrl:
+        def __init__(self, name="", ctype="ButtonControl", cls="", children=None):
+            self.Name = name
+            self.ControlTypeName = ctype
+            self.ClassName = cls
+            self._children = children or []
+
+        def GetChildren(self):
+            return self._children
+
+    root = FakeCtrl("Calculator", "WindowControl", children=[
+        FakeCtrl("Four"), FakeCtrl("Equals"), FakeCtrl("Multiply by"),
+    ])
+    err = _miss_error("Fuor", "Calculator", [root])
+    assert "no UIA control matched 'Fuor'" in err
+    assert "'Four'" in err          # difflib nearest match
+    assert "Multiply by" in err     # the rest of the real menu
+
+    # Hint didn't match any window: say where we actually searched.
+    err2 = _miss_error("Four", "NoSuchApp", [root], hint_matched=False)
+    assert "no window titled like 'NoSuchApp'" in err2
+    assert "Calculator" in err2
+
+    # Empty window: explain likely causes instead of a dead end.
+    err3 = _miss_error("Four", "Calculator", [FakeCtrl("Calculator", "WindowControl")])
+    assert "no interactive controls" in err3
+
+
+def test_window_ready_output_includes_control_menu(monkeypatch, tmp_path):
+    """wait_for_window success must hand the model the real control names."""
+    import app.widget.desktop_features as df
+    from app.tools import ToolExecutor
+
+    tools = ToolExecutor(tmp_path)
+    monkeypatch.setattr(
+        ToolExecutor, "_iter_matching_windows",
+        lambda self, needle: [{"hwnd": 42, "title": "Calculator", "pid": 7}],
+    )
+    monkeypatch.setattr(
+        df, "survey_app_controls",
+        lambda app, cap=120, max_names=36: {
+            "count": 89,
+            "controls": ["One", "Two", "Multiply by", "Equals"],
+        },
+    )
+    res = tools.wait_for_window("Calculator", timeout=1.0, paint_seconds=0.0)
+    assert res.ok
+    assert "Visible controls" in res.output
+    assert "'Multiply by'" in res.output
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Small-model reliability: schema completeness, plan-ledger prompt, goal anchor
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_uia_click_sequence_schema_exposes_read_result():
+    """Native tool-calling models only see args present in the derived schema —
+    read_result (the verify-in-the-same-call arg) must be there, optional."""
+    from app.tool_registry import get_tool_schemas
+
+    schema = next(s for s in get_tool_schemas(["uia"])
+                  if s["function"]["name"] == "uia_click_sequence")
+    params = schema["function"]["parameters"]
+    assert "read_result" in params["properties"]
+    assert params["properties"]["read_result"]["type"] == "string"
+    assert "read_result" not in params["required"]
+
+
+@pytest.mark.asyncio
+async def test_desktop_goal_reanchor_and_prompt_markers(monkeypatch, workspace):
+    """Every 4th desktop observation re-injects the goal (drift defense for
+    fast free models), and the desktop system prompt keeps its small-model
+    structure markers (plan ledger + decision table + failure budget)."""
+    service = AgentService(workspace, log_emitter=DummyLogEmitter())
+
+    monkeypatch.setattr("app.agent.classify_task_complexity", lambda goal: "atomic")
+    monkeypatch.setattr("app.agent.is_vision_model", lambda model: False)
+    monkeypatch.setattr(service.memory, "search", lambda goal, limit=5: [])
+    monkeypatch.setattr(service.memory, "recall_sessions", lambda goal, limit=5: [])
+
+    class FakeProvider:
+        total_tokens = 0
+        model = "tier:uia"
+
+        def __init__(self):
+            self.turn = 0
+            self.system_seen = ""
+            self.all_messages = []
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+
+        async def stream_chat_with_tools(self, system, messages, tools, screenshot_b64=None):
+            self.turn += 1
+            self.system_seen = system
+            self.all_messages = list(messages)
+            if self.turn <= 4:
+                # distinct args each turn so the duplicate-call guard stays out
+                # of the way
+                yield {"type": "tool_call", "id": f"call-{self.turn}",
+                       "name": "uia_find",
+                       "args": {"query": f"Control{self.turn}", "app": "Notepad"},
+                       "thought": f"STEP {self.turn}"}
+                return
+            yield {"type": "tool_call", "id": f"call-{self.turn}", "name": "finish",
+                   "args": {"reason": "done"}, "thought": "done"}
+
+    provider = FakeProvider()
+    monkeypatch.setattr("app.agent.PlannerProvider", lambda model=None: provider)
+
+    async def fake_run_action(action, sw=1280, sh=800, on_stream=None):
+        return ToolResult(ok=True, output="UIA matches:\n1. ok", base64_image=None, data=None)
+
+    monkeypatch.setattr(service.tools, "run_action", fake_run_action)
+
+    async def noop_emit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_emit", noop_emit)
+    monkeypatch.setattr(service, "_emit_reasoning", noop_emit)
+    monkeypatch.setattr(service, "_finalize", lambda *args, **kwargs: None)
+
+    await service.run_task("task-goal-anchor", "Type hello in Notepad, then save it",
+                           mode="computer", model="tier:uia")
+
+    # Prompt structure markers survive future edits
+    assert "DECISION TABLE" in provider.system_seen
+    assert "PLAN:" in provider.system_seen
+    assert "WHEN A CALL FAILS" in provider.system_seen
+    # The 4th step's observation carries the goal anchor
+    anchored = [m for m in provider.all_messages
+                if "[goal check]" in str(m.get("content", ""))]
+    assert anchored, "expected a [goal check] re-anchor in the conversation"
+    assert "Type hello in Notepad" in str(anchored[0].get("content", ""))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Background agent: SetValue typing tier + input-politeness guard
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _FakeValuePattern:
+    def __init__(self, value="", fail_set=False):
+        self.Value = value
+        self._fail_set = fail_set
+
+    def SetValue(self, text):
+        if self._fail_set:
+            raise RuntimeError("read-only")
+        self.Value = text
+
+
+class _FakeEditCtrl:
+    def __init__(self, vp):
+        self._vp = vp
+        self.focus_calls = 0
+
+    def GetValuePattern(self):
+        return self._vp
+
+    def GetScrollItemPattern(self):
+        return None
+
+    def SetFocus(self):
+        self.focus_calls += 1
+
+    def SendKeys(self, *a, **k):
+        pass
+
+    @property
+    def BoundingRectangle(self):
+        class R:
+            left = top = 0
+            right = bottom = 10
+        return R()
+
+
+def test_uia_type_uses_background_setvalue_without_stealing_focus(monkeypatch):
+    """An empty native edit control takes the SetValue tier: text lands with
+    ZERO focus steal — the user's keyboard is never touched."""
+    import app.widget.desktop_features as df
+
+    ctrl = _FakeEditCtrl(_FakeValuePattern(value=""))
+    info = {"name": "Text editor", "automation_id": "edit1",
+            "control_type": "EditControl", "x": 5, "y": 5}
+    monkeypatch.setattr(df, "_find_uia_control", lambda q, a: (ctrl, info))
+
+    res = df.type_into_ui_element("Text editor", "hello world", "Notepad")
+    assert res["ok"] is True
+    assert res["method"] == "setvalue-background"
+    assert ctrl.focus_calls == 0
+    assert ctrl._vp.Value == "hello world"
+
+
+def test_uia_type_falls_back_to_paste_when_setvalue_lies(monkeypatch):
+    """A React-style input that accepts SetValue into the DOM but desyncs app
+    state is detected by the read-back and falls through to focus+paste."""
+    import app.widget.desktop_features as df
+
+    class _LyingVP(_FakeValuePattern):
+        def SetValue(self, text):
+            self.Value = ""  # DOM write silently dropped (the Discord bug)
+
+    ctrl = _FakeEditCtrl(_LyingVP())
+    info = {"name": "Message box", "automation_id": "msg",
+            "control_type": "EditControl", "x": 5, "y": 5}
+    monkeypatch.setattr(df, "_find_uia_control", lambda q, a: (ctrl, info))
+    monkeypatch.setattr(df, "wait_for_user_idle",
+                        lambda *a, **k: {"waited": 0.0, "yielded": False,
+                                         "proceeded_anyway": False})
+
+    res = df.type_into_ui_element("Message box", "hi", "Discord")
+    # Fell through to the focus tier (clipboard paste path runs under fakes;
+    # what matters here is the tier decision, not the paste mechanics)
+    assert ctrl.focus_calls == 1
+
+
+def test_setvalue_tier_refuses_to_clobber_existing_text(monkeypatch):
+    """Without clear_first, paste APPENDS but SetValue REPLACES — the tier must
+    refuse non-empty fields so semantics stay identical."""
+    import app.widget.desktop_features as df
+
+    ctrl = _FakeEditCtrl(_FakeValuePattern(value="existing"))
+    assert df._try_background_setvalue(ctrl, "new", clear_first=False) is False
+    assert ctrl._vp.Value == "existing"
+    assert df._try_background_setvalue(ctrl, "new", clear_first=True) is True
+    assert ctrl._vp.Value == "new"
+
+
+def test_wait_for_user_idle_discriminates_own_input(monkeypatch):
+    """Recent input that WE sent must not block the agent; recent USER input
+    must make it wait (bounded, never forever)."""
+    import app.widget.desktop_features as df
+
+    # Case 1: input 0.1s ago, but we sent synthetic input just now → ours.
+    monkeypatch.setattr(df, "user_input_idle_seconds", lambda: 0.1)
+    df.note_synthetic_input()
+    gate = df.wait_for_user_idle(min_idle=1.5, max_wait=0.5)
+    assert gate["proceeded_anyway"] is False
+    assert gate["waited"] == 0.0
+
+    # Case 2: input 0.1s ago and our last synthetic send was long ago → user.
+    df._last_synthetic_input_ts = 0.0
+    gate = df.wait_for_user_idle(min_idle=1.5, max_wait=0.5)
+    assert gate["proceeded_anyway"] is True  # bounded wait, then proceed
+    assert gate["waited"] >= 0.5
+
+    # Case 3: politeness disabled via env → never waits.
+    monkeypatch.setenv("ORYNN_INPUT_POLITE", "0")
+    gate = df.wait_for_user_idle(min_idle=1.5, max_wait=0.5)
+    assert gate == {"waited": 0.0, "yielded": False, "proceeded_anyway": False}

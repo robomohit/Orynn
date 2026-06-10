@@ -662,6 +662,7 @@ class ToolExecutor:
         screen_w, screen_h = pyautogui.size()
         rx = max(0, min(rx, screen_w - 1))
         ry = max(0, min(ry, screen_h - 1))
+        polite = self._input_politeness_gate()
         # Optional: flash a marker at the target so the action is watchable.
         # The marker window is destroyed before the click — no interference.
         _flash_pointer(rx, ry)
@@ -669,6 +670,7 @@ class ToolExecutor:
             pyautogui.moveTo(rx, ry, duration=0.4, tween=pyautogui.easeInOutQuad)
             time.sleep(0.1)
             pyautogui.click(button=button, clicks=clicks, interval=0.1)
+            self._note_synthetic_input()
         except Exception as e:
             # Screen locked, fail-safe triggered, no display, etc. — report it
             # so the agent can react instead of believing the click landed.
@@ -676,7 +678,7 @@ class ToolExecutor:
         label = "Double-clicking" if clicks > 1 else "Clicking"
         return ToolResult(
             ok=True,
-            output=f"Clicked {button} {clicks} times at {rx}, {ry}",
+            output=f"Clicked {button} {clicks} times at {rx}, {ry}" + polite,
             data={"overlay": _overlay_payload(
                 "point", "mouse_click", "click", label, point={"x": rx, "y": ry},
                 control_layer="Screenshot fallback", control_reason="desktop pixel coordinate action",
@@ -795,12 +797,14 @@ class ToolExecutor:
         if path_paste:
             return path_paste
         import pyautogui
+        polite = self._input_politeness_gate()
         # Slightly randomized human-like typing speed (~40-80ms per char)
         import random
         for char in text:
             pyautogui.write(char)
             time.sleep(random.uniform(0.02, 0.08))
-        return ToolResult(ok=True, output="Typed text smoothly")
+        self._note_synthetic_input()
+        return ToolResult(ok=True, output="Typed text smoothly" + polite)
 
     async def _key_bg(self, keys: str):
         await self._bg_browser.press_key(keys)
@@ -810,9 +814,11 @@ class ToolExecutor:
         if self.has_isolated_target():
             return self._isolated_key(keys)
         import pyautogui
+        polite = self._input_politeness_gate()
         parts = [p.strip() for p in keys.split("+") if p.strip()]
         pyautogui.hotkey(*parts)
-        return ToolResult(ok=True, output=f"Pressed hotkey: {keys}")
+        self._note_synthetic_input()
+        return ToolResult(ok=True, output=f"Pressed hotkey: {keys}" + polite)
 
     async def _hold_key_bg(self, key: str, duration: float = 0.5):
         await self._bg_browser.hold_key(key, duration)
@@ -1067,6 +1073,48 @@ class ToolExecutor:
         text = pytesseract.image_to_string(img)
         return ToolResult(ok=True, output=text)
 
+    def _input_politeness_gate(self) -> str:
+        """Wait (bounded) for the user's hands to leave the keyboard before an
+        action that hijacks the real mouse/keyboard. Returns a note for the
+        tool output ('' when nothing had to wait). UIA reads and InvokePattern
+        clicks never need this — only real-input paths do."""
+        try:
+            from .widget.desktop_features import wait_for_user_idle, _politeness_note
+            return _politeness_note(wait_for_user_idle())
+        except Exception:
+            return ""
+
+    def _note_synthetic_input(self) -> None:
+        try:
+            from .widget.desktop_features import note_synthetic_input
+            note_synthetic_input()
+        except Exception:
+            pass
+
+    def _control_menu_suffix(self, app: str, *, max_names: int = 36) -> str:
+        """One-line 'menu' of clickable control names for a just-ready window.
+        Handing the model the real names at the moment the window appears is
+        what stops the guess-miss-guess loop on free models — the e2e runs
+        showed models burning 10+ steps guessing names like 'Four'/'digit'/'×'
+        that they could simply have read."""
+        try:
+            from .widget.desktop_features import survey_app_controls
+            survey = survey_app_controls(app, cap=120, max_names=max_names)
+            names = survey.get("controls") or []
+            if len(names) < 4:
+                # A just-launched app often hasn't populated its UIA tree yet —
+                # one short retry catches it without stalling the loop.
+                time.sleep(0.6)
+                retry = survey_app_controls(app, cap=120, max_names=max_names)
+                if len(retry.get("controls") or []) > len(names):
+                    names = retry["controls"]
+            if names:
+                return ("\nVisible controls (exact names for uia_click/uia_type): "
+                        + ", ".join(f"'{n}'" for n in names))
+        except Exception:
+            pass
+        return ""
+
     def focus_window(self, title: str) -> ToolResult:
         """Bring the first visible window whose title contains `title` to the foreground."""
         try:
@@ -1124,7 +1172,9 @@ class ToolExecutor:
                 except Exception:
                     pass
             note = "" if foregrounded else " (activated; OS held foreground — UIA still targets it by title)"
-            return ToolResult(ok=True, output=f"Focused window: '{actual_title}'{note}")
+            return ToolResult(ok=True, output=(
+                f"Focused window: '{actual_title}'{note}"
+                + self._control_menu_suffix(actual_title)))
         except Exception as e:
             return ToolResult(ok=False, output=f"focus_window failed: {e}")
 
@@ -1148,7 +1198,8 @@ class ToolExecutor:
                 time.sleep(max(0.0, float(paint_seconds)))
                 return ToolResult(
                     ok=True,
-                    output=f"Window ready: '{actual_title}' (pid {pid or '?'})",
+                    output=(f"Window ready: '{actual_title}' (pid {pid or '?'})"
+                            + self._control_menu_suffix(actual_title)),
                     data={"hwnd": hwnd, "pid": pid, "title": actual_title},
                 )
             time.sleep(0.1)
@@ -2559,7 +2610,9 @@ class ToolExecutor:
             if not hit.get("ok"):
                 return None
             x, y = int(hit["x"]), int(hit["y"])
+            self._input_politeness_gate()
             pyautogui.click(x, y)
+            self._note_synthetic_input()
             app_rect = self._app_rect_payload(app)
             matched = hit.get("matched") or query
             data = {"ok": True, "method": "ocr_pixel", "matched": matched,
@@ -2634,7 +2687,9 @@ class ToolExecutor:
             if not hit.get("ok"):
                 return None
             x, y = int(hit["x"]), int(hit["y"])
+            self._input_politeness_gate()
             pyautogui.click(x, y)
+            self._note_synthetic_input()
             time.sleep(0.12)
             if clear_first:
                 pyautogui.hotkey("ctrl", "a")
@@ -2757,6 +2812,22 @@ class ToolExecutor:
 
     def _calculator_expected_result(self, expression: str) -> str:
         expr = (expression or "").strip().rstrip("=")
+        # Chained input ('12+8=' then '*5=') leaves mid-string '=' separators.
+        # Calculator chains each segment onto the previous result — mirror
+        # that so chained sequences still get an expected value to verify
+        # against (the live Groq run slipped a wrong display past this check
+        # because '12+8=*5' failed the regex and verification was skipped).
+        if "=" in expr:
+            running = ""
+            for seg in (s.strip() for s in expr.split("=")):
+                if not seg:
+                    continue
+                if running and seg[0] in "+-*/":
+                    seg = running + seg
+                running = self._calculator_expected_result(seg)
+                if running == "":
+                    return ""
+            return running
         if not expr or not re.fullmatch(r"[0-9+\-*/().\s]+", expr):
             return ""
         try:
@@ -2834,9 +2905,11 @@ class ToolExecutor:
         if not focused.ok:
             return None
         try:
+            self._input_politeness_gate()
             pyautogui.press("escape")
             time.sleep(0.05)
             pyautogui.write(expression, interval=0.02)
+            self._note_synthetic_input()
             time.sleep(0.15)
         except Exception as exc:
             return ToolResult(ok=False, output=f"Calculator keyboard fallback failed: {exc}")

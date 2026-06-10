@@ -114,6 +114,15 @@ _VISUAL_DESKTOP_ACTION_TYPES = {
     ActionType.computer,
 }
 
+# Actions whose SUCCESS counts as having actually done or observed something
+# on the desktop: any UIA interaction/lookup or any visual action. Launching
+# or focusing a window is preparation, not evidence — in the e2e runs a free
+# model launched Notepad, typed nothing, and finished with "Done."; the finish
+# gate uses this set to bounce that empty finish. Lookups (uia_find/uia_wait/
+# screen_context) count so read-only goals ("what's on my screen?") finish
+# without a wasted bounce turn.
+_DESKTOP_EVIDENCE_ACTION_TYPES = _UIA_ACTION_TYPES | _VISUAL_DESKTOP_ACTION_TYPES
+
 _TEXT_ONLY_DESKTOP_TOOL_EXCLUDES = _VISUAL_DESKTOP_ACTION_TYPES | {
     ActionType.ocr_image,
     ActionType.pixel_color_at,
@@ -833,6 +842,10 @@ class SubTaskWorker:
         is_isolated = self.mode == "computer_isolated" or bool(tools.resolve_isolated_hwnd())
         is_desktop = self.mode in ("computer", "computer_isolated")
         last_uia_failed = False
+        # Finish gate (see _DESKTOP_EVIDENCE_ACTION_TYPES): bounce ONE unearned
+        # finish on a desktop sub-task, then trust the model.
+        desktop_evidence = 0
+        finish_bounced = False
 
         try:
             for action_data in self.sub_task.actions:
@@ -993,6 +1006,26 @@ class SubTaskWorker:
 
                 if action.type == ActionType.finish:
                     success = bool(res.ok)
+                    if (success and is_desktop and desktop_evidence == 0
+                            and not finish_bounced):
+                        # Unearned finish: nothing was clicked/typed in this
+                        # sub-task, so "done" can't be true yet. Mark the step
+                        # failed so reflection drives a real attempt.
+                        finish_bounced = True
+                        bounce = (
+                            "[finish rejected] No successful click/type/keyboard "
+                            "interaction happened in this sub-task, so it cannot be "
+                            "complete. Do the task with uia_click/uia_type/"
+                            "keyboard_type, read the result back, then finish with "
+                            "the observed result."
+                        )
+                        actions_taken[-1]["ok"] = False
+                        results.append(bounce)
+                        history.append(f"[{self.worker_id}] {bounce}")
+                        await self._emit("status", {
+                            "message": "Finish rejected — no desktop interaction happened in this sub-task yet.",
+                        })
+                        continue
                     self.sub_task.status = TaskStatus.done if success else TaskStatus.failed
                     self.sub_task.error = None if success else res.output
                     history.append(f"[FINAL] {res.output}")
@@ -1003,6 +1036,8 @@ class SubTaskWorker:
                     })
                     return success
 
+                if res.ok and action.type in _DESKTOP_EVIDENCE_ACTION_TYPES:
+                    desktop_evidence += 1
                 if action.type in _UIA_ACTION_TYPES:
                     last_uia_failed = not res.ok
                 elif action.type in _VISUAL_DESKTOP_ACTION_TYPES:
@@ -1961,119 +1996,127 @@ class AgentService:
                         "After each <observation>, decide your next step. Call finish with a clear answer when done."
                     )
                 elif _is_computer_desktop:
+                    # Small-model-first prompt design (tuned for fast free
+                    # models like Groq Llama-3.3-70b, which follow short
+                    # scannable imperatives and decision tables but lose
+                    # directives buried in prose):
+                    #   * plan ledger — the model restates its numbered plan
+                    #     position in every thought, so the plan re-enters the
+                    #     context window each turn (goal-drift defense);
+                    #   * decision table — situation → exact call, with
+                    #     canonical examples to pattern-match;
+                    #   * failure budget — hard stop on re-guessing (the e2e
+                    #     runs showed 18 misses on one target);
+                    #   * anti-cheat — answers must be read from the app's UI,
+                    #     never computed in the shell.
                     system = (
-                        "You are Orynn — a desktop automation agent controlling a real Windows PC "
-                        "through Windows UI Automation (UIA). You drive apps by the NAME of their on-screen "
-                        "controls — no screenshots, no pixel coordinates, no guessing.\n\n"
-                        "You ALSO have the full tool set when a task needs it — browser + web_search/web_fetch "
-                        "for live web data, file and shell tools for the filesystem, and screen capture. Default "
-                        "to UIA for app control; reach for the other surfaces only when the task genuinely calls "
-                        "for them.\n\n"
-                        "Plan only when it helps: for simple desktop goals, call UIA tools directly. "
-                        "Use make_subtasks only when a task genuinely benefits from worker decomposition; "
-                        "do not spend a turn planning routine app-control actions.\n\n"
-                        "DESKTOP CONTROL WORKFLOW:\n"
-                        "1. If the target app is already open, go straight to step 3. To open an app, use "
-                        "run_command with the Windows `start` command (e.g. run_command {\"command\": \"start notepad\"}). "
-                        "It returns immediately — never wait on it. Then `uia_wait` for one of its controls to appear.\n"
-                        "2. Bring the app forward with focus_window (e.g. focus_window {\"title\": \"Notepad\"}).\n"
-                        "3. Find what you want with `uia_find` using the control's visible NAME and the app "
-                        "title (e.g. uia_find {\"query\": \"Text editor\", \"app\": \"Notepad\"}). It returns the "
-                        "matching controls — never guess coordinates.\n"
-                        "4. Act by NAME — the tools resolve the target for you through three layers "
-                        "automatically (UIA exact → on-screen-text OCR → only then pixel), so just call "
-                        "them with the visible label; you do NOT need to screenshot or compute coordinates:\n"
-                        "   - `uia_click` to press a button / open a menu / select a channel. If there's no "
-                        "accessible control it auto-falls-back to matching the on-screen TEXT and clicking it.\n"
-                        "   - `uia_type` to enter text into a field. Pass app=<window title>. "
-                        "clear_first=true replaces existing text; submit=true presses Enter afterwards. It "
-                        "VERIFIES the text landed and reports '(verified)'.\n"
-                        "   The result tells you which layer was used (UIA exact / OCR fallback). Trust these "
-                        "tools; only take a manual `screenshot` if a tool reports it found NO match at all.\n"
-                        "5. VERIFY THE OUTCOME before you finish. Don't assume an action worked — read the "
-                        "concrete end-state back. `uia_find` the result/field/display and look at its actual "
-                        "text (e.g. the Calculator's display, the file in the title bar, the message in the "
-                        "channel). If the observed value contradicts the goal (e.g. the display shows 0 when you "
-                        "expected a product), you made a mistake earlier — fix it and re-verify, don't paper over "
-                        "it.\n"
-                        "6. ELECTRON APPS (Discord, Slack, VS Code, Cursor, Spotify, Notion...): the uia tools "
-                        "already try OCR on a miss, and when an app's DOM is locked to UIA they tell you so in "
-                        "the result (an Electron unlock hint). Only THEN call `electron_unlock` — pass just the "
-                        "app NAME (e.g. \"Discord\"); it resolves the running .exe and relaunches with "
-                        "accessibility enabled. Wait a few seconds (the tree loads lazily) and retry. Don't "
-                        "preemptively unlock an Electron app that's already responding to uia_find/uia_click.\n"
-                        "7. When done, call finish with a short summary that STATES THE ACTUAL OBSERVED RESULT "
-                        "you read back in step 5 — the real number/text/state, not a vague 'the result is "
-                        "displayed'. If you could not confirm it, say so plainly.\n\n"
-                        "RULES:\n"
-                        "- FINISH ONLY WHEN EVERY CLAUSE OF THE GOAL IS DONE. Many goals chain steps: 'do X, "
-                        "THEN Y', 'A and then B'. Completing the first clause is NOT the whole task — re-read the "
-                        "original goal before finishing and make sure each part happened. E.g. 'compute (12+8) "
-                        "then multiply by 5' is NOT done at 20; that's only the first half — continue with ×5 "
-                        "until the display reads 100, THEN finish. Don't mistake an intermediate result for the "
-                        "final answer.\n"
-                        "- HONESTY: only report a step as done if its tool returned ok. If uia_find/uia_click "
-                        "fails ('no UIA control matched'), DO NOT claim it worked — try a different control "
-                        "name, uia_wait, or electron_unlock, and if still stuck say so plainly in finish. NEVER "
-                        "claim a task succeeded without having read the concrete result back; a confident but "
-                        "wrong 'done' is the worst possible outcome.\n"
-                        "- MULTI-CLICK SEQUENCES → use uia_click_sequence (ONE call, no drift between clicks). "
-                        "Any known run of buttons — Calculator digits/operators, tabbing a form — should go in a "
-                        "single uia_click_sequence with the targets in order, NOT many separate uia_click calls. "
-                        "Do NOT uia_type into the Calculator (no text field) and never invent names like "
-                        "'Button::Digit 1' — use the accessible names (One..Nine, Plus, Minus, 'Multiply by', "
-                        "'Divide by', Equals, Clear). Pass read_result=\"Display\" to read the answer back IN "
-                        "THE SAME call (saves a turn — no separate uia_find). 47×89 → uia_click_sequence "
-                        "targets [Four,Seven,'Multiply by',Eight,Nine,Equals] read_result=\"Display\" → the "
-                        "result includes 'Display: 4183', so you can finish immediately. Chained (12+8)×5 → "
-                        "[One,Two,Plus,Eight,Equals] read_result=\"Display\" (reads 20) then "
-                        "['Multiply by',Five,Equals] read_result=\"Display\" → 100, then finish.\n"
-                        "- RECOVER, don't surrender: if your verified outcome is wrong or incomplete (e.g. you "
-                        "clicked Clear by mistake and the display is 0), do the steps again correctly — do NOT "
-                        "finish with a vague apology like 'I misunderstood' or 'next time'. Either deliver the "
-                        "correct result, or finish by stating plainly the actual value you see and that it "
-                        "doesn't match the goal. A defeatist non-answer is a failure.\n"
-                        "- PREFER uia_find / uia_click / uia_type over screenshot + mouse_click. They are far "
-                        "faster, cheaper (no image to the model), and self-heal via OCR before any pixel "
-                        "guess. Reserve manual screenshot + coordinate clicks for genuinely visual targets "
-                        "(canvas / game / icon with no text) AFTER a uia tool reports no match.\n"
-                        "- ALWAYS pass the `app` window-title to uia_find/uia_click/uia_type so UIA targets the "
-                        "right window even if focus didn't take.\n"
-                        "- After navigating (opening an app, switching a channel/page), use `uia_wait` instead "
-                        "of guessing — it returns the instant the next control is ready.\n"
-                        "- Don't repeat an action that already succeeded. Don't loop.\n\n"
-                        "CRITICAL SAFETY RULES:\n"
-                        "- NEVER close, minimize, or interact with Google Chrome or Microsoft Edge — those are the monitoring dashboard.\n"
-                        "- Do not interact with Cursor, browsers, File Explorer, or unrelated windows unless the user explicitly asks.\n"
-                        "- NEVER send Alt+F4 unless explicitly asked to close a specific non-browser app.\n"
-                        "- Do NOT click Send / Submit / Pay / Delete (or use submit=true on a message) unless the user clearly asked you to.\n\n"
-                        "APP-SPECIFIC RULES:\n"
-                        "- For Notepad/text-editor tasks, the editor control is named \"Text editor\".\n"
-                        "- SAVING FILES: when a Save dialog opens, uia_type the FULL absolute path into the "
-                        "\"File name\" field, then uia_click \"Save\". CRITICAL: resolve real folder paths with "
-                        "PowerShell — Desktop/Documents are usually redirected to OneDrive, so "
-                        "C:\\Users\\<name>\\Desktop is the WRONG (empty) folder on most machines. Get the true "
-                        "path first with run_command {\"command\": \"powershell -Command "
-                        "\\\"[Environment]::GetFolderPath('Desktop')\\\"\"} (or 'MyDocuments'), and build the "
-                        "filename onto THAT (e.g. C:\\Users\\me\\OneDrive\\Desktop\\file.txt). After clicking "
-                        "Save, VERIFY by checking the file exists on disk (list_directory / file_glob on that "
-                        "resolved folder); if it's not there, the path was wrong — re-resolve and retry, don't "
-                        "claim it saved.\n"
+                        "You are Orynn — a Windows desktop automation agent. You drive real apps through "
+                        "Windows UI Automation (UIA) by control NAME — never by pixels, screenshots, or "
+                        "guessed names.\n\n"
+                        "CORE KIT (covers almost every desktop task — prefer these):\n"
+                        "run_command \"start <app>\" → open app · uia_wait → wait for a control · "
+                        "focus_window → bring forward · uia_find → locate/read a control · uia_click → "
+                        "press one button · uia_click_sequence → many buttons in ONE call (+read_result "
+                        "reads the answer back) · uia_type → enter text · keyboard_type / key_combo → "
+                        "keystrokes · finish → report the VERIFIED result. Other tools exist; use them "
+                        "only when the goal clearly needs them. make_subtasks is only for genuinely "
+                        "decomposable jobs — routine app control never needs it.\n\n"
+                        "PROTOCOL — every turn:\n"
+                        "1. FIRST thought = a numbered plan. Example: \"PLAN: 1) start calc 2) "
+                        "uia_click_sequence 4,7,Multiply by,8,9,Equals with read_result Display 3) finish "
+                        "with the number.\"\n"
+                        "2. Every later thought = ONE line: \"STEP <k> of <plan>: <what now>\". Re-read "
+                        "the goal first; a goal with two clauses ('do X, then Y') is done only when BOTH "
+                        "are verified.\n"
+                        "3. ONE tool call per turn. Never repeat a call that already succeeded.\n\n"
+                        "READ THE MENUS — they remove all guessing:\n"
+                        "- When a window opens or focuses, the result lists \"Visible controls: ...\" — "
+                        "those are the ONLY valid names. Copy them EXACTLY (case, spaces, quotes).\n"
+                        "- When uia_find misses, the error lists the controls that DO exist plus the "
+                        "closest match. Pick from that list. NEVER invent or re-guess a name.\n\n"
+                        "DECISION TABLE:\n"
+                        "- App not open → run_command {\"command\": \"start calc\"} (returns instantly; "
+                        "the result includes the control menu).\n"
+                        "- Known button order → ONE uia_click_sequence: {\"targets\": [\"Four\",\"Seven\","
+                        "\"Multiply by\",\"Eight\",\"Nine\",\"Equals\"], \"app\": \"Calculator\", "
+                        "\"read_result\": \"Display\"} → result contains 'Display: 4183' → finish. "
+                        "Calculator names are One..Nine, Zero, Plus, Minus, 'Multiply by', 'Divide by', "
+                        "Equals, Clear — never '4' or 'Digit 4'.\n"
+                        "- Enter text → uia_type {\"query\": \"Text editor\", \"text\": \"...\", \"app\": "
+                        "\"Notepad\"} (clear_first=true replaces; submit=true presses Enter).\n"
+                        "- App answers to keystrokes → ONE keyboard_type/key_combo beats many clicks "
+                        "(Ctrl+S save, Ctrl+A select all).\n"
+                        "- Just navigated → uia_wait the next control. Never sleep, never guess.\n"
+                        "- Need the result → uia_find the display/field and read its text. The answer "
+                        "MUST come from the app's UI: computing it yourself (shell, mental math) is a "
+                        "FAILURE even if the number is right.\n"
+                        "- Every clause verified → finish stating the observed value (\"Display showed "
+                        "4183\"), never a vague 'done'.\n\n"
+                        "WHEN A CALL FAILS:\n"
+                        "- Same target failed twice → STOP retrying it. Pick a different name from the "
+                        "controls list, or switch to the keyboard path.\n"
+                        "- Three different approaches failed → finish honestly: what you tried, what the "
+                        "app actually shows. Never claim success unread; never apologize-and-quit while "
+                        "the controls list still has untried options; if a wrong value is on screen "
+                        "(e.g. you hit Clear), redo the steps — don't give up.\n"
+                        "- Electron app (Discord/Slack/VS Code/Spotify...) returning no controls → only "
+                        "when the result says the DOM is locked, electron_unlock with the app NAME, wait "
+                        "a few seconds, retry. Never preemptively.\n\n"
+                        "SAFETY:\n"
+                        "- NEVER touch Google Chrome or Microsoft Edge (monitoring dashboard), Cursor, "
+                        "File Explorer, or unrelated windows.\n"
+                        "- NEVER Alt+F4 unless asked to close a specific non-browser app.\n"
+                        "- NEVER click Send / Submit / Pay / Delete (or submit=true on a message) unless "
+                        "the user asked for it.\n\n"
+                        "APP NOTES:\n"
+                        "- Notepad's editor control is named \"Text editor\".\n"
+                        "- Save dialog: resolve the REAL folder first — run_command {\"command\": "
+                        "\"powershell -Command \\\"[Environment]::GetFolderPath('Desktop')\\\"\"} "
+                        "(Desktop/Documents usually live under OneDrive, so C:\\Users\\<name>\\Desktop "
+                        "is wrong on most machines). uia_type the FULL path into \"File name\", "
+                        "uia_click \"Save\", then VERIFY the file exists (file_glob on that folder). "
+                        "Not there = wrong path: re-resolve and retry, don't claim it saved.\n"
                         # NOTE: native tool schemas are sent separately, so we do
                         # NOT repeat the full tool_guidance here (it's ~4KB of
                         # duplication). The XML fallback (xml_system) keeps it.
                     )
                     xml_system = (
-                        "You are Orynn — a desktop automation agent driving a real Windows PC via UI Automation (UIA).\n"
-                        "FORMAT: <thought>reasoning</thought> then <action type=\"tool\">{args}</action>\n\n"
-                        "WORKFLOW: (open app via run_command \"start <app>\" only if not already open) → focus_window → "
-                        "uia_find {query, app} → uia_click / uia_type {query, text, app, clear_first, submit} → uia_find to verify → finish\n"
-                        "PREFER uia_find/uia_click/uia_type over screenshots and pixel clicks — faster and never mis-click. "
-                        "Always pass the app window title. For Electron apps (Discord/Slack/VS Code) that return no controls, "
-                        "electron_check then electron_unlock, then retry. Use uia_wait after navigating instead of sleeping.\n"
-                        "SAFETY: NEVER close Chrome, Edge, Cursor, or unrelated windows. Do not send/submit/pay/delete unless asked.\n\n"
+                        "You are Orynn — a Windows desktop automation agent. You drive real apps via UI "
+                        "Automation (UIA) by control NAME — never pixels, screenshots, or guessed names.\n\n"
+                        "FORMAT — your ENTIRE reply, every turn, nothing before or after:\n"
+                        "<thought>STEP 2 of 3: type the text into the editor</thought>\n"
+                        "<action type=\"uia_type\">{\"query\": \"Text editor\", \"text\": \"hello\", \"app\": \"Notepad\"}</action>\n"
+                        "Args are STRICT one-line JSON: double quotes only, no trailing commas, no comments, "
+                        "nothing after </action>. ONE action per turn.\n\n"
+                        "PROTOCOL: your FIRST thought is a numbered plan (\"PLAN: 1) start calc 2) click "
+                        "sequence with read_result 3) finish with the number\"); every later thought is one "
+                        "line: \"STEP <k> of <plan>: <what now>\". A goal with two clauses ('do X, then Y') "
+                        "is done only when BOTH are verified.\n\n"
+                        "DECISION TABLE:\n"
+                        "- App not open → <action type=\"run_command\">{\"command\": \"start calc\"}</action> "
+                        "(the result includes the window's control menu).\n"
+                        "- Window result lists \"Visible controls: ...\" → those are the ONLY valid names; "
+                        "copy them EXACTLY. A uia_find miss lists the controls that DO exist — pick from "
+                        "that list, NEVER re-guess.\n"
+                        "- Known button order → ONE uia_click_sequence {\"targets\": [\"Four\",\"Seven\","
+                        "\"Multiply by\",\"Eight\",\"Nine\",\"Equals\"], \"app\": \"Calculator\", "
+                        "\"read_result\": \"Display\"} → result contains 'Display: 4183' → finish.\n"
+                        "- Enter text → uia_type (clear_first=true replaces, submit=true presses Enter). "
+                        "App answers to keystrokes → one keyboard_type/key_combo beats many clicks.\n"
+                        "- Just navigated → uia_wait the next control; never sleep.\n"
+                        "- The answer MUST be read from the app's UI (uia_find/read_result). Computing it "
+                        "yourself in the shell is a FAILURE even if correct.\n"
+                        "- Always pass the app window title.\n\n"
+                        "WHEN A CALL FAILS: same target failed twice → stop retrying it; pick a different "
+                        "listed name or the keyboard path. Three approaches failed → finish honestly with "
+                        "what you tried and what the app shows. Electron apps (Discord/Slack/VS Code) that "
+                        "return no controls: only when the result says the DOM is locked → electron_unlock "
+                        "with the app name, wait, retry.\n\n"
+                        "SAFETY: NEVER touch Chrome, Edge, Cursor, or unrelated windows. NEVER Alt+F4 "
+                        "unless asked. Never send/submit/pay/delete unless asked.\n\n"
                         f"Available tools:\n{tool_guidance}\n\n"
-                        "After each <observation>, decide the next step. Call finish as soon as the goal is achieved."
+                        "After each <observation>, output the next STEP thought + ONE action. Call finish "
+                        "only when every clause is verified, stating the observed value."
                     )
                 else:
                     system = (
@@ -2153,6 +2196,11 @@ class AgentService:
                 _recent_calls: list[tuple[str, str]] = []  # (action_type, args_key) last 3 calls
                 _write_cache: dict[str, str] = {}  # path → content of recently written files
                 _last_uia_failed = False
+                # Finish gate: successful desktop interactions seen so far, and
+                # whether we already bounced one unearned finish (bounce once,
+                # then trust the model — never deadlock the loop).
+                _desktop_evidence = 0
+                _finish_bounced = False
                 _preserve_screenshot_once = False
                 xml_fallback_steps = 0
                 max_steps = (
@@ -2496,6 +2544,33 @@ class AgentService:
                         else:
                             messages.append({"role": "assistant", "content": f"<thought>{thought_text}</thought>\n<action type=\"{action_type}\">\n{json.dumps(args)}\n</action>"})
                             messages.append({"role": "user", "content": f"<observation>\n{_cached_obs}\n</observation>"})
+                        continue
+
+                    # ── Finish gate: a desktop goal cannot be done if nothing
+                    # was ever done. Bounce ONE unearned finish back with
+                    # instructions; if the model insists a second time, let it
+                    # through (its summary may legitimately be "app opened").
+                    if (action_type == "finish" and _is_computer_desktop
+                            and _desktop_evidence == 0 and not _finish_bounced):
+                        _finish_bounced = True
+                        _gate_obs = (
+                            "[finish rejected] You have not interacted with any app yet "
+                            "(no successful click/type/keyboard action), so the goal cannot "
+                            "be complete. Do the task using the visible control names "
+                            "(uia_click / uia_type / uia_click_sequence / keyboard_type), "
+                            "READ THE RESULT BACK (uia_find the display/field), then finish "
+                            "stating the actual observed result. If the goal truly required "
+                            "no interaction, finish again and state exactly what you verified."
+                        )
+                        if use_native_tools and tool_call_id:
+                            messages.append({"role": "assistant", "content": thought_text, "tool_calls": [{"id": tool_call_id, "type": "function", "function": {"name": action_type, "arguments": json.dumps(args)}}]})
+                            messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": _gate_obs})
+                        else:
+                            messages.append({"role": "assistant", "content": f"<thought>{thought_text}</thought>\n<action type=\"{action_type}\">\n{json.dumps(args)}\n</action>"})
+                            messages.append({"role": "user", "content": f"<observation>\n{_gate_obs}\n</observation>"})
+                        await self._emit(task_id, "status", {
+                            "message": "Finish rejected — no desktop interaction has happened yet; asking the agent to do and verify the task first.",
+                        })
                         continue
 
                     # ── Anti-waste: read-after-write cache ──
@@ -2853,6 +2928,8 @@ class AgentService:
                         "args_summary": _arg_summary,
                         **({"overlay": _result_overlay} if _result_overlay else {}),
                     })
+                    if res.ok and act.type in _DESKTOP_EVIDENCE_ACTION_TYPES:
+                        _desktop_evidence += 1
                     if act.type in _UIA_ACTION_TYPES:
                         _last_uia_failed = not res.ok
                     elif act.type in _VISUAL_DESKTOP_ACTION_TYPES:
@@ -2932,10 +3009,27 @@ class AgentService:
                             })
 
                     # ── Append result to conversation ──
-                    obs_limit = 3000 if is_coding_mode else 1000
+                    # Desktop observations carry the control menus and teaching
+                    # errors that keep small models from re-guessing names —
+                    # a 1000-char cap can clip exactly that tail, so desktop
+                    # gets more headroom.
+                    obs_limit = 3000 if is_coding_mode else (1600 if _is_computer_desktop else 1000)
                     obs_text = res.output[:obs_limit] + ("\n...(truncated)" if len(res.output) > obs_limit else "")
                     if post_action_note:
                         obs_text = f"{obs_text}\n\n{post_action_note}"
+                    # Goal re-anchor for small models: by step 5+ the goal is
+                    # many messages back and fast free models start reacting to
+                    # the last observation instead of the task. Re-inject the
+                    # goal every 4th desktop step so it never leaves the
+                    # context window.
+                    if _is_computer_desktop and step >= 3 and (step + 1) % 4 == 0:
+                        _goal_brief = goal if len(goal) <= 240 else goal[:240] + "…"
+                        obs_text += (
+                            f"\n\n[goal check] The task is: \"{_goal_brief}\" — "
+                            f"{max_steps - step - 1} steps remain. Compare your plan "
+                            "against this; finish only when every clause is verified "
+                            "from the app's UI."
+                        )
                     if use_native_tools and tool_call_id:
                         messages.append({"role": "assistant", "content": thought_text, "tool_calls": [{"id": tool_call_id, "type": "function", "function": {"name": action_type, "arguments": json.dumps(args)}}]})
                         messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": obs_text})

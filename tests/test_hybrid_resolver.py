@@ -317,6 +317,10 @@ def test_uia_click_sequence_one_call(monkeypatch, tmp_path):
 def test_uia_click_sequence_reads_result_in_same_call(monkeypatch, tmp_path):
     import app.widget.desktop_features as df
 
+    # Keep the Calculator keyboard fallback away from any REAL Calculator
+    # window that happens to be open on the test machine.
+    monkeypatch.setattr(ToolExecutor, "_calculator_sequence_fallback",
+                        lambda self, targets, app, read_result="": None)
     monkeypatch.setattr(df, "invoke_ui_element", lambda q, a: {"ok": True, "target": q})
     monkeypatch.setattr(df, "app_window_rect",
                         lambda a: {"left": 0, "top": 0, "width": 400, "height": 300})
@@ -335,6 +339,10 @@ def test_uia_click_sequence_reads_result_in_same_call(monkeypatch, tmp_path):
 def test_uia_click_sequence_stops_on_miss(monkeypatch, tmp_path):
     import app.widget.desktop_features as df
 
+    # Keep the Calculator keyboard fallback away from any REAL Calculator
+    # window that happens to be open on the test machine.
+    monkeypatch.setattr(ToolExecutor, "_calculator_sequence_fallback",
+                        lambda self, targets, app, read_result="": None)
     # 'Nine' isn't found in UIA and OCR also misses -> stop, report which failed.
     monkeypatch.setattr(df, "invoke_ui_element",
                         lambda q, a: {"ok": q != "Nine", "target": q})

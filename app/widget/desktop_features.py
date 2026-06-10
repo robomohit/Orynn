@@ -1,12 +1,12 @@
-"""Desktop-native features that round out the Orynn widget into a
+﻿"""Desktop-native features that round out the Orynn widget into a
 shippable product.
 
 Implements (from research-deferred list):
-  * Window-snap layouts            — "coding", "research", "meeting" presets
-  * Autostart on Windows login     — HKCU Run-key registry toggle
-  * Crash recovery / session save  — persist last goal, offer resume
-  * "Explain this screen" hotkey   — screenshot + describe via vision model
-  * Telemetry-off promise          — exposed as a settings flag (always-off)
+  * Window-snap layouts            â€” "coding", "research", "meeting" presets
+  * Autostart on Windows login     â€” HKCU Run-key registry toggle
+  * Crash recovery / session save  â€” persist last goal, offer resume
+  * "Explain this screen" hotkey   â€” screenshot + describe via vision model
+  * Telemetry-off promise          â€” exposed as a settings flag (always-off)
 
 All Windows-native; no extra pip deps beyond what's already required.
 """
@@ -29,9 +29,9 @@ except ImportError:  # pragma: no cover - exercised on non-Windows CI hosts.
     winreg = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # WINDOW-SNAP LAYOUTS
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def list_visible_windows() -> list[dict]:
     """Return [{'hwnd', 'title', 'exe'}] of user-visible top-level windows."""
     user32 = ctypes.windll.user32
@@ -148,7 +148,7 @@ def _set_window_pos(hwnd: int, x: int, y: int, w: int, h: int) -> bool:
         x, y, w, h, SWP_NOZORDER | SWP_SHOWWINDOW))
 
 
-# Built-in named layouts. Each layout maps a friendly slot name → (x, y, w, h)
+# Built-in named layouts. Each layout maps a friendly slot name â†’ (x, y, w, h)
 # as fractions of the work-area, and a list of (slot, exe_keyword) targets.
 LAYOUTS = {
     "coding": {
@@ -225,9 +225,9 @@ def apply_layout(layout_name: str) -> dict:
             "description": layout["description"], "moved": moved}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # AUTOSTART (HKCU\Software\Microsoft\Windows\CurrentVersion\Run)
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _AUTOSTART_NAME = "Orynn"
 _AUTOSTART_LEGACY_NAMES = ("AI_Computer",)
@@ -280,9 +280,9 @@ def set_autostart(enable: bool, launch_cmd: Optional[str] = None) -> bool:
         return False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CRASH RECOVERY — persist last in-flight goal so we can offer to resume
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# CRASH RECOVERY â€” persist last in-flight goal so we can offer to resume
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _state_path() -> Path:
     return workspace_state_path("widget_state.json")
 
@@ -314,7 +314,7 @@ def load_pending_task() -> Optional[dict]:
         data = read_json(_state_path(), None)
         if not isinstance(data, dict):
             return None
-        # Stale > 24h → drop
+        # Stale > 24h â†’ drop
         if time.time() - data.get("ts", 0) > 24 * 3600:
             clear_pending_task()
             return None
@@ -323,13 +323,13 @@ def load_pending_task() -> Optional[dict]:
         return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TELEMETRY — always off. Single source of truth for the privacy panel.
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# UIA TREE NAVIGATION — find controls by name/role, no pixel coords
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# TELEMETRY â€” always off. Single source of truth for the privacy panel.
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# UIA TREE NAVIGATION â€” find controls by name/role, no pixel coords
 # Uses Microsoft IUIAutomation COM via the `uiautomation` PyPI lib if present.
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Electron/Chromium apps nest their DOM deeply (Discord's search box sits at
 # UIA depth 12+). A shallow walk silently misses real controls, so we go deep.
 _UIA_MAX_DEPTH = 40
@@ -352,28 +352,188 @@ def _ensure_uia_config(uia) -> None:
     _uia_configured = True
 
 
-def _uia_root(app_hint: str = "", fallback_foreground: bool = True):
-    """Return the right top-level window to search for an app.
+def _window_cloaked(handle: int) -> bool:
+    """True if DWM reports the window as cloaked. Suspended/zombie UWP frames
+    (ApplicationFrameHost keeps them around after the app closes or sleeps)
+    still enumerate as 'visible' top-level windows, but searching one yields
+    only title-bar chrome â€” the failure seen in the calculator e2e runs."""
+    if not handle:
+        return False
+    try:
+        DWMWA_CLOAKED = 14
+        val = wintypes.DWORD(0)
+        if ctypes.windll.dwmapi.DwmGetWindowAttribute(
+                wintypes.HWND(handle), DWMWA_CLOAKED,
+                ctypes.byref(val), ctypes.sizeof(val)) == 0:
+            return bool(val.value)
+    except Exception:
+        pass
+    return False
+
+
+# UWP frame plumbing â€” children of ApplicationFrameWindow that exist even on a
+# dead/cloaked frame. "Has children" alone can't tell a live app from a zombie.
+_FRAME_CHROME_CLASSES = {
+    "ApplicationFrameTitleBarWindow",
+    "ApplicationFrameInputSinkWindow",
+}
+
+
+def _has_real_content(top) -> bool:
+    """Does this top-level window expose content beyond frame chrome? A zombie
+    UWP frame keeps its title-bar child but loses the CoreWindow content, so we
+    look for a non-chrome child that itself has children (or any plain child
+    for classic Win32 windows)."""
+    try:
+        for ch in top.GetChildren():
+            try:
+                cls = ch.ClassName or ""
+            except Exception:
+                cls = ""
+            if cls in _FRAME_CHROME_CLASSES:
+                continue
+            try:
+                if ch.GetChildren():
+                    return True
+            except Exception:
+                pass
+            if cls != "ApplicationFrameWindow":
+                return True
+    except Exception:
+        pass
+    return False
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# INPUT POLITENESS â€” let the agent share the PC with an active user.
+#
+# UIA reads (find/wait/survey) and InvokePattern clicks work on background
+# windows and never touch the pointer. But focus+paste typing, SendKeys, and
+# pixel fallbacks DO hijack the real keyboard/mouse. Before any of those, we
+# wait briefly for the user's hands to leave the keyboard â€” and we have to
+# discriminate OUR OWN synthetic input from the user's, because SendInput
+# (SendKeys/pyautogui) also resets Windows' last-input timestamp.
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+_last_synthetic_input_ts = 0.0
+
+
+def note_synthetic_input() -> None:
+    """Record that WE just sent synthetic input (SendKeys/pyautogui), so the
+    activity guard doesn't mistake our own keystrokes for the user's."""
+    global _last_synthetic_input_ts
+    _last_synthetic_input_ts = time.time()
+
+
+def user_input_idle_seconds() -> float:
+    """Seconds since the last keyboard/mouse input system-wide (any source)."""
+    try:
+        class LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+        lii = LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            return 1e9
+        tick = ctypes.windll.kernel32.GetTickCount()
+        return max(0.0, (tick - lii.dwTime) / 1000.0)
+    except Exception:
+        return 1e9  # can't tell â†’ never block on it
+
+
+def _user_actively_typing(min_idle: float) -> bool:
+    """True only when the recent input looks like the USER's, not ours."""
+    idle = user_input_idle_seconds()
+    if idle >= min_idle:
+        return False
+    # Input happened within min_idle. If we sent synthetic input at roughly
+    # that same moment, it was almost certainly ours.
+    since_ours = time.time() - _last_synthetic_input_ts
+    return since_ours > idle + 0.5
+
+
+def input_polite_enabled() -> bool:
+    return (os.environ.get("ORYNN_INPUT_POLITE", "1").strip().lower()
+            not in ("0", "false", "no", "off"))
+
+
+def wait_for_user_idle(min_idle: float = 1.5, max_wait: float = 8.0) -> dict:
+    """Politeness gate before an input-stealing action: wait (bounded) until
+    the user has been hands-off for `min_idle` seconds. Never blocks forever â€”
+    after `max_wait` we proceed anyway and report it, so a busy user slows the
+    agent down instead of deadlocking it."""
+    if not input_polite_enabled():
+        return {"waited": 0.0, "yielded": False, "proceeded_anyway": False}
+    waited = 0.0
+    while waited < max_wait:
+        if not _user_actively_typing(min_idle):
+            return {"waited": round(waited, 2), "yielded": waited > 0,
+                    "proceeded_anyway": False}
+        step = 0.25
+        time.sleep(step)
+        waited += step
+    return {"waited": round(waited, 2), "yielded": True, "proceeded_anyway": True}
+
+
+def _politeness_note(gate: dict) -> str:
+    if gate.get("proceeded_anyway"):
+        return (" [input-politeness: user kept typing for "
+                f"{gate['waited']}s â€” proceeded anyway]")
+    if gate.get("yielded"):
+        return f" [input-politeness: waited {gate['waited']}s for the user to pause]"
+    return ""
+
+
+def _uia_pattern(ctrl, pattern_name: str):
+    """Pattern accessor that works on GENERIC Control objects.
+
+    The uiautomation lib defines the Get<X>Pattern() conveniences only on its
+    TYPED subclasses (ButtonControl, EditControl, ...). Our tree walks hand
+    back generic Control wrappers, where ctrl.GetInvokePattern() raises
+    AttributeError â€” which was silently swallowed and degraded EVERY 'UIA
+    click' to a pixel click (breaking background operation and the whole
+    no-pixel pitch; a covered Calculator absorbed 8 'ok' clicks into whatever
+    window was on top). GetPattern(PatternId.X) works on any control."""
+    try:
+        getter = getattr(ctrl, f"Get{pattern_name}", None)
+        if getter is not None:
+            pattern = getter()
+            if pattern is not None:
+                return pattern
+    except Exception:
+        pass
+    try:
+        import uiautomation as uia
+        pattern_id = getattr(uia.PatternId, pattern_name, None)
+        if pattern_id is None:
+            return None
+        return ctrl.GetPattern(pattern_id)
+    except Exception:
+        return None
+
+
+def _uia_root_candidates(app_hint: str = "", fallback_foreground: bool = True) -> list:
+    """Return top-level windows matching `app_hint`, best first.
 
     RANKS all windows whose title contains the hint instead of taking the first
-    substring match — otherwise noise windows that merely MENTION the app steal
-    the target. The classic culprit: the "Activate Windows. Go to Settings..."
-    watermark (an empty Pane) outranks the real Settings window in raw iteration
-    order, so every UIA op silently searched an empty pane. We prefer an exact
-    title, a real WindowControl, and a window that actually has children; and we
-    hard-demote the activation watermark. Falls back to the foreground window.
-    """
+    substring match â€” otherwise noise windows that merely MENTION the app steal
+    the target. Classic culprits: the "Activate Windows. Go to Settings..."
+    watermark (an empty Pane), and cloaked/zombie UWP frames that shadow the
+    live app window with an identical title. We prefer an exact title, a real
+    WindowControl, real content beyond frame chrome, and the active window;
+    we hard-demote the watermark and cloaked frames. Returning the ranked LIST
+    (not just the winner) lets find_ui_elements fall through to the runner-up
+    when the best-ranked window turns out to be a dud."""
     import uiautomation as uia
+    candidates: list[tuple[int, object]] = []
     if app_hint:
         hint = app_hint.lower().strip()
-        # Foreground window handle — when several windows of the same app are
+        # Foreground window handle â€” when several windows of the same app are
         # open (e.g. 5 Notepads), prefer the one the user is actually looking at.
         fg_handle = 0
         try:
             fg_handle = int(uia.GetForegroundControl().NativeWindowHandle or 0)
         except Exception:
             pass
-        best, best_score = None, -1
         for top in uia.GetRootControl().GetChildren():
             try:
                 low = (top.Name or "").strip().lower()
@@ -385,25 +545,37 @@ def _uia_root(app_hint: str = "", fallback_foreground: bool = True):
                         score += 20
                 except Exception:
                     pass
+                if _has_real_content(top):
+                    score += 45
                 try:
-                    if top.GetChildren():       # has real content (not an empty pane)
-                        score += 25
+                    handle = int(top.NativeWindowHandle or 0)
                 except Exception:
-                    pass
-                try:                            # the active window wins ties
-                    if fg_handle and int(top.NativeWindowHandle or 0) == fg_handle:
-                        score += 40
-                except Exception:
-                    pass
+                    handle = 0
+                if fg_handle and handle == fg_handle:  # the active window wins ties
+                    score += 40
+                if _window_cloaked(handle):     # suspended/zombie frame, never a target
+                    score -= 150
                 if "activate windows" in low:   # the activation watermark, never a target
                     score -= 200
-                if score > best_score:
-                    best, best_score = top, score
+                candidates.append((score, top))
             except Exception:
                 continue
-        if best is not None:
-            return best
-    return uia.GetForegroundControl() if fallback_foreground else None
+        candidates.sort(key=lambda x: -x[0])
+    roots = [c for _, c in candidates]
+    if not roots and fallback_foreground:
+        try:
+            fg = uia.GetForegroundControl()
+            if fg is not None:
+                roots.append(fg)
+        except Exception:
+            pass
+    return roots
+
+
+def _uia_root(app_hint: str = "", fallback_foreground: bool = True):
+    """Best top-level window to search for an app (see _uia_root_candidates)."""
+    roots = _uia_root_candidates(app_hint, fallback_foreground)
+    return roots[0] if roots else None
 
 
 def _score_match(query: str, name: str, aid: str, role: str) -> int:
@@ -426,9 +598,69 @@ def _score_match(query: str, name: str, aid: str, role: str) -> int:
     return 0
 
 
+def _miss_error(query: str, app_hint: str, roots: list,
+                hint_matched: bool = True) -> str:
+    """A teaching error for a UIA miss. 'no match' alone invites the model to
+    guess another name (the dominant free-model failure loop in the calculator
+    e2e runs: Four/4/digit/Ã—â€¦ all misses). Instead, hand it the actual menu:
+    nearest real control names first, then the rest of the interactive set."""
+    searched = ""
+    try:
+        searched = (roots[0].Name or "").strip() if roots else ""
+    except Exception:
+        pass
+    if app_hint and not hint_matched:
+        where = (f" â€” no window titled like '{app_hint}' is open"
+                 + (f"; searched the foreground window '{searched}' instead"
+                    if searched else ""))
+    else:
+        where = f" in '{app_hint or searched}'" if (app_hint or searched) else ""
+    base = f"no UIA control matched '{query}'{where}"
+    names: list[str] = []
+    try:
+        for root in roots[:2]:
+            survey = _survey_controls_under(root, cap=120, max_names=36)
+            for nm in survey:
+                if nm not in names:
+                    names.append(nm)
+            if names:
+                break
+    except Exception:
+        pass
+    if not names:
+        return (base + ". The window exposes no interactive controls right now "
+                "â€” it may still be loading, be a stale/suspended window, or be "
+                "an Electron app with accessibility locked. focus_window it and "
+                "retry; if it's Electron, use electron_check / electron_unlock.")
+    try:
+        import difflib
+        nearest = difflib.get_close_matches(
+            str(query or ""), names, n=3, cutoff=0.45)
+    except Exception:
+        nearest = []
+    parts = [base + "."]
+    if nearest:
+        parts.append("Did you mean: " + ", ".join(f"'{n}'" for n in nearest) + "?")
+    listed = [n for n in names if n not in nearest][:24]
+    if listed:
+        parts.append("Controls actually in this window (use these EXACT names): "
+                     + ", ".join(f"'{n}'" for n in listed) + ".")
+    return " ".join(parts)
+
+
+def _survey_controls_under(root, cap: int = 120, max_names: int = 36) -> list[str]:
+    """Interactive control names under an already-resolved root (one walk)."""
+    return _walk_survey(root, cap, max_names)["controls"]
+
+
 def find_ui_elements(query: str, app_hint: str = "",
                      limit: int = 5) -> dict:
-    """Return up to `limit` matching controls, ranked by match score."""
+    """Return up to `limit` matching controls, ranked by match score.
+
+    Searches the best-ranked window first; on a total miss it falls through to
+    the next title-matching windows (a cloaked/zombie UWP frame can outrank or
+    shadow the live app â€” searching only one window turns that into a hard,
+    unrecoverable miss for the agent)."""
     try:
         import uiautomation as uia  # noqa: F401
     except ImportError:
@@ -436,68 +668,83 @@ def find_ui_elements(query: str, app_hint: str = "",
                 "error": "uiautomation not installed (pip install uiautomation)"}
     _ensure_uia_config(uia)
     try:
-        root = _uia_root(app_hint)
-        candidates: list[tuple[int, dict]] = []
-        perfect = [0]  # count of exact (score==100) hits found so far
+        roots = _uia_root_candidates(app_hint, fallback_foreground=False)
+        hint_matched = bool(roots)
+        if not roots:
+            roots = _uia_root_candidates("", fallback_foreground=True)
 
-        def walk(ctrl, depth=0):
-            if depth > _UIA_MAX_DEPTH or perfect[0] >= limit:
-                return
-            try:
-                name = ctrl.Name or ""
-                aid = ctrl.AutomationId or ""
-                role = ctrl.ControlTypeName or ""
-                # Skip the root container itself (depth 0): the top-level window
-                # pane's name contains the app + current server/channel, so it
-                # would match substring queries and steal the real target.
-                score = _score_match(query, name, aid, role) if depth > 0 else 0
-                if score > 0:
-                    rect = ctrl.BoundingRectangle
-                    has_rect = rect.right > rect.left and rect.bottom > rect.top
-                    # Electron/Chromium controls (Discord servers/channels) often
-                    # report a 0x0 rect and IsOffscreen even when they're visible
-                    # and clickable via Invoke/Select patterns. Keep them — just
-                    # rank them below on-screen matches so a visible duplicate
-                    # wins ties. uia_click scrolls them into view before acting.
-                    try:
-                        offscreen = bool(ctrl.IsOffscreen)
-                    except Exception:
-                        offscreen = False
-                    eff = score - (8 if (offscreen or not has_rect) else 0)
-                    candidates.append((eff, {
-                        "name": name,
-                        "automation_id": aid,
-                        "control_type": role,
-                        "left": rect.left if has_rect else 0,
-                        "top": rect.top if has_rect else 0,
-                        "x": (rect.left + rect.right) // 2 if has_rect else 0,
-                        "y": (rect.top + rect.bottom) // 2 if has_rect else 0,
-                        "width": max(0, rect.right - rect.left),
-                        "height": max(0, rect.bottom - rect.top),
-                        "score": score,
-                        "offscreen": offscreen or not has_rect,
-                    }))
-                    if score >= 100 and has_rect and not offscreen:
-                        perfect[0] += 1
-                for child in ctrl.GetChildren():
-                    if perfect[0] >= limit:
-                        break
-                    walk(child, depth + 1)
-            except Exception:
-                pass
+        def search(root) -> list[tuple[int, dict]]:
+            candidates: list[tuple[int, dict]] = []
+            perfect = [0]  # count of exact (score==100) hits found so far
 
-        walk(root)
-        candidates.sort(key=lambda x: -x[0])
-        items = [c for _, c in candidates[:limit]]
+            def walk(ctrl, depth=0):
+                if depth > _UIA_MAX_DEPTH or perfect[0] >= limit:
+                    return
+                try:
+                    name = ctrl.Name or ""
+                    aid = ctrl.AutomationId or ""
+                    role = ctrl.ControlTypeName or ""
+                    # Skip the root container itself (depth 0): the top-level window
+                    # pane's name contains the app + current server/channel, so it
+                    # would match substring queries and steal the real target.
+                    score = _score_match(query, name, aid, role) if depth > 0 else 0
+                    if score > 0:
+                        rect = ctrl.BoundingRectangle
+                        has_rect = rect.right > rect.left and rect.bottom > rect.top
+                        # Electron/Chromium controls (Discord servers/channels) often
+                        # report a 0x0 rect and IsOffscreen even when they're visible
+                        # and clickable via Invoke/Select patterns. Keep them â€” just
+                        # rank them below on-screen matches so a visible duplicate
+                        # wins ties. uia_click scrolls them into view before acting.
+                        try:
+                            offscreen = bool(ctrl.IsOffscreen)
+                        except Exception:
+                            offscreen = False
+                        eff = score - (8 if (offscreen or not has_rect) else 0)
+                        candidates.append((eff, {
+                            "name": name,
+                            "automation_id": aid,
+                            "control_type": role,
+                            "left": rect.left if has_rect else 0,
+                            "top": rect.top if has_rect else 0,
+                            "x": (rect.left + rect.right) // 2 if has_rect else 0,
+                            "y": (rect.top + rect.bottom) // 2 if has_rect else 0,
+                            "width": max(0, rect.right - rect.left),
+                            "height": max(0, rect.bottom - rect.top),
+                            "score": score,
+                            "offscreen": offscreen or not has_rect,
+                        }))
+                        if score >= 100 and has_rect and not offscreen:
+                            perfect[0] += 1
+                    for child in ctrl.GetChildren():
+                        if perfect[0] >= limit:
+                            break
+                        walk(child, depth + 1)
+                except Exception:
+                    pass
+
+            walk(root)
+            return candidates
+
+        items: list[dict] = []
+        for root in (roots[:3] or [None]):
+            if root is None:
+                break
+            candidates = search(root)
+            candidates.sort(key=lambda x: -x[0])
+            items = [c for _, c in candidates[:limit]]
+            if items:
+                break
         if not items:
-            return {"ok": False, "error": f"no UIA control matched '{query}'"}
+            return {"ok": False,
+                    "error": _miss_error(query, app_hint, roots, hint_matched)}
         return {"ok": True, "items": items}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 
 def find_ui_element(query: str, app_hint: str = "") -> dict:
-    """Single-result variant — returns the highest-scoring match."""
+    """Single-result variant â€” returns the highest-scoring match."""
     res = find_ui_elements(query, app_hint, limit=1)
     if not res.get("ok"):
         return res
@@ -505,7 +752,7 @@ def find_ui_element(query: str, app_hint: str = "") -> dict:
     return {"ok": True, **item}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # ELECTRON ACCESSIBILITY UNLOCK
 #
 # Chromium-based desktop apps (VS Code, Slack, Discord, Teams, Notion, Spotify,
@@ -524,9 +771,9 @@ def find_ui_element(query: str, app_hint: str = "") -> dict:
 # We DO NOT implement Chrome DevTools Protocol by default. The flag stops
 # working across Electron upgrades (electron/electron#41325, #10445); we keep
 # detection here so power users can opt in if they want.
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-# Known Electron exe basenames — the agent uses this to suggest a relaunch
+# Known Electron exe basenames â€” the agent uses this to suggest a relaunch
 # instead of fumbling vision on a blank UIA tree.
 ELECTRON_EXES = {
     "code.exe", "cursor.exe", "windsurf.exe", "antigravity.exe",
@@ -579,7 +826,7 @@ def electron_hint_for_app(app_hint: str) -> Optional[dict]:
         if exe and is_electron_app(exe):
             return {
                 "exe": exe,
-                "tip": (f"{app_hint or 'This app'} is an Electron app — its DOM "
+                "tip": (f"{app_hint or 'This app'} is an Electron app â€” its DOM "
                         "is invisible to UIA until unlocked. Relaunch it with "
                         "--force-renderer-accessibility (electron_unlock / "
                         "/api/desktop/electron/relaunch) and the controls become "
@@ -601,7 +848,7 @@ def count_app_controls(app_hint: str, cap: int = 60) -> int:
         return 0
     _ensure_uia_config(uia)
     try:
-        # Only count when a top-level window actually matches app_hint — do NOT
+        # Only count when a top-level window actually matches app_hint â€” do NOT
         # fall back to the foreground window (that would falsely report a closed
         # app as "already accessible"). _uia_root ranks candidates so a noise
         # window (e.g. the "Activate Windows" watermark) can't steal the match.
@@ -634,7 +881,7 @@ _INTERACTIVE_CTRL_TYPES = {
     "ComboBoxControl", "SplitButtonControl", "EditControl",
 }
 
-# NOTE: deliberately NOT "system" — that's a real Settings nav item (System ›
+# NOTE: deliberately NOT "system" â€” that's a real Settings nav item (System â€º
 # About). Only the unambiguous title-bar buttons.
 _CHROME_NAMES = {"minimize", "maximize", "restore", "close"}
 
@@ -664,7 +911,7 @@ def survey_app_controls(
     interactive controls (buttons, tabs, list items, menu items, links, fields)
     the agent can click/type by name. Handing the model this 'menu' up front stops
     it guessing control names that don't exist (e.g. searching 'Search' in
-    Settings) — far more accurate AND faster (fewer wasted misses)."""
+    Settings) â€” far more accurate AND faster (fewer wasted misses)."""
     out: Dict[str, Any] = {"count": 0, "controls": []}
     try:
         import uiautomation as uia
@@ -672,37 +919,49 @@ def survey_app_controls(
         return out
     _ensure_uia_config(uia)
     try:
-        root = _uia_root(app_hint, fallback_foreground=fallback_foreground) if (app_hint or fallback_foreground) else None
-        if root is None:
-            return out
-        n = [0]
-        names: list[str] = []
-        seen: set[str] = set()
-
-        def walk(c, d=0):
-            if d > _UIA_MAX_DEPTH or n[0] >= cap or len(names) >= max_names:
-                return
-            try:
-                n[0] += 1
-                if c.ControlTypeName in _INTERACTIVE_CTRL_TYPES:
-                    nm = (c.Name or "").strip()
-                    if (nm and len(nm) <= 40 and nm.lower() not in seen
-                            and not _is_chrome_control(nm)):
-                        seen.add(nm.lower())
-                        names.append(nm)
-                for ch in c.GetChildren():
-                    if n[0] >= cap or len(names) >= max_names:
-                        break
-                    walk(ch, d + 1)
-            except Exception:
-                pass
-
-        walk(root)
-        out["count"] = n[0]
-        out["controls"] = names
+        roots = (_uia_root_candidates(app_hint, fallback_foreground=fallback_foreground)
+                 if (app_hint or fallback_foreground) else [])
+        # The best-ranked window can still be a dud (cloaked/zombie UWP frame
+        # exposing only title-bar chrome) â€” fall through to the runner-up
+        # rather than reporting an empty menu for a live app.
+        for root in roots[:3]:
+            res = _walk_survey(root, cap, max_names)
+            if res["controls"] or not out["count"]:
+                out = res
+            if res["controls"]:
+                break
         return out
     except Exception:
         return out
+
+
+def _walk_survey(root, cap: int, max_names: int) -> Dict[str, Any]:
+    """ONE tree walk under an already-resolved root â†’ control count + names."""
+    n = [0]
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def walk(c, d=0):
+        if d > _UIA_MAX_DEPTH or n[0] >= cap or len(names) >= max_names:
+            return
+        try:
+            n[0] += 1
+            if c.ControlTypeName in _INTERACTIVE_CTRL_TYPES:
+                nm = (c.Name or "").strip()
+                if (nm and len(nm) <= 40 and nm.lower() not in seen
+                        and not _is_chrome_control(nm)):
+                    seen.add(nm.lower())
+                    names.append(nm)
+            for ch in c.GetChildren():
+                if n[0] >= cap or len(names) >= max_names:
+                    break
+                walk(ch, d + 1)
+        except Exception:
+            pass
+
+    if root is not None:
+        walk(root)
+    return {"count": n[0], "controls": names}
 
 
 def is_electron_app(exe_path: str) -> bool:
@@ -755,7 +1014,7 @@ def relaunch_with_accessibility(exe_path: str,
             "pid": proc.pid,
             "exe": exe_path,
             "flags": cmd[len(args or [])+1:],
-            "note": ("Existing instance (if any) was NOT terminated — "
+            "note": ("Existing instance (if any) was NOT terminated â€” "
                      "Electron apps fight to single-instance themselves; "
                      "if the new window doesn't appear, close the running "
                      "copy first."),
@@ -807,7 +1066,7 @@ def smart_uia_find_with_unlock(query: str, app_hint: str = "") -> dict:
             hit = dict(hit) if isinstance(hit, dict) else {"ok": False}
             hit["electron_hint"] = {
                 "exe": exe,
-                "tip": ("This is an Electron app — its DOM is invisible "
+                "tip": ("This is an Electron app â€” its DOM is invisible "
                         "to UIA by default. Call /api/desktop/electron/"
                         "relaunch with this exe path to launch it with "
                         "--force-renderer-accessibility, then retry."),
@@ -846,9 +1105,9 @@ def _find_uia_control(query: str, app_hint: str = ""):
     try:
         root = _uia_root(app_hint)
 
-        # ── Fast path: native exact-name FindFirst (runs in UIA's C++ core,
+        # â”€â”€ Fast path: native exact-name FindFirst (runs in UIA's C++ core,
         # ~2x faster than the Python walk below). The walk also early-exits on
-        # the first exact (score-100) hit, so this returns the same control —
+        # the first exact (score-100) hit, so this returns the same control â€”
         # just quicker. maxSearchSeconds=0 = a single immediate search, so a
         # miss returns fast and falls through to the scored walk (which handles
         # fuzzy / AutomationId / role matches). Skipped for chrome/titlebar
@@ -875,7 +1134,7 @@ def _find_uia_control(query: str, app_hint: str = ""):
         best = [0, None, None]  # score, ctrl, info (mutable for early-exit)
 
         def walk(ctrl, depth=0):
-            # Stop the entire walk the instant we have a perfect match —
+            # Stop the entire walk the instant we have a perfect match â€”
             # nothing can beat an exact-name hit (score 100).
             if depth > _UIA_MAX_DEPTH or best[0] >= 100:
                 return
@@ -883,7 +1142,7 @@ def _find_uia_control(query: str, app_hint: str = ""):
                 name = ctrl.Name or ""
                 aid = ctrl.AutomationId or ""
                 role = ctrl.ControlTypeName or ""
-                # Skip the root container (depth 0) — see note in find_ui_elements.
+                # Skip the root container (depth 0) â€” see note in find_ui_elements.
                 score = _score_match(query, name, aid, role) if depth > 0 else 0
                 if score > 0:
                     rect = ctrl.BoundingRectangle
@@ -926,7 +1185,7 @@ def _dwm_visible_rect(hwnd: int) -> Optional[dict]:
     GetWindowRect / UIA BoundingRectangle include the ~7px invisible resize
     border Windows adds around top-level windows, so a glow drawn on that rect
     sits too wide and too low. DWM's extended frame bounds is the real visible
-    edge — the glow then hugs the window precisely. Returns None on failure."""
+    edge â€” the glow then hugs the window precisely. Returns None on failure."""
     if not hwnd:
         return None
     try:
@@ -1033,12 +1292,12 @@ def _ocr_norm(s: str) -> str:
     so "Find...", "Edit," and "(Reply)" all compare as their bare label. Inner
     characters are kept so multi-word labels still line up."""
     s = (s or "").replace("&", "").strip().lower()
-    return s.strip(".,:;!?()[]{}<>\"'`…-—–/\\|")
+    return s.strip(".,:;!?()[]{}<>\"'`â€¦-â€”â€“/\\|")
 
 
 def ocr_find_in_app(query: str, app_hint: str = "") -> dict:
     """OCR FALLBACK: find the on-screen pixel centre of text matching `query`
-    inside the app window — used when UIA has no accessible control. Local +
+    inside the app window â€” used when UIA has no accessible control. Local +
     fast (no vision model). Returns {ok, x, y, matched, score}."""
     q = _ocr_norm(query)
     if not q:
@@ -1084,7 +1343,7 @@ def ocr_find_in_app(query: str, app_hint: str = "") -> dict:
             if phrase == q:
                 score = 100 + n
             elif re.search(r"\b" + re.escape(q) + r"\b", phrase):
-                # whole-word(s) hit only — avoids "view" matching "teview"
+                # whole-word(s) hit only â€” avoids "view" matching "teview"
                 score = 74
             else:
                 score = 0
@@ -1123,10 +1382,10 @@ def type_into_ui_element(query: str, text: str, app_hint: str = "",
 
     Primary method is focus + clipboard paste: it is instant regardless of
     text length AND fires the native input/paste events that modern web-app
-    inputs (React/Electron contenteditable — Discord, Slack, Notion, VS Code)
+    inputs (React/Electron contenteditable â€” Discord, Slack, Notion, VS Code)
     listen for. Plain UIA ValuePattern.SetValue updates the DOM value but does
     NOT trigger React's onChange, so the app's internal state stays empty and
-    Enter sends nothing — which is exactly the Discord bug we hit. Paste avoids
+    Enter sends nothing â€” which is exactly the Discord bug we hit. Paste avoids
     that on every kind of input.
 
     If `submit` is True, presses Enter afterwards in the focused control so a
@@ -1138,12 +1397,28 @@ def type_into_ui_element(query: str, text: str, app_hint: str = "",
         return info  # error dict
     # Bring virtualized/offscreen inputs into view first (no-op if N/A).
     try:
-        sip = ctrl.GetScrollItemPattern()
+        sip = _uia_pattern(ctrl, "ScrollItemPattern")
         if sip is not None:
             sip.ScrollIntoView()
             time.sleep(0.05)
     except Exception:
         pass
+    # 0. BACKGROUND tier: ValuePattern.SetValue with read-back verification.
+    #    Steals NO focus and NO keyboard â€” the user can keep working. Only
+    #    trusted when the read-back matches, because React/Electron inputs
+    #    accept SetValue into the DOM while their app state stays empty (the
+    #    Discord bug) â€” those fall through to the focus+paste tier below.
+    #    submit needs a real Enter keystroke, so it can't ride this tier.
+    if not submit:
+        bg = _try_background_setvalue(ctrl, text, clear_first)
+        if bg:
+            return {"ok": True, "method": "setvalue-background",
+                    "target": info["name"] or info["automation_id"],
+                    "control_type": info["control_type"],
+                    "rect": _onscreen_rect(ctrl)}
+    # The remaining tiers hijack the real keyboard/focus â€” be polite about it.
+    gate = wait_for_user_idle()
+    politeness = _politeness_note(gate)
     # 1. Focus the control via UIA (no pixel click). Fall back to a click on
     #    its centre only if SetFocus is unsupported.
     focused = False
@@ -1154,6 +1429,7 @@ def type_into_ui_element(query: str, text: str, app_hint: str = "",
         try:
             import pyautogui
             pyautogui.click(info["x"], info["y"])
+            note_synthetic_input()
             focused = True
         except Exception:
             pass
@@ -1163,15 +1439,16 @@ def type_into_ui_element(query: str, text: str, app_hint: str = "",
     try:
         time.sleep(0.08)  # let focus settle before sending keys
         # All keystrokes go through the control's own SendKeys (targeted
-        # SendInput) — far more reliable than pyautogui's global hotkeys, which
+        # SendInput) â€” far more reliable than pyautogui's global hotkeys, which
         # drop/reorder chars and leak stray keys under rapid automation.
         if clear_first:
             ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0)
+            note_synthetic_input()
         # 2. Text entry via verified clipboard paste. Instant for any length AND
         #    fires the native paste/input events that React/Electron inputs
-        #    (Discord, Slack, Notion, VS Code) require — plain
+        #    (Discord, Slack, Notion, VS Code) require â€” plain
         #    ValuePattern.SetValue updates the DOM but not React state (Enter
-        #    then sends nothing — the Discord bug), and per-char typing drops
+        #    then sends nothing â€” the Discord bug), and per-char typing drops
         #    chars on laggy WinUI inputs. We wait for the clipboard to actually
         #    hold our text before pasting (no stale-char leak) and restore the
         #    prior clipboard once the paste has consumed it.
@@ -1193,6 +1470,7 @@ def type_into_ui_element(query: str, text: str, app_hint: str = "",
                 time.sleep(0.01)
             if pasted_ok:
                 ctrl.SendKeys("{Ctrl}v", waitTime=0)
+                note_synthetic_input()
                 time.sleep(0.1)   # let the paste fully consume the clipboard
                 if saved:         # restore prior clipboard, after paste is done
                     try:
@@ -1207,17 +1485,44 @@ def type_into_ui_element(query: str, text: str, app_hint: str = "",
             method = "keystroke"
             import pyautogui
             pyautogui.typewrite(text, interval=0.01)
+            note_synthetic_input()
         # 3. Optional submit (send / search) in the same focused control.
         if submit:
             time.sleep(0.04)
             ctrl.SendKeys("{Enter}", waitTime=0)
+            note_synthetic_input()
             method += "+enter"
-        return {"ok": True, "method": method,
+        return {"ok": True, "method": method + politeness,
                 "target": info["name"] or info["automation_id"],
                 "control_type": info["control_type"],
                 "rect": _onscreen_rect(ctrl)}
     except Exception as exc:
         return {"ok": False, "error": str(exc), "found_at": info}
+
+
+def _try_background_setvalue(ctrl, text: str, clear_first: bool) -> bool:
+    """Set an edit control's value via UIA ValuePattern WITHOUT stealing focus
+    or keyboard. Returns True only when the read-back confirms the exact text
+    landed â€” anything else (no pattern, read-only, React state desync, partial
+    write) returns False so the caller falls through to focus+paste."""
+    try:
+        vp = _uia_pattern(ctrl, "ValuePattern")
+        if vp is None:
+            return False
+        try:
+            current = str(vp.Value or "")
+        except Exception:
+            current = ""
+        # Without clear_first, paste-at-caret APPENDS to existing text;
+        # SetValue would silently REPLACE it. Only take this tier when the
+        # semantics are identical (empty field, or explicit replace).
+        if current and not clear_first:
+            return False
+        vp.SetValue(text)
+        time.sleep(0.06)
+        return str(vp.Value or "") == text
+    except Exception:
+        return False
 
 
 def invoke_ui_element(query: str, app_hint: str = "") -> dict:
@@ -1233,7 +1538,7 @@ def invoke_ui_element(query: str, app_hint: str = "") -> dict:
     target = info["name"] or info["automation_id"]
     # Bring virtualized/offscreen items into view first (no-op if not scrollable)
     try:
-        sip = ctrl.GetScrollItemPattern()
+        sip = _uia_pattern(ctrl, "ScrollItemPattern")
         if sip is not None:
             sip.ScrollIntoView()
             time.sleep(0.05)
@@ -1242,9 +1547,10 @@ def invoke_ui_element(query: str, app_hint: str = "") -> dict:
     # Capture the on-screen bounds NOW (after scroll, before activation may
     # navigate the control away) for the UIA focus-ring overlay.
     rect = _onscreen_rect(ctrl)
-    # 1. InvokePattern — the cleanest activation
+    # 1. InvokePattern â€” the cleanest activation: delivered straight to the
+    #    control, works on background/covered windows, never moves the mouse.
     try:
-        ip = ctrl.GetInvokePattern()
+        ip = _uia_pattern(ctrl, "InvokePattern")
         if ip is not None:
             ip.Invoke()
             return {"ok": True, "method": "invoke_pattern",
@@ -1252,9 +1558,19 @@ def invoke_ui_element(query: str, app_hint: str = "") -> dict:
                     "rect": rect}
     except Exception:
         pass
-    # 2. SelectionItemPattern — for list/tree items (Discord servers & channels)
+    # 1b. TogglePattern â€” checkboxes/switches expose Toggle, not Invoke.
     try:
-        sp = ctrl.GetSelectionItemPattern()
+        tp = _uia_pattern(ctrl, "TogglePattern")
+        if tp is not None:
+            tp.Toggle()
+            return {"ok": True, "method": "toggle_pattern",
+                    "target": target, "control_type": info["control_type"],
+                    "rect": rect}
+    except Exception:
+        pass
+    # 2. SelectionItemPattern â€” for list/tree items (Discord servers & channels)
+    try:
+        sp = _uia_pattern(ctrl, "SelectionItemPattern")
         if sp is not None:
             sp.Select()
             return {"ok": True, "method": "selection_pattern",
@@ -1262,13 +1578,16 @@ def invoke_ui_element(query: str, app_hint: str = "") -> dict:
                     "rect": rect}
     except Exception:
         pass
-    # 3. Coordinate click — only if the control now has a real on-screen rect.
+    # 3. Coordinate click â€” only if the control now has a real on-screen rect.
+    #    This is the one tier that steals the real mouse, so be polite about it.
     try:
         import pyautogui
         if rect["width"] > 0 and rect["height"] > 0:
             x = rect["left"] + rect["width"] // 2
             y = rect["top"] + rect["height"] // 2
+            wait_for_user_idle()
             pyautogui.click(x, y)
+            note_synthetic_input()
             return {"ok": True, "method": "click_fallback",
                     "x": x, "y": y, "target": target, "rect": rect}
         return {"ok": False,
@@ -1281,7 +1600,7 @@ def invoke_ui_element(query: str, app_hint: str = "") -> dict:
 def wait_for_ui_element(query: str, app_hint: str = "",
                         timeout: float = 6.0, interval: float = 0.12) -> dict:
     """Poll for a control to appear, returning the instant it does. Use this
-    after a navigation/click instead of a fixed sleep — it's both faster (no
+    after a navigation/click instead of a fixed sleep â€” it's both faster (no
     over-waiting) and more reliable (no under-waiting) while an app re-renders.
     """
     deadline = time.time() + max(0.1, timeout)
@@ -1296,9 +1615,9 @@ def wait_for_ui_element(query: str, app_hint: str = "",
     return last
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CLIPBOARD HISTORY — tail clipboard in a background thread, keep last N items
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# CLIPBOARD HISTORY â€” tail clipboard in a background thread, keep last N items
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _clip_history: list[dict] = []        # newest first
 _CLIP_HISTORY_MAX = 50
 _clip_lock = None                     # threading.Lock lazily created
@@ -1378,9 +1697,9 @@ def search_clipboard_history(query: str, limit: int = 10) -> list[dict]:
     return [h for h in _clip_history if q in h["text"].lower()][:limit]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SCHEDULED RECIPES — JSON-persisted cron list, daemon checks every minute
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# SCHEDULED RECIPES â€” JSON-persisted cron list, daemon checks every minute
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _sched_path() -> Path:
     return workspace_state_path("scheduled_recipes.json")
 
@@ -1474,9 +1793,9 @@ def start_scheduler_daemon(submit_fn) -> None:
     threading.Thread(target=_loop, daemon=True).start()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FORM-PROFILE AUTOFILL — store named profiles, fill matching labels via UIA
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# FORM-PROFILE AUTOFILL â€” store named profiles, fill matching labels via UIA
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _profile_path() -> Path:
     return workspace_state_path("form_profiles.json")
 
@@ -1516,7 +1835,7 @@ def autofill_active_form(profile_name: str) -> dict:
         return {"ok": False, "error": "needs `pip install uiautomation`"}
     root = uia.GetForegroundControl()
     filled: list[str] = []
-    # Field-name → list of label keywords to match (case-insensitive)
+    # Field-name â†’ list of label keywords to match (case-insensitive)
     syn = {
         "name":     ["name", "full name", "first name"],
         "email":    ["email", "e-mail"],
@@ -1554,9 +1873,9 @@ def autofill_active_form(profile_name: str) -> dict:
                                          [f.split("=")[0] for f in filled]]}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # SCREEN-REGION WATCH & NOTIFY
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _watches_path() -> Path:
     return workspace_state_path("screen_watches.json")
 
@@ -1640,9 +1959,9 @@ def start_watch_daemon(notify_fn) -> None:
     threading.Thread(target=_loop, daemon=True).start()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CROSS-APP "SEND TO" — last answer → Notepad / Excel / clipboard
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# CROSS-APP "SEND TO" â€” last answer â†’ Notepad / Excel / clipboard
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def send_to(target: str, text: str) -> dict:
     """target = 'notepad' | 'excel' | 'clipboard' | 'paint'"""
     import subprocess, tempfile
@@ -1684,10 +2003,10 @@ def send_to(target: str, text: str) -> dict:
     return {"ok": False, "error": f"unknown target '{target}'"}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# OCR — Windows 11 has Windows.Media.Ocr but binding is heavy. Fall back to
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# OCR â€” Windows 11 has Windows.Media.Ocr but binding is heavy. Fall back to
 # pytesseract if present, otherwise gracefully report.
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def ocr_region(x: int, y: int, w: int, h: int) -> dict:
     try:
         import mss
@@ -1708,9 +2027,9 @@ def ocr_region(x: int, y: int, w: int, h: int) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LOCAL RAG — folder embedding + question answering via chroma
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# LOCAL RAG â€” folder embedding + question answering via chroma
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def rag_index_folder(folder: str, name: str = "default") -> dict:
     """Embed all .txt/.md/.py files in folder into a chroma collection."""
     try:
@@ -1768,9 +2087,9 @@ def rag_query(name: str, query: str, top_k: int = 5) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # PER-APP TRUST POLICIES
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _trust_path() -> Path:
     return workspace_state_path("trust_policies.json")
 
@@ -1785,7 +2104,7 @@ def list_trust() -> dict:
 
 
 def set_trust(exe_name: str, level: str) -> dict:
-    """level ∈ {allow, ask, deny}"""
+    """level âˆˆ {allow, ask, deny}"""
     if level not in ("allow", "ask", "deny"):
         return {"ok": False, "error": f"bad level '{level}'"}
     pol = list_trust()
@@ -1798,9 +2117,9 @@ def get_trust(exe_name: str) -> str:
     return list_trust().get(exe_name.lower(), "ask")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# UNDO STACK — record inverse actions, replay
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# UNDO STACK â€” record inverse actions, replay
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _undo_stack: list[dict] = []
 _UNDO_MAX = 20
 
