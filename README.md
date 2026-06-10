@@ -18,10 +18,10 @@
 > **An autonomous AI agent that controls your computer using plain English.** Give it a goal - it plans, acts, and shows you exactly what it is doing in real time, in a floating glass capsule that sits on top of your desktop.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="A real run of Orynn driving the Windows Calculator app by UI Automation control name — entering 2847 times 916 and reading back 2,607,852 — with no screenshots and no pixel-clicking" width="380">
+  <img src="docs/demo.gif" alt="A real run of Orynn driving the Windows Calculator while it is minimized to the taskbar — computing 2847 times 916 to get 2,607,852 — via UIA InvokePattern with no cursor movement, no screenshots, no pixel-clicking" width="380">
 </p>
 
-<p align="center"><sub>A real run: Orynn drives the Windows Calculator <b>by control name</b> (not screenshots, no pixel-clicks) to compute 2847 &times; 916 &mdash; on a free model.</sub></p>
+<p align="center"><sub>A real run: Orynn drives the Windows Calculator <b>while it's minimized</b> — by control name, no screenshots, cursor never moves — computing 2847 &times; 916 on a free model.</sub></p>
 
 > Free to run on [OpenRouter](https://openrouter.ai)'s free-tier models (subject to their limits). Coding and browser modes work on Windows, macOS, and Linux; native desktop control is Windows-only.
 
