@@ -546,6 +546,19 @@ def classify_surface_runtime(
             evidence=evidence,
         )
 
+    if window_found and word_count == 0:
+        tools = ["key_combo", "screen_context", "mouse_click"]
+        if model_vision:
+            tools.append("computer")
+        return RuntimePlan(
+            runtime=SurfaceRuntime.custom_rendered,
+            confidence=0.82,
+            summary="The window exists, but UIA and a bounded OCR probe found no text; treat it like a custom/game surface.",
+            primary_layer="keyboard_visual",
+            next_tools=tools,
+            evidence=evidence,
+        )
+
     if window_found and ocr_available:
         return RuntimePlan(
             runtime=SurfaceRuntime.visual_text,

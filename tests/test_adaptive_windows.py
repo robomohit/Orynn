@@ -160,6 +160,38 @@ def test_classify_surface_runtime_detects_custom_surface_without_ocr():
     assert plan.next_tools[:2] == ["key_combo", "screen_context"]
 
 
+def test_classify_surface_runtime_detects_custom_surface_when_ocr_probe_empty():
+    graph = build_affordance_graph(app="Game", count=0, controls=[])
+
+    plan = classify_surface_runtime(
+        app="Game",
+        graph=graph,
+        app_rect={"left": 0, "top": 0, "width": 1280, "height": 720},
+        ocr_available=True,
+        visual_word_count=0,
+    )
+
+    assert plan.runtime == SurfaceRuntime.custom_rendered
+    assert plan.confidence >= 0.8
+    assert plan.evidence["visual_word_count"] == 0
+
+
+def test_classify_surface_runtime_uses_ocr_when_probe_not_run():
+    graph = build_affordance_graph(app="Canvas", count=0, controls=[])
+
+    plan = classify_surface_runtime(
+        app="Canvas",
+        graph=graph,
+        app_rect={"left": 0, "top": 0, "width": 900, "height": 600},
+        ocr_available=True,
+        visual_word_count=None,
+    )
+
+    assert plan.runtime == SurfaceRuntime.visual_text
+    assert plan.primary_layer == "ocr"
+    assert plan.evidence["visual_word_count"] is None
+
+
 def test_adaptive_observe_schema_is_in_uia_pack():
     from app.tool_registry import get_tool_schemas
 
@@ -366,6 +398,40 @@ def test_tool_executor_adaptive_observe_empty_tree_adds_recovery_plan(monkeypatc
     assert result.ok is True
     assert "Adaptive recovery plan" in result.output
     assert result.data["adaptive"]["failure_class"] == FailureClass.empty_accessibility_tree.value
+
+
+def test_tool_executor_adaptive_observe_empty_ocr_marks_custom_surface(monkeypatch, workspace):
+    import app.widget.desktop_features as desktop_features
+
+    monkeypatch.setattr(
+        desktop_features,
+        "survey_app_controls",
+        lambda app, cap=90, max_names=60, fallback_foreground=False: {
+            "count": 0,
+            "controls": [],
+        },
+    )
+    monkeypatch.setattr(desktop_features, "foreground_window_info", lambda: {"title": "Game"})
+    monkeypatch.setattr(desktop_features, "electron_hint_for_app", lambda app: None)
+    monkeypatch.setattr(desktop_features, "ocr_available", lambda: True)
+    monkeypatch.setattr(desktop_features, "win_ocr_words", lambda l, t, w, h: [])
+    monkeypatch.setattr(
+        ToolExecutor,
+        "_app_rect_payload",
+        staticmethod(lambda app: {"left": 0, "top": 0, "width": 1280, "height": 720}),
+    )
+    monkeypatch.setattr(
+        ToolExecutor,
+        "wait_for_window",
+        lambda self, title, timeout=10.0, paint_seconds=0.35: ToolResult(ok=False, output="missing"),
+    )
+
+    result = ToolExecutor(workspace).adaptive_observe("Game")
+
+    assert result.ok is True
+    assert result.data["runtime"]["runtime"] == SurfaceRuntime.custom_rendered.value
+    assert result.data["runtime"]["primary_layer"] == "keyboard_visual"
+    assert result.data["runtime"]["evidence"]["visual_word_count"] == 0
 
 
 def test_tool_executor_adaptive_observe_recovers_after_focus_resurvey(monkeypatch, workspace):
