@@ -3337,6 +3337,109 @@ class ToolExecutor:
                 except Exception:
                     pass
 
+    def _calculator_read_result(self, app: str, read_result: str, expected: str = "",
+                                timeout: float = 0.8) -> str:
+        if not read_result:
+            return ""
+        try:
+            from .widget.desktop_features import find_ui_elements
+        except Exception:
+            return ""
+        deadline = time.time() + max(0.05, float(timeout))
+        last = ""
+        while True:
+            try:
+                rr = find_ui_elements(read_result, app, 1)
+                items = rr.get("items") or []
+                last = (items[0].get("name") or "").strip() if items else ""
+                if last and (not expected or self._calculator_result_matches(last, expected)):
+                    return last
+            except Exception:
+                pass
+            if time.time() >= deadline:
+                return last
+            time.sleep(0.08)
+
+    def _calculator_foreground_verified(self, app: str) -> bool:
+        try:
+            import win32gui
+            fg = win32gui.GetForegroundWindow()
+            fg_title = (win32gui.GetWindowText(fg) or "").lower()
+            needle = (app or "Calculator").lower()
+            return needle in fg_title and not win32gui.IsIconic(fg)
+        except Exception:
+            return False
+
+    def _calculator_keyboard_fast_path(self, targets: list[str], app: str,
+                                       read_result: str = "") -> Optional[ToolResult]:
+        if not read_result or not self._is_calculator_target(app):
+            return None
+        expression = self._calculator_expression_from_targets(targets)
+        expected = self._calculator_expected_result(expression or "")
+        if not expression or not expected:
+            return None
+        try:
+            import pyautogui
+            from .widget.desktop_features import _user_actively_typing, input_polite_enabled
+        except Exception:
+            return None
+        try:
+            if input_polite_enabled() and _user_actively_typing(0.75):
+                return None
+        except Exception:
+            return None
+
+        focused = self.focus_window(app or "Calculator")
+        if not focused.ok or not self._calculator_foreground_verified(app):
+            return None
+        try:
+            pyautogui.press("escape")
+            time.sleep(0.03)
+            pyautogui.write(expression, interval=0.0)
+            self._note_synthetic_input()
+            time.sleep(0.12)
+        except Exception as exc:
+            return ToolResult(ok=False, output=f"Calculator keyboard fast path failed: {exc}")
+
+        result = self._calculator_read_result(app, read_result, expected, timeout=0.8)
+        verified = bool(result and self._calculator_result_matches(result, expected))
+        app_rect = self._app_rect_payload(app)
+        steps = [f"{target}=key" for target in targets]
+        head = f"Clicked {len(targets)}/{len(targets)} in sequence via Calculator keyboard"
+        data = {
+            "ok": verified,
+            "clicked": len(targets),
+            "total": len(targets),
+            "steps": steps,
+            "failed": None if verified else read_result,
+            "fallback": "calculator_keyboard_fast",
+            "expression": expression,
+            "expected": expected,
+        }
+        if result:
+            data["result"] = result
+        data["overlay"] = _overlay_payload(
+            "app_focus" if app_rect else "status",
+            "uia_click_sequence",
+            "click",
+            head,
+            target=(targets[-1] if targets else ""),
+            app_rect=app_rect,
+            phase=("done" if verified else "error"),
+            fallback_reason="calculator_keyboard_fast",
+            control_layer="Calculator keyboard",
+            control_reason=(
+                "Calculator was foreground and user input was idle, so the "
+                "numeric sequence was entered as verified keystrokes"
+            ),
+        )
+        out = head + "\n" + " -> ".join(steps) + self._app_rect_token(app, app_rect)
+        if result:
+            out += f"\nResult - {read_result}: {result}"
+        if not verified:
+            out += f"\nExpected {expected}; keyboard result could not be verified."
+        return ToolResult(ok=verified, output=out, data=data)
+
     def _calculator_sequence_fallback(self, targets: list[str], app: str,
                                       read_result: str = "") -> Optional[ToolResult]:
         if not self._is_calculator_target(app):
@@ -3357,14 +3460,7 @@ class ToolExecutor:
         # minimized — typing would then go into whatever the USER has focused
         # (a real take typed '2847*916=' into a random window and Ctrl+C'd the
         # user's clipboard as the 'result'). Verify before sending anything.
-        try:
-            import win32gui
-            fg = win32gui.GetForegroundWindow()
-            fg_title = (win32gui.GetWindowText(fg) or "").lower()
-            needle = (app or "Calculator").lower()
-            if needle not in fg_title or win32gui.IsIconic(fg):
-                return None
-        except Exception:
+        if not self._calculator_foreground_verified(app):
             return None
         try:
             self._input_politeness_gate()
@@ -3376,7 +3472,10 @@ class ToolExecutor:
         except Exception as exc:
             return ToolResult(ok=False, output=f"Calculator keyboard fallback failed: {exc}")
 
-        result = self._calculator_clipboard_result() if read_result else ""
+        expected = self._calculator_expected_result(expression or "")
+        result = self._calculator_read_result(app, read_result, expected, timeout=0.8)
+        if read_result and expected and not self._calculator_result_matches(result, expected):
+            result = self._calculator_clipboard_result()
         app_rect = self._app_rect_payload(app)
         steps = [f"{target}=key" for target in targets]
         data = {
@@ -3428,6 +3527,9 @@ class ToolExecutor:
         if not targets:
             return ToolResult(ok=False, output="uia_click_sequence: no targets given.")
         self._clear_uia_find_cache()
+        calc_fast = self._calculator_keyboard_fast_path(targets, app, read_result)
+        if calc_fast is not None:
+            return calc_fast
         steps, clicked, failed = [], 0, None
         for tgt in targets:
             res = invoke_ui_element(tgt, app)

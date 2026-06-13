@@ -319,6 +319,8 @@ def test_uia_click_sequence_reads_result_in_same_call(monkeypatch, tmp_path):
 
     # Keep the Calculator keyboard fallback away from any REAL Calculator
     # window that happens to be open on the test machine.
+    monkeypatch.setattr(ToolExecutor, "_calculator_keyboard_fast_path",
+                        lambda self, targets, app, read_result="": None)
     monkeypatch.setattr(ToolExecutor, "_calculator_sequence_fallback",
                         lambda self, targets, app, read_result="": None)
     monkeypatch.setattr(df, "invoke_ui_element", lambda q, a: {"ok": True, "target": q})
@@ -341,6 +343,8 @@ def test_uia_click_sequence_stops_on_miss(monkeypatch, tmp_path):
 
     # Keep the Calculator keyboard fallback away from any REAL Calculator
     # window that happens to be open on the test machine.
+    monkeypatch.setattr(ToolExecutor, "_calculator_keyboard_fast_path",
+                        lambda self, targets, app, read_result="": None)
     monkeypatch.setattr(ToolExecutor, "_calculator_sequence_fallback",
                         lambda self, targets, app, read_result="": None)
     # 'Nine' isn't found in UIA and OCR also misses -> stop, report which failed.
@@ -359,6 +363,8 @@ def test_uia_click_sequence_stops_on_miss(monkeypatch, tmp_path):
 def test_uia_click_sequence_calculator_uses_keyboard_fallback(monkeypatch, tmp_path):
     import app.widget.desktop_features as df
 
+    monkeypatch.setattr(ToolExecutor, "_calculator_keyboard_fast_path",
+                        lambda self, targets, app, read_result="": None)
     monkeypatch.setattr(df, "invoke_ui_element",
                         lambda q, a: {"ok": False, "error": "no UIA control matched"})
     monkeypatch.setattr(df, "ocr_find_in_app", lambda q, a: {"ok": False})
@@ -414,9 +420,77 @@ def test_uia_click_sequence_calculator_uses_keyboard_fallback(monkeypatch, tmp_p
     assert ("write", "47*89=", 0.02) in sent
 
 
+def test_uia_click_sequence_calculator_fast_keyboard_when_idle(monkeypatch, tmp_path):
+    import app.widget.desktop_features as df
+
+    sent = []
+    monkeypatch.setitem(sys.modules, "pyautogui", types.SimpleNamespace(
+        press=lambda key: sent.append(("press", key)),
+        write=lambda text, interval=0: sent.append(("write", text, interval)),
+    ))
+    monkeypatch.setitem(sys.modules, "win32gui", types.SimpleNamespace(
+        GetForegroundWindow=lambda: 42,
+        GetWindowText=lambda h: "Calculator",
+        IsIconic=lambda h: False,
+    ))
+    monkeypatch.setattr(df, "input_polite_enabled", lambda: True)
+    monkeypatch.setattr(df, "_user_actively_typing", lambda min_idle: False)
+    monkeypatch.setattr(df, "invoke_ui_element",
+                        lambda q, a: (_ for _ in ()).throw(AssertionError("UIA loop should not run")))
+    monkeypatch.setattr(df, "find_ui_elements",
+                        lambda q, a, n: {"ok": True, "items": [{"name": "Display is 5"}]})
+    monkeypatch.setattr(ToolExecutor, "_app_rect_payload", staticmethod(lambda app: None))
+
+    ex = _ex(tmp_path)
+    monkeypatch.setattr(
+        ex,
+        "focus_window",
+        lambda app: tools_mod.ToolResult(ok=True, output=f"Focused {app}"),
+    )
+
+    res = ex.uia_click_sequence(["Two", "Plus", "Three", "Equals"], "Calculator", read_result="Display")
+
+    assert res.ok is True
+    assert res.data["fallback"] == "calculator_keyboard_fast"
+    assert res.data["result"] == "Display is 5"
+    assert ("press", "escape") in sent
+    assert ("write", "2+3=", 0.0) in sent
+
+
+def test_uia_click_sequence_calculator_fast_keyboard_skips_when_user_active(monkeypatch, tmp_path):
+    import app.widget.desktop_features as df
+
+    sent = []
+    monkeypatch.setitem(sys.modules, "pyautogui", types.SimpleNamespace(
+        press=lambda key: sent.append(("press", key)),
+        write=lambda text, interval=0: sent.append(("write", text, interval)),
+    ))
+    monkeypatch.setattr(df, "input_polite_enabled", lambda: True)
+    monkeypatch.setattr(df, "_user_actively_typing", lambda min_idle: True)
+    seen = []
+    monkeypatch.setattr(df, "invoke_ui_element",
+                        lambda q, a: seen.append(q) or {"ok": True, "target": q})
+    monkeypatch.setattr(df, "find_ui_elements",
+                        lambda q, a, n: {"ok": True, "items": [{"name": "Display is 5"}]})
+    monkeypatch.setattr(ToolExecutor, "_calculator_sequence_fallback",
+                        lambda self, targets, app, read_result="": None)
+    monkeypatch.setattr(ToolExecutor, "_app_rect_payload", staticmethod(lambda app: None))
+
+    res = _ex(tmp_path).uia_click_sequence(
+        ["Two", "Plus", "Three", "Equals"], "Calculator", read_result="Display"
+    )
+
+    assert res.ok is True
+    assert "fallback" not in res.data
+    assert seen == ["Two", "Plus", "Three", "Equals"]
+    assert sent == []
+
+
 def test_uia_click_sequence_calculator_fallback_on_wrong_display(monkeypatch, tmp_path):
     import app.widget.desktop_features as df
 
+    monkeypatch.setattr(ToolExecutor, "_calculator_keyboard_fast_path",
+                        lambda self, targets, app, read_result="": None)
     monkeypatch.setattr(df, "invoke_ui_element",
                         lambda q, a: {"ok": True, "target": q})
     monkeypatch.setattr(df, "app_window_rect",
@@ -536,6 +610,8 @@ def test_calculator_keyboard_fallback_aborts_when_not_foreground(monkeypatch, tm
     random window and read the user's clipboard back as the 'result')."""
     import app.widget.desktop_features as df
 
+    monkeypatch.setattr(ToolExecutor, "_calculator_keyboard_fast_path",
+                        lambda self, targets, app, read_result="": None)
     monkeypatch.setattr(df, "invoke_ui_element",
                         lambda q, a: {"ok": False, "error": "no UIA control matched"})
     monkeypatch.setattr(df, "ocr_find_in_app", lambda q, a: {"ok": False})
