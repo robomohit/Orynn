@@ -10,6 +10,7 @@ from app.adaptive_windows import (
     classify_surface_runtime,
     format_runtime_plan,
     format_recovery_plan,
+    learned_resolvers,
     remember_resolver_outcome,
     resolver_ids,
 )
@@ -67,6 +68,42 @@ def test_adaptive_windows_learned_resolver_is_promoted(monkeypatch, tmp_path):
 
     assert resolver_ids(analysis.resolvers)[0] == "ocr_text_target"
     assert analysis.learned[0]["successes"] == 1
+
+
+def test_learned_resolver_survives_a_transient_failure(monkeypatch, tmp_path):
+    """A resolver proven many times must not be forgotten after ONE recent
+    failure (e.g. the app was mid-load). The learning loop is worthless if a
+    single transient miss erases what worked nine times before."""
+    monkeypatch.setenv("ORYNN_WORKSPACE", str(tmp_path))
+
+    fc = FailureClass.uia_no_match.value
+    for _ in range(9):
+        remember_resolver_outcome("CanvasApp", fc, "ocr_text_target", True)
+    # most-recent attempt failed — the old `ok is True` filter would drop it
+    remember_resolver_outcome("CanvasApp", fc, "ocr_text_target", False)
+
+    learned = learned_resolvers("CanvasApp", fc)
+    assert [h["resolver_id"] for h in learned] == ["ocr_text_target"]
+    assert learned[0]["successes"] == 9 and learned[0]["failures"] == 1
+
+
+def test_learned_resolver_drops_net_negative_and_ranks_by_track_record(monkeypatch, tmp_path):
+    monkeypatch.setenv("ORYNN_WORKSPACE", str(tmp_path))
+
+    fc = FailureClass.uia_no_match.value
+    # a mostly-failing resolver must NOT be surfaced
+    remember_resolver_outcome("App", fc, "flaky_path", True)
+    for _ in range(3):
+        remember_resolver_outcome("App", fc, "flaky_path", False)
+    # two winners with different net records — the stronger ranks first
+    for _ in range(5):
+        remember_resolver_outcome("App", fc, "strong_path", True)
+    for _ in range(2):
+        remember_resolver_outcome("App", fc, "weak_path", True)
+
+    ids = [h["resolver_id"] for h in learned_resolvers("App", fc)]
+    assert "flaky_path" not in ids
+    assert ids[:2] == ["strong_path", "weak_path"]
 
 
 def test_tool_executor_uia_find_attaches_adaptive_plan(monkeypatch, workspace):

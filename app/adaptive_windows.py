@@ -102,11 +102,23 @@ def _save_profiles(data: dict[str, Any]) -> None:
 def learned_resolvers(app: str, failure_class: str, *, limit: int = 3) -> list[dict[str, Any]]:
     profile = _load_profiles().get(_app_key(app), {})
     history = profile.get("history") or []
+    # Keep resolvers with a net-positive track record rather than only those
+    # whose LAST attempt happened to succeed: a resolver that worked 9 times
+    # then hit one transient failure (app mid-load) is still the best bet, but
+    # `ok is True` would silently drop it and forget what we learned. Rank by
+    # net successes (successes - failures), then recency.
     matches = [
         h for h in history
-        if h.get("failure_class") == failure_class and h.get("ok") is True
+        if h.get("failure_class") == failure_class
+        and int(h.get("successes", 0)) > int(h.get("failures", 0))
     ]
-    matches.sort(key=lambda h: (int(h.get("successes", 0)), float(h.get("ts", 0))), reverse=True)
+    matches.sort(
+        key=lambda h: (
+            int(h.get("successes", 0)) - int(h.get("failures", 0)),
+            float(h.get("ts", 0)),
+        ),
+        reverse=True,
+    )
     return matches[:limit]
 
 
