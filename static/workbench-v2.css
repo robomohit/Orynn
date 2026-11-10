@@ -512,3 +512,28 @@ body[data-ux="workbench-v2"] .compact-artifact-tag {
     max-width: 86%;
   }
 }
+
+/* ── Light theme: give the sidebar a visible tint so it reads as a separate
+   surface instead of cream-on-cream. ── */
+[data-theme="light"] body[data-glass="on"][data-ux="workbench-v2"]:not(.widget-shell) .sidebar {
+  background: #eceef1;
+  border-right: 1px solid rgba(15, 23, 42, 0.10);
+}
+[data-theme="light"] body[data-ux="workbench-v2"] .history-item:hover,
+[data-theme="light"] body[data-ux="workbench-v2"] .history-item.active {
+  background: #ffffff;
+}
+
+/* ── Settings: hairline between sections, consistent section labels. ── */
+.settings-body > [data-settings-tab] + [data-settings-tab] {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+#preferences-section > .selector-label { margin-bottom: 6px; }
+
+/* ── Sidebar rows: the title gets the space. The token count is secondary, so
+   it only shows on the active or hovered row. ── */
+.history-item .usage-badge { display: none; }
+.history-item.active .usage-badge,
+.history-item:hover .usage-badge { display: inline-block; }

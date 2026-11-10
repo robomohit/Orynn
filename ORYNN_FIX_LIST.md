@@ -1,5 +1,16 @@
 # Orynn vs Codex — Complete Fix List
 
+> **Status (2026-11-10):** this list was written against an older dashboard. A
+> re-audit against the running app found most items already resolved by later
+> redesign work. Fixed in the re-audit pass: live markdown while streaming (#1,
+> #2), code-block header overlapping the first line (#22/#23), pre-tool narration
+> glued to the answer (#1), light-mode sidebar contrast (#9), settings section
+> labels and dividers (#27), and squeezed sidebar titles (#4).
+> Already resolved before it: #3, #5, #6, #7, #8, #12, #14, #15, #16, #17, #18,
+> #19, #20, #24, #25, #26. Still open by choice: date grouping in the sidebar
+> (#4, it groups by folder), a richer collapsed work summary (#13), custom
+> dropdowns (#10), and `#vorb-root` (#11, still used by the widget shell).
+
 Compiled from live screenshots of Orynn at `localhost:8080` + code review of `app.js`, `style.css`, `liquid-glass.css`, `index.html`, `markdown_render.py`.
 
 ---

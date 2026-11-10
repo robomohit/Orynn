@@ -26,6 +26,18 @@
 - Claude's summarized reasoning streams live into the step's reasoning card,
   and the conversation history is prompt-cached between steps.
 
+### Dashboard
+- **Replies format as they stream** — headings, lists and code render live
+  instead of showing raw markdown until the task ends.
+- **Code blocks** — the language/Copy bar no longer covers the first line.
+- Narration streamed before a tool call moves to the work log instead of being
+  glued onto the start of the answer.
+- **API key field accepts any provider** — the provider is detected from the
+  key prefix. Previously an Anthropic (or OpenAI/Google) key pasted in Settings
+  or onboarding was saved as the OpenRouter key.
+- Light theme: the sidebar is a visibly separate surface. Settings sections
+  have labels and dividers. Sidebar session titles get the row's width.
+
 ### Background agent (input politeness)
 - **Keystroke-safety check** — the Calculator keyboard fallback now verifies
   the target window is REALLY foreground (and not minimized) before sending

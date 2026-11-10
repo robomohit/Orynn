@@ -1586,7 +1586,7 @@
     background: var(--bg-inset);
     border: 1px solid var(--line);
     border-radius: var(--r-sm);
-    padding: 34px 12px 10px;
+    padding: 0 12px 10px;
     overflow: auto;
     max-height: 320px;
     scrollbar-width: thin;
@@ -1602,7 +1602,9 @@
   .code-toolbar {
     position: sticky;
     top: 0;
-    margin: -34px -12px 8px;
+    /* No negative top margin: a sticky bar is clamped to the scroll box's
+       content edge, so pulling it up into the padding made it overlap line 1. */
+    margin: 0 -12px 8px;
     height: 26px;
     display: flex;
     align-items: center;

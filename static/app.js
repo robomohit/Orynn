@@ -313,6 +313,7 @@
   };
   let liveAssistantEl = null;
   let liveAssistantText = '';
+  let liveAssistantStep = null;
   let liveAssistantTaskId = '';
 
   // Bucket a tool action_type into a coarse family. Used by the
@@ -946,6 +947,7 @@
   const resetLiveAssistant = () => {
     liveAssistantEl = null;
     liveAssistantText = '';
+    liveAssistantStep = null;
     liveAssistantTaskId = '';
   };
 
@@ -963,9 +965,38 @@
       pruneFeed();
     }
     liveAssistantText += chunk;
-    liveAssistantEl.insertAdjacentText('beforeend', chunk);
-    scrollFeed();
+    scheduleLiveAssistantRender();
     return liveAssistantEl;
+  };
+
+  // Format the reply as markdown while it streams (headings, lists, code) instead
+  // of showing raw `##` and backticks until the task ends. One render per frame.
+  let _liveRenderQueued = false;
+  const renderLiveAssistant = () => {
+    _liveRenderQueued = false;
+    if (!liveAssistantEl || !liveAssistantEl.isConnected) return;
+    // Drop a half-typed closing fence (one or two backticks) so it doesn't flash.
+    let text = liveAssistantText.replace(/\n[ \t]*`{1,2}$/, '');
+    // An unfinished ``` fence would swallow the rest of the reply as raw text.
+    if ((text.match(/^[ \t]*```/gm) || []).length % 2 === 1) text += '\n```';
+    liveAssistantEl.innerHTML = renderMarkdown(text);
+    scrollFeed();
+  };
+  const scheduleLiveAssistantRender = () => {
+    if (_liveRenderQueued) return;
+    _liveRenderQueued = true;
+    (window.requestAnimationFrame || setTimeout)(renderLiveAssistant, 16);
+  };
+
+  // Narration streamed before a tool call ("Let me check the folder…") belongs to
+  // the work log, not the answer: move it there so the answer bubble starts clean.
+  const demoteLiveAssistantToWork = () => {
+    const el = liveAssistantEl && liveAssistantEl.isConnected ? liveAssistantEl : null;
+    const text = String(liveAssistantText || '').trim();
+    resetLiveAssistant();
+    if (!el) return;
+    el.remove();
+    if (text) appendMessage(text, 'reasoning');
   };
 
   const finalizeAssistantDelta = (finalText = '', { taskId = task } = {}) => {
@@ -3117,6 +3148,11 @@
       const delta = looksFullText && liveAssistantTaskId === taskId && text.startsWith(liveAssistantText)
         ? text.slice(liveAssistantText.length)
         : text;
+      // Text from a new agent step starts a new bubble: what the previous step
+      // streamed was narration around a tool call, so it moves to the work log.
+      const stepNo = event.step ?? null;
+      if (stepNo != null && liveAssistantStep != null && stepNo !== liveAssistantStep) demoteLiveAssistantToWork();
+      if (stepNo != null) liveAssistantStep = stepNo;
       appendAssistantDelta(delta, { taskId });
       return;
     }
@@ -3164,6 +3200,7 @@
     }
 
     if (event.type === 'action_start') {
+      demoteLiveAssistantToWork();
       finalizeLiveStatus();
       const layer = overlayControlLayer(event.overlay);
       const detail = event.args_summary || event.explanation || 'Working...';
@@ -5719,6 +5756,18 @@
   init();
 
 /* ---------------- User preferences (theme, mode, voice…) ---------------- */
+// Which provider a pasted API key belongs to, judged by its prefix. Without this
+// an Anthropic key was saved as the OpenRouter key and never worked.
+function providerForKey(key) {
+  const k = String(key || '');
+  if (/^sk-ant-/i.test(k)) return 'anthropic';
+  if (/^gsk_/i.test(k)) return 'groq';
+  if (/^sk-or-/i.test(k)) return 'openrouter';
+  if (/^AIza/.test(k)) return 'google';
+  if (/^sk-/i.test(k)) return 'openai';
+  return 'openrouter';
+}
+
 (function initPreferences(){
   let prefs = null;
 
@@ -5864,7 +5913,7 @@
       const r = await fetch('/api/setup/provider-key', {
         method:'POST', credentials:'include',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ provider: /^gsk_/i.test(key) ? 'groq' : 'openrouter', key }),
+        body: JSON.stringify({ provider: providerForKey(key), key }),
       });
       if (r.ok){ status.className = 'onb-status ok'; status.textContent = 'Connected ✓'; setTimeout(next, 500); }
       else { const d = await r.json().catch(()=>({})); status.className = 'onb-status err'; status.textContent = d.detail || 'That key didn’t work — double-check and try again.'; }
@@ -6070,7 +6119,7 @@
       await ensureSession();
       const r = await fetch('/api/setup/status', { credentials:'include' });
       const d = r.ok ? await r.json() : {};
-      const set = !!(d.providers && d.providers.openrouter);
+      const set = !!d.configured || Object.values(d.providers || {}).some(Boolean);
       stateEl.textContent = set ? 'Key set ✓' : 'No key yet';
       stateEl.className = 'key-state ' + (set ? 'set' : 'unset');
     } catch(_){
@@ -6087,7 +6136,7 @@
       const r = await fetch('/api/setup/provider-key', {
         method:'POST', credentials:'include',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ provider: /^gsk_/i.test(key) ? 'groq' : 'openrouter', key }),
+        body: JSON.stringify({ provider: providerForKey(key), key }),
       });
       if (r.ok){
         statusEl.textContent = 'Saved ✓'; statusEl.className = 'key-status ok';

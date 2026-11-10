@@ -1091,3 +1091,24 @@ def test_professional_motion_and_keyboard_focus():
     assert ":where(button, a, [role=\"button\"], [tabindex], summary):focus-visible" in css, "focus ring missing"
     assert "outline: 2px solid var(--accent)" in css, "focus ring style missing"
     assert ":where(input, textarea, select):focus-visible { outline: none; }" in css, "inputs should opt out of the ring"
+
+
+def test_api_key_provider_is_detected_from_prefix():
+    """A pasted key is saved under its own provider. Both key forms (Settings and
+    onboarding) used to send every non-Groq key as 'openrouter', so an Anthropic
+    key landed in OPENROUTER_API_KEY and never worked."""
+    js = (_STATIC / "app.js").read_text(encoding="utf-8")
+    assert "? 'groq' : 'openrouter'" not in js
+    assert js.count("provider: providerForKey(key)") == 2
+    assert "if (/^sk-ant-/i.test(k)) return 'anthropic';" in js
+    # sk-ant- and sk-or- must be tested before the generic OpenAI sk- prefix.
+    assert js.index("/^sk-ant-/i") < js.index("/^sk-or-/i") < js.index("if (/^sk-/i.test(k))")
+
+
+def test_reply_renders_markdown_while_streaming():
+    js = (_STATIC / "app.js").read_text(encoding="utf-8")
+    css = (_STATIC / "style.css").read_text(encoding="utf-8")
+    assert "liveAssistantEl.insertAdjacentText" not in js, "raw text streaming shows unformatted markdown"
+    assert "liveAssistantEl.innerHTML = renderMarkdown(text);" in js
+    # The sticky code toolbar must not be pulled into the padding (it overlapped line 1).
+    assert "margin: -34px -12px 8px;" not in css

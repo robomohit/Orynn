@@ -2521,7 +2521,7 @@ class AgentService:
                                         await self._emit(task_id, "status", {"message": f"Working on step {step+1}…"})
                                     if event["type"] == "thought":
                                         thought_text += event["content"]
-                                        await self._emit(task_id, "agent_delta", {"delta": event["content"]})
+                                        await self._emit(task_id, "agent_delta", {"delta": event["content"], "step": step + 1})
                                         _now = asyncio.get_running_loop().time()
                                         if _now - _last_reason_emit >= _REASON_MIN_INTERVAL:
                                             _last_reason_emit = _now
