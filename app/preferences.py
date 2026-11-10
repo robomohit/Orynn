@@ -19,8 +19,8 @@ DEFAULTS: dict[str, Any] = {
     "show_action_glow": True,   # aqua glow around the app being controlled
     "confirm_sensitive": True,  # always confirm before send/post/buy/delete
     "desktop_model": "",        # blank = free UIA tier; or a stronger model id
-    "effort": "medium",         # low | medium | high | max — trades speed for a
-                                # bigger model (free models have no reasoning knob)
+    "effort": "medium",         # low | medium | high | max — reasoning depth on
+                                # Claude; on free models it picks a bigger model
     "onboarded": False,         # has the user finished first-run setup?
     "first_live_run": True,     # is it the first time launching Gemini Live?
 }

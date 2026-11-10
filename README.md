@@ -37,6 +37,7 @@ Most computer-use agents take a **screenshot every step** and guess pixel coordi
 
 - **UIA-first desktop control** - drives Notepad, Excel, Word, Discord, Spotify, VS Code, and other Windows apps by control name.
 - **Instant answers, zero setup** - built-in free connectors (weather, Wikipedia, Hacker News, GitHub, dictionary) return real data in **one call** - the reliable pattern on a fast free model, no logins or API keys.
+- **Plug in a top model when you want one** - add an Anthropic key and Orynn runs on **Claude** (Opus 5.5 by default) through the native API, with the Effort slider controlling real reasoning depth. Free stays the default without one.
 - **Fast on free models** - prefers **Groq** (sub-second, ~10-25× faster than free OpenRouter in our benchmark) and auto-falls-back to OpenRouter's `:free` chain; or run fully local with **Ollama**.
 - **Works while you keep working** - UIA reads and button presses target windows directly (no cursor), text lands via background UIA writes when the app allows it, and anything that truly needs your keyboard or mouse politely waits for your hands to pause first.
 - **Floating glass capsule** - frameless, translucent, always-on-top; press `Ctrl+Shift+Space` to summon it.
@@ -211,7 +212,7 @@ sequences. For maximum reliability, opt in to a stronger model **for desktop
 tasks only** - free stays the default everywhere else:
 
 ```bash
-DESKTOP_MODEL=claude-3-5-sonnet-20241022   # or gpt-4o, or any OpenRouter id
+DESKTOP_MODEL=claude-opus-5-5   # or gpt-4o, or any OpenRouter id
 ```
 
 Leave it blank to stay fully free.

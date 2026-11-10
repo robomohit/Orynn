@@ -140,9 +140,9 @@ def test_anthropic_adapter_extracts_raw_base64_from_data_url(monkeypatch):
         def json(self):
             return {"content": [{"text": "ok"}], "usage": {}}
 
-    provider = PlannerProvider(model="claude-3-5-sonnet-20241022")
+    provider = PlannerProvider(model="claude-opus-5-5")
 
-    def fake_post(url, headers=None, json=None):
+    def fake_post(url, headers=None, json=None, **_kwargs):
         seen["payload"] = json
         return FakeResponse()
 

@@ -80,7 +80,7 @@ def _validate_agent_key(key: str) -> tuple[bool, str]:
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json"
                 },
-                data=b'{"model":"claude-3-5-sonnet-20241022","max_tokens":1,"messages":[{"role":"user","content":"Hi"}]}',
+                data=b'{"model":"claude-haiku-5-5","max_tokens":1,"messages":[{"role":"user","content":"Hi"}]}',
                 method="POST"
             )
             with urllib.request.urlopen(req, timeout=5.0) as resp:

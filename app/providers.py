@@ -16,6 +16,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 _log = logging.getLogger(__name__)
 
+from . import anthropic_api
+
 import httpx
 from PIL import Image
 
@@ -1353,6 +1355,9 @@ MODEL_TIERS: Dict[str, List[str]] = {
         "z-ai/glm-4.5-air:free",                   # Notepad-capable fallback
         "nvidia/nemotron-3-super-120b-a12b:free",  # heavy last-resort
     ],
+    # Premium — Claude via the direct Anthropic API (needs ANTHROPIC_API_KEY).
+    # Stays on Claude if the first choice is rate-limited; never drops to free.
+    "premium": list(anthropic_api.PREMIUM_CHAIN),
 }
 
 
@@ -1475,6 +1480,13 @@ class PlannerProvider:
         self._total_input_tokens: int = 0
         self._total_output_tokens: int = 0
         self.thinking_budget: str = "off"
+        # Reasoning effort for providers with a real knob (Claude). Free models
+        # have none, so for them effort only picks the model (effort_model()).
+        try:
+            from . import preferences as _prefs
+            self.effort: str = normalize_effort(_prefs.get_all().get("effort"))
+        except Exception:
+            self.effort = "medium"
         # Persistent HTTP client — reuses TCP connections and avoids SSL handshake per
         # call, but hardened so a stale pooled connection can't hang a request (see
         # _build_llm_http_client). Closed in close()/__del__ so sockets don't leak.
@@ -1559,54 +1571,71 @@ class PlannerProvider:
     def _chat_anthropic(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
         if not self._anthropic_key:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
-            
-        content: List[Any] = [{"type": "text", "text": prompt}]
-        if screenshot_b64:
-            mime, data = _split_image_data(screenshot_b64)
-            if data:
-                content.insert(0, {"type": "image", "source": {"type": "base64", "media_type": mime or "image/jpeg", "data": data}})
-            
-        _THINKING_BUDGETS = {"standard": 5000, "extended": 16000}
-        budget_tokens = _THINKING_BUDGETS.get(self.thinking_budget, 0)
-        max_tokens = max(4096, budget_tokens + 1024) if budget_tokens else 4096
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "system": system,
-            "messages": [{"role": "user", "content": content}],
-        }
-        if budget_tokens:
-            payload["thinking"] = {"type": "enabled", "budget_tokens": budget_tokens}
-        last_err = None
-        for attempt in range(3):
-            try:
-                resp = self._http_client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={"x-api-key": self._anthropic_key, "anthropic-version": "2023-06-01",
-                             "anthropic-beta": "interleaved-thinking-2025-05-14"},
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                usage = data.get("usage", {})
-                self._total_input_tokens += usage.get("input_tokens", 0)
-                self._total_output_tokens += usage.get("output_tokens", 0)
-                # With extended thinking, content may have thinking blocks before text blocks
-                text_blocks = [b["text"] for b in data.get("content", []) if b.get("type", "text") == "text" and "text" in b]
-                return text_blocks[0] if text_blocks else ""
-            except httpx.HTTPStatusError as e:
-                last_err = e
-                if e.response.status_code in (402, 429) or e.response.status_code >= 500:
+
+        _, messages = anthropic_api.convert_messages([{"role": "user", "content": prompt}], screenshot_b64)
+        budget_tokens = {"standard": 5000, "extended": 16000}.get(self.thinking_budget, 0)
+        # Thinking models can take minutes on a hard planning call.
+        timeout = httpx.Timeout(connect=10.0, read=max(300.0, _llm_read_timeout()), write=20.0, pool=10.0)
+        last_err: Optional[Exception] = None
+        for model in anthropic_api.fallback_chain(self.model, self.model_tier):
+            headers, payload = anthropic_api.build_request(
+                model, system, messages, api_key=self._anthropic_key, effort=self.effort,
+                legacy_thinking_budget=budget_tokens,
+            )
+            for attempt in range(3):
+                try:
+                    resp = self._http_client.post(anthropic_api.API_URL, headers=headers, json=payload, timeout=timeout)
+                    if "fallbacks" in payload and anthropic_api.is_fallbacks_rejection(
+                        getattr(resp, "status_code", 200), getattr(resp, "text", "")
+                    ):
+                        anthropic_api.strip_fallbacks(headers, payload)
+                        continue
+                    resp.raise_for_status()
+                    data = resp.json()
+                    usage: Dict[str, int] = {}
+                    anthropic_api.record_usage(usage, data.get("usage", {}))
+                    self._total_input_tokens += usage.get("input", 0)
+                    self._total_output_tokens += usage.get("output", 0)
+                    if data.get("stop_reason") == "refusal":
+                        raise RuntimeError(anthropic_api.refusal_text(data.get("stop_details")))
+                    # Thinking blocks come before the text blocks; keep only text.
+                    text_blocks = [b["text"] for b in data.get("content", []) if b.get("type", "text") == "text" and "text" in b]
+                    return "".join(text_blocks)
+                except httpx.HTTPStatusError as e:
+                    last_err = e
+                    if anthropic_api.is_retryable_status(e.response.status_code):
+                        time.sleep(2 ** attempt)
+                        continue
+                    raise
+                except httpx.TransportError as e:
+                    # Connection/read-timeout error (e.g. a dead pooled connection).
+                    # Retry rather than let it hang or crash the task.
+                    last_err = e
                     time.sleep(2 ** attempt)
                     continue
-                raise
-            except httpx.TransportError as e:
-                # Connection/read-timeout error (e.g. a dead pooled connection or a
-                # slow free model). Retry rather than let it hang or crash the task.
-                last_err = e
-                time.sleep(2 ** attempt)
-                continue
         raise last_err or RuntimeError("All API retries exhausted")
+
+    async def _anthropic_events(self, system: str, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]], screenshot_b64: Optional[str] = None):
+        """One Claude turn as agent-loop events (see anthropic_api.stream_events)."""
+        if not self._anthropic_key:
+            raise RuntimeError("ANTHROPIC_API_KEY not set")
+        extra_system, converted = anthropic_api.convert_messages(messages, screenshot_b64)
+        usage: Dict[str, int] = {}
+        try:
+            async for event in anthropic_api.stream_events(
+                models=anthropic_api.fallback_chain(self.model, self.model_tier),
+                system="\n\n".join(p for p in (system, extra_system) if p),
+                messages=converted,
+                tools=anthropic_api.convert_tools(tools) if tools else None,
+                api_key=self._anthropic_key,
+                effort=self.effort,
+                legacy_thinking_budget={"standard": 5000, "extended": 16000}.get(self.thinking_budget, 0),
+                usage=usage,
+            ):
+                yield event
+        finally:
+            self._total_input_tokens += usage.get("input", 0)
+            self._total_output_tokens += usage.get("output", 0)
 
     def _chat_openai(self, system: str, prompt: str, screenshot_b64: Optional[str] = None) -> str:
         if not self._openai_key:
@@ -1971,6 +2000,14 @@ class PlannerProvider:
                             yield str(chunk)
             return
 
+        if self._is_anthropic():
+            async for event in self._anthropic_events(system, messages, None, screenshot_b64):
+                if event["type"] == "thought":
+                    yield event["content"]
+                elif event["type"] == "text_only" and event.get("refusal"):
+                    yield event["content"]
+            return
+
         if not self._openrouter_key and not self._openai_key and not self._groq_key:
              raise RuntimeError("No API key available for streaming (OPENROUTER/OPENAI/GROQ).")
 
@@ -2120,6 +2157,7 @@ class PlannerProvider:
         # the next agent step tries fast Groq again once it recovers.
         _original_model = self.model
         _groq_fallback_ready = self._is_groq() and bool(self._openrouter_key)
+        _busy_label = "Claude is" if self._is_anthropic() else "All free models are"
         try:
             last_err: Optional[Exception] = None
             _ttft_budget = _ttft_failover_seconds()
@@ -2180,11 +2218,12 @@ class PlannerProvider:
                     yield {
                         "type": "provider_info",
                         "retrying": True,
-                        "message": f"All free models are busy — retrying in {_wait}s…",
+                        "message": f"{_busy_label} busy — retrying in {_wait}s…",
                     }
                     await asyncio.sleep(_wait)
             raise RuntimeError(
-                "All free models are currently busy. Please try again in a moment."
+                f"{_busy_label} currently busy. Please try again in a moment."
+                + (f" Last error: {last_err}" if self._is_anthropic() and last_err else "")
             )
         finally:
             self.model = _original_model
@@ -2206,6 +2245,11 @@ class PlannerProvider:
                 yield {"type": "thought", "content": chunk}
             if text:
                 yield {"type": "text_only", "content": text}
+            return
+
+        if self._is_anthropic():
+            async for event in self._anthropic_events(system, messages, tools, screenshot_b64):
+                yield event
             return
 
         if not self._openrouter_key and not self._openai_key and not self._groq_key:

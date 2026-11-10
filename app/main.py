@@ -19,6 +19,7 @@ from .agent import AgentService
 from .log_emitter import log_emitter
 from .local_auth import local_api_key
 from .models import AgentContext, TaskRecord
+from . import anthropic_api as _anthropic_api
 from .providers import detect_task_mode, infer_isolated_app_name
 from .premium_features import (
     append_feedback,
@@ -1223,6 +1224,15 @@ def _preflight_issue(check: Optional[Dict[str, Any]], severity: str, detail: str
     }
 
 
+def _prefer_free_models() -> bool:
+    return os.environ.get("PREFER_FREE_MODELS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _premium_selection() -> Dict[str, Any]:
+    return {"selected_model": _anthropic_api.default_model(), "model_source": "auto:anthropic",
+            "model_auto": True, "required_key": "ANTHROPIC_API_KEY", "missing_key": False}
+
+
 def _select_model_for_task(goal: str, mode: str = "auto", requested_model: Optional[str] = None) -> Dict[str, Any]:
     """Select the exact model create_task will use, without starting a task."""
     requested_mode = mode or "auto"
@@ -1235,6 +1245,17 @@ def _select_model_for_task(goal: str, mode: str = "auto", requested_model: Optio
             "required_key": required_key,
             "missing_key": bool(required_key and not os.environ.get(required_key)),
         }
+
+    # Premium: an Anthropic key means the user is paying for a top model, so
+    # auto-selection uses it ahead of the free providers. PREFER_FREE_MODELS=1
+    # keeps the free chain as the default (Claude stays pickable in the UI).
+    # An explicit DESKTOP_MODEL still wins for desktop modes.
+    _desktop_override = requested_mode in ("computer", "computer_isolated", "computer_use") and os.environ.get("DESKTOP_MODEL", "").strip()
+    if os.environ.get("ANTHROPIC_API_KEY") and not _prefer_free_models() and not _desktop_override:
+        return _premium_selection()
+    if _desktop_override and not os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("GROQ_API_KEY"):
+        return {"selected_model": _desktop_override, "model_source": "auto:desktop:env", "model_auto": True,
+                "required_key": _required_key_for_model(_desktop_override), "missing_key": False}
 
     if os.environ.get("GROQ_API_KEY"):
         # Groq is free AND sub-second, so it's the preferred free provider for
@@ -1280,7 +1301,7 @@ def _select_model_for_task(goal: str, mode: str = "auto", requested_model: Optio
             "missing_key": False,
         }
     if os.environ.get("ANTHROPIC_API_KEY"):
-        return {"selected_model": "claude-3-5-sonnet-20241022", "model_source": "auto:anthropic", "model_auto": True, "required_key": "ANTHROPIC_API_KEY", "missing_key": False}
+        return _premium_selection()
     if os.environ.get("OPENAI_API_KEY"):
         return {"selected_model": "gpt-4o-mini", "model_source": "auto:openai", "model_auto": True, "required_key": "OPENAI_API_KEY", "missing_key": False}
     if os.environ.get("GOOGLE_API_KEY"):
@@ -1843,8 +1864,7 @@ _ALL_MODELS = [
     "openrouter/google/gemma-4-31b-it:free",
     "openrouter/nousresearch/hermes-3-llama-3.1-405b:free",
     # Paid models
-    "claude-3-5-sonnet-20241022",
-    "claude-3-7-sonnet-20250219",
+    *_anthropic_api.MODELS,
     "gpt-4o",
     "gpt-4o-mini",
     "gemini-2.5-flash",
@@ -1853,6 +1873,7 @@ _ALL_MODELS = [
 
 # Map model prefix → required env var for validation
 _MODEL_KEY_MAP = {
+    "tier:premium": "ANTHROPIC_API_KEY",
     "ollama/": None,
     "openrouter/": "OPENROUTER_API_KEY",
     "claude": "ANTHROPIC_API_KEY",
@@ -2185,8 +2206,10 @@ async def get_models():
             keyed.append(m)
     if os.environ.get("ANTHROPIC_API_KEY"):
         configured_providers.append("Anthropic")
-        keyed.extend(["claude-3-5-sonnet-20241022", "claude-3-7-sonnet-20250219",
-                       "claude-3-opus-20240229", "claude-3-5-haiku-20241022"])
+        keyed.extend(_anthropic_api.MODELS)
+        if not _prefer_free_models():
+            # Leading tier entry = the dashboard preselects Premium.
+            keyed.insert(0, "tier:premium")
     if os.environ.get("OPENAI_API_KEY"):
         configured_providers.append("OpenAI")
         keyed.extend(["gpt-4o", "gpt-4o-mini"])

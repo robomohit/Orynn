@@ -558,10 +558,10 @@
     'openrouter/google/gemma-4-26b-a4b-it:free': 'Gemma 4 26B (free)',
     'openrouter/nousresearch/hermes-3-llama-3.1-405b:free': 'Hermes 3 Llama 3.1 405B (free)',
     'openrouter/openai/gpt-oss-120b:free': 'GPT-OSS 120B (free)',
-    'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
-    'claude-3-7-sonnet-20250219': 'Claude 3.7 Sonnet',
-    'claude-3-opus-20240229': 'Claude 3 Opus',
-    'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
+    'claude-opus-5-5': 'Claude Opus 5.5',
+    'claude-fable-5-2': 'Claude Fable 5.2',
+    'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+    'claude-haiku-5-5': 'Claude Haiku 5.5',
     'gpt-4o': 'GPT-4o',
     'gpt-4o-mini': 'GPT-4o mini',
     'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -570,6 +570,7 @@
     'groq/llama-3.2-90b-vision-preview': 'Llama 3.2 Vision (Groq)',
     'tier:balanced': 'Balanced',
     'tier:quick': 'Quick',
+    'tier:premium': 'Premium',
   };
   const displayModelName = (model = '') => {
     const raw = String(model || '').trim();
@@ -4041,7 +4042,7 @@
       'openrouter/qwen/qwen3-coder:free',
       'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
       'openrouter/meta-llama/llama-3.3-70b-instruct:free',
-      'claude-3-5-sonnet-20241022',
+      'claude-opus-5-5',
       'gpt-4o-mini'
     ];
     modelSelectionTouched = false;
@@ -4057,7 +4058,12 @@
     }
     // Speed tiers first — the recommended way to choose. Each is a curated
     // free-model fallback chain. Raw models stay below for power users.
+    // Premium (Claude) leads when an Anthropic key is configured.
+    // The server lists 'tier:premium' itself when Premium should be the default.
+    const premiumDefault = list.includes('tier:premium');
+    const hasClaude = premiumDefault || list.some((model) => /^claude-/.test(model));
     [
+      ...(hasClaude ? [{ value: 'tier:premium', label: '★  Premium — Claude, top quality' }] : []),
       { value: 'tier:balanced', label: '⚖  Balanced — best free quality' },
       { value: 'tier:quick', label: '⚡  Quick — fast, lighter' },
     ].forEach((tier) => {
@@ -4066,13 +4072,14 @@
       option.textContent = tier.label;
       select.appendChild(option);
     });
-    list.forEach((model) => {
+    list.filter((model) => !String(model).startsWith('tier:')).forEach((model) => {
       const option = document.createElement('option');
       option.value = model;
       option.textContent = displayModelName(model);
       option.title = model;
       select.appendChild(option);
     });
+    if (premiumDefault) select.value = 'tier:premium';
     if (!select.value && select.options.length) select.value = 'tier:balanced';
     selectPreferredModelForMode($('mode-id')?.value || 'auto');
     updateComposerContextChip();
@@ -5940,9 +5947,9 @@
   const LEVELS = ['low','medium','high','max'];
   const META = {
     low:    { name: 'Low',    hint: 'Fastest — a snappy small model' },
-    medium: { name: 'Medium', hint: 'Best all-round free model' },
-    high:   { name: 'High',   hint: 'Stronger — a bigger free model' },
-    max:    { name: 'Max',    hint: 'The smartest model available' },
+    medium: { name: 'Medium', hint: 'Best all-round — balanced reasoning' },
+    high:   { name: 'High',   hint: 'Stronger — deeper reasoning or a bigger free model' },
+    max:    { name: 'Max',    hint: 'Maximum reasoning — slowest, most thorough' },
   };
   const stops = Array.from(track.querySelectorAll('.effort-stop'));
   let idx = 1;

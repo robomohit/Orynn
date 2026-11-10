@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Premium models (Claude)
+- **Native Anthropic support in the agent loop** — Claude models now run the
+  tool-calling loop through the Anthropic Messages API directly (new
+  `app/anthropic_api.py`). Before this, a `claude-*` model only worked for
+  one-shot planning calls; the streaming tool loop sent it to OpenRouter and
+  failed.
+- **Auto-selection** — with `ANTHROPIC_API_KEY` set, Orynn picks Claude
+  (`claude-opus-5-5`, override with `ANTHROPIC_MODEL`) for every mode ahead of
+  the free providers. `PREFER_FREE_MODELS=1` keeps free as the default; an
+  explicit `DESKTOP_MODEL` still wins for desktop modes.
+- **Effort is real on Claude** — the Low→Max slider maps to the API's
+  reasoning effort instead of swapping models.
+- **`tier:premium`** — a Claude-only fallback chain (Opus → Sonnet → Haiku)
+  for rate limits and overloads; it never drops to a free model mid-task.
+- Model picker lists the current Claude models; stale Claude 3.x ids removed.
+
 ### Background agent (input politeness)
 - **Keystroke-safety check** — the Calculator keyboard fallback now verifies
   the target window is REALLY foreground (and not minimized) before sending

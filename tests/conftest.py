@@ -28,3 +28,7 @@ def mock_keys(monkeypatch):
     monkeypatch.setenv("AGENT_API_KEY", "testtoken")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-raw-openai")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-raw-anthropic")
+    # An Anthropic key makes Claude the auto-selected model. The suite was written
+    # around free-model routing, so keep that the default; premium routing is
+    # covered explicitly in tests/test_anthropic_premium.py.
+    monkeypatch.setenv("PREFER_FREE_MODELS", "1")
