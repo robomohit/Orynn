@@ -40,6 +40,7 @@ from .premium_features import (
     ocr_text_from_b64,
 )
 from .providers import PlannerProvider, _capture_screenshot_b64, _captured_dimensions, _get_active_window_rect, _get_hwnd_for_title, detect_task_mode, classify_task_complexity, infer_isolated_app_name, is_vision_model
+from .loop_profile import profile_for
 from .safety import SafetyManager
 from .text_editor import TextEditorTool
 from .tools import ToolExecutor, _flash_pointer, detect_app_launch_intent
@@ -273,7 +274,7 @@ def _goal_requests_screen_context(goal: str) -> bool:
     return any(term in text for term in screen_terms)
 
 
-def _coerce_history_messages(history, *, max_messages: int = 16, max_chars: int = 6000) -> List[Dict[str, str]]:
+def _coerce_history_messages(history, *, max_messages: int = 16, max_chars: int = 6000, turn_chars: int = 2000) -> List[Dict[str, str]]:
     """Sanitize prior conversation turns ([{role, content}]) into model messages so
     a follow-up continues the chat. Keeps only user/assistant turns, trims each, and
     caps the total so the seeded context stays bounded."""
@@ -289,7 +290,7 @@ def _coerce_history_messages(history, *, max_messages: int = 16, max_chars: int 
         content = str(turn.get("content") or "").strip()
         if not content:
             continue
-        out.append({"role": role, "content": content[:2000]})
+        out.append({"role": role, "content": content[:turn_chars]})
     out = out[-max_messages:]
     while len(out) > 1 and sum(len(m["content"]) for m in out) > max_chars:
         out.pop(0)
@@ -1708,6 +1709,16 @@ class AgentService:
         active_skills = list(active_skills or [])
         provider = provider_override or _new_planner_provider(model)
         provider.thinking_budget = thinking_budget or "off"
+        # Loop limits for this model class (see loop_profile.py). A strong model
+        # gets more steps, a larger token budget and an untruncated history.
+        loop_profile = profile_for(getattr(provider, "model", model))
+        if token_budget == TOKEN_BUDGET_DEFAULT:
+            token_budget = loop_profile.token_budget
+        if loop_profile.strong:
+            _agent_steps, _browser_steps, _desktop_steps = (
+                loop_profile.agent_steps, loop_profile.browser_steps, loop_profile.desktop_steps)
+        else:
+            _agent_steps, _browser_steps, _desktop_steps = AGENT_MAX_STEPS, BROWSER_MAX_STEPS, DESKTOP_MAX_STEPS
         tools = self._get_task_tools(task_id)
         if project_folder and task_id not in self._task_tools:
             tools = self._assign_task_tools(task_id, Path(project_folder).expanduser().resolve())
@@ -2325,7 +2336,12 @@ class AgentService:
                 win_info = f"\nTarget window: {isolated_app}" if is_isolated else ""
                 # Seed prior conversation turns so a follow-up message continues
                 # the chat with context (multi-turn) instead of starting cold.
-                _prior_turns = _coerce_history_messages(history)
+                _prior_turns = _coerce_history_messages(
+                    history,
+                    max_messages=loop_profile.history_messages,
+                    max_chars=loop_profile.history_chars,
+                    turn_chars=loop_profile.history_turn_chars,
+                )
                 messages = [*_prior_turns, {"role": "user", "content": f"{goal}{env_context}{auto_context}{control_context}{win_info}"}]
                 use_native_tools = len(tool_schemas) > 0 and inspect.isasyncgenfunction(
                     getattr(provider, "stream_chat_with_tools", None)
@@ -2347,9 +2363,9 @@ class AgentService:
                 _preserve_screenshot_once = False
                 xml_fallback_steps = 0
                 max_steps = (
-                    BROWSER_MAX_STEPS if _is_browser_use
-                    else DESKTOP_MAX_STEPS if _is_computer_desktop
-                    else AGENT_MAX_STEPS
+                    _browser_steps if _is_browser_use
+                    else _desktop_steps if _is_computer_desktop
+                    else _agent_steps
                 )
 
                 for step in range(max_steps):
@@ -2388,7 +2404,7 @@ class AgentService:
                             getattr(provider, "stream_chat_with_tools", None)
                         )
                         if _is_computer_desktop:
-                            max_steps = max(max_steps, DESKTOP_MAX_STEPS)
+                            max_steps = max(max_steps, _desktop_steps)
 
                     # ── Refresh screenshot each step for vision desktop mode ──
                     # UIA-tier text models drive controls by name and cannot use pixels.
@@ -2408,7 +2424,7 @@ class AgentService:
                     # MAX_TURNS conversation messages. Prevents unbounded growth
                     # on long-horizon tasks (50+ steps) where even truncated
                     # entries accumulate token cost.
-                    MAX_TURNS = 30
+                    MAX_TURNS = loop_profile.max_turns
                     if len(messages) > MAX_TURNS + 2:
                         # Keep leading system messages, drop oldest non-system
                         # until we're back at the cap.
@@ -2421,7 +2437,14 @@ class AgentService:
                         messages = sys_prefix + tail
 
                     # ── History compression: truncate old observation results and assistant tool calls ──
-                    if len(messages) > 6:
+                    # A strong model keeps its history verbatim until it is genuinely
+                    # large: it can use the detail, and an unedited history keeps the
+                    # prompt cache valid from one step to the next.
+                    _compress_history = len(messages) > 6 and (
+                        not loop_profile.compress_after_chars
+                        or sum(len(str(_m.get("content") or "")) for _m in messages) > loop_profile.compress_after_chars
+                    )
+                    if _compress_history:
                         for i in range(1, len(messages) - 4):
                             m = messages[i]
                             if m["role"] == "tool" and len(m.get("content", "")) > 500:
@@ -2490,6 +2513,7 @@ class AgentService:
                                 # stream doesn't flood the SSE channel.
                                 _last_reason_emit = 0.0
                                 _REASON_MIN_INTERVAL = 0.2  # max 5/sec
+                                _thinking_text = ""
                                 async for event in native_stream:
                                     if not _got_first_token:
                                         _got_first_token = True
@@ -2502,6 +2526,14 @@ class AgentService:
                                         if _now - _last_reason_emit >= _REASON_MIN_INTERVAL:
                                             _last_reason_emit = _now
                                             await self._emit(task_id, "reasoning", {"stage": f"Step {step+1}", "summary": "Thinking...", "detail": thought_text, "live": True, "elapsed_seconds": _step_elapsed()})
+                                    elif event["type"] == "thinking":
+                                        # Summarized model reasoning: shown live, never
+                                        # added to the reply text or the history.
+                                        _thinking_text += event.get("content", "")
+                                        _now = asyncio.get_running_loop().time()
+                                        if _now - _last_reason_emit >= _REASON_MIN_INTERVAL:
+                                            _last_reason_emit = _now
+                                            await self._emit(task_id, "reasoning", {"stage": f"Step {step+1}", "summary": "Thinking...", "detail": _thinking_text[-4000:], "live": True, "elapsed_seconds": _step_elapsed()})
                                     elif event["type"] == "tool_partial":
                                         _now = asyncio.get_running_loop().time()
                                         if _now - _last_reason_emit >= _REASON_MIN_INTERVAL:
@@ -3216,7 +3248,11 @@ class AgentService:
                     # errors that keep small models from re-guessing names —
                     # a 1000-char cap can clip exactly that tail, so desktop
                     # gets more headroom.
-                    obs_limit = 3000 if is_coding_mode else (1600 if _is_computer_desktop else 1000)
+                    obs_limit = (
+                        loop_profile.obs_limit_coding if is_coding_mode
+                        else loop_profile.obs_limit_desktop if _is_computer_desktop
+                        else loop_profile.obs_limit_other
+                    )
                     obs_text = res.output[:obs_limit] + ("\n...(truncated)" if len(res.output) > obs_limit else "")
                     if post_action_note:
                         obs_text = f"{obs_text}\n\n{post_action_note}"
@@ -3225,7 +3261,7 @@ class AgentService:
                     # the last observation instead of the task. Re-inject the
                     # goal every 4th desktop step so it never leaves the
                     # context window.
-                    if _is_computer_desktop and step >= 3 and (step + 1) % 4 == 0:
+                    if loop_profile.goal_reanchor and _is_computer_desktop and step >= 3 and (step + 1) % 4 == 0:
                         _goal_brief = goal if len(goal) <= 240 else goal[:240] + "…"
                         obs_text += (
                             f"\n\n[goal check] The task is: \"{_goal_brief}\" — "

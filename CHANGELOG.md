@@ -17,6 +17,14 @@
 - **`tier:premium`** — a Claude-only fallback chain (Opus → Sonnet → Haiku)
   for rate limits and overloads; it never drops to a free model mid-task.
 - Model picker lists the current Claude models; stale Claude 3.x ids removed.
+- **Agent loop retuned for strong models** (`app/loop_profile.py`) — current
+  Claude models get higher step caps (60 / 80 / 100 vs 25 / 35 / 40), a 2M
+  token budget (vs 100k), full tool observations (12-20k chars vs 1-3k), a
+  400-message history that is left untruncated until it is very large, and no
+  periodic goal reminders. Free models keep the old limits. Explicit env caps
+  still win; `ORYNN_LOOP_PROFILE=strong|default` forces a profile.
+- Claude's summarized reasoning streams live into the step's reasoning card,
+  and the conversation history is prompt-cached between steps.
 
 ### Background agent (input politeness)
 - **Keystroke-safety check** — the Calculator keyboard fallback now verifies

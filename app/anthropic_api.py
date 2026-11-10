@@ -263,6 +263,10 @@ def build_request(
     are already in Anthropic format."""
     headers = {"x-api-key": api_key, "anthropic-version": API_VERSION, "content-type": "application/json"}
     payload: Dict[str, Any] = {"model": model, "messages": messages}
+    # Second cache breakpoint on the newest message: each step then re-reads the
+    # whole earlier conversation from cache instead of paying for it again.
+    if messages and isinstance(messages[-1].get("content"), list) and messages[-1]["content"]:
+        messages[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
     if system:
         # Cache breakpoint on the system prompt covers tools + system, which
         # are identical on every step of a task.
@@ -276,7 +280,8 @@ def build_request(
 
     if is_adaptive_model(model):
         payload["max_tokens"] = 64000 if stream else 16000
-        payload["thinking"] = {"type": "adaptive"}
+        # Summaries let the UI show progress during long reasoning.
+        payload["thinking"] = {"type": "adaptive", "display": "summarized"}
         payload["output_config"] = {"effort": api_effort(model, effort)}
         if _SERVER_FALLBACK_RE.match(model.lower()) and not _fallbacks_rejected:
             # If a safety classifier declines the request, the API re-runs it
@@ -328,9 +333,11 @@ def refusal_text(stop_details: Any) -> str:
 
 def record_usage(usage: Dict[str, int], data: Dict[str, Any]) -> None:
     u = data or {}
+    # Cache reads are billed at about a tenth of the input price, so they count
+    # a tenth toward the task's token budget.
     usage["input"] = usage.get("input", 0) + int(
         (u.get("input_tokens") or 0)
-        + (u.get("cache_read_input_tokens") or 0)
+        + (u.get("cache_read_input_tokens") or 0) // 10
         + (u.get("cache_creation_input_tokens") or 0)
     )
     usage["output"] = usage.get("output", 0) + int(u.get("output_tokens") or 0)
@@ -403,6 +410,8 @@ async def stream_events(
                                     streamed = True
                                     text += delta["text"]
                                     yield {"type": "thought", "content": delta["text"]}
+                                elif dtype == "thinking_delta" and delta.get("thinking"):
+                                    yield {"type": "thinking", "content": delta["thinking"]}
                                 elif dtype == "input_json_delta":
                                     streamed = True
                                     entry = blocks.setdefault(ev.get("index", 0), {"type": "tool_use", "id": "", "name": "", "json": ""})
@@ -416,6 +425,10 @@ async def stream_events(
                                 stop_reason = d.get("stop_reason") or stop_reason
                                 stop_details = d.get("stop_details") or stop_details
                                 record_usage(usage, {"output_tokens": (ev.get("usage") or {}).get("output_tokens")})
+                            elif etype == "ping":
+                                # Keeps the agent's idle-stream timeout from firing
+                                # while the model is still reasoning.
+                                yield {"type": "heartbeat"}
                             elif etype == "error":
                                 err = ev.get("error") or {}
                                 kind = err.get("type", "error")

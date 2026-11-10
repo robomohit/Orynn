@@ -17,7 +17,7 @@ def test_current_models_use_adaptive_thinking_and_real_effort():
         "claude-opus-5-5", "sys", [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
         api_key="k", effort="max", stream=True,
     )
-    assert payload["thinking"] == {"type": "adaptive"}
+    assert payload["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert payload["output_config"] == {"effort": "xhigh"}
     assert "budget_tokens" not in json.dumps(payload)
     assert "temperature" not in payload
@@ -159,13 +159,14 @@ async def test_claude_tool_call_streams_as_agent_events(monkeypatch):
     call = events[-1]
     assert call == {"type": "tool_call", "id": "toolu_1", "name": "click", "args": {"name": "OK"}, "thought": "Clicking OK."}
     assert {"type": "thought", "content": "Clicking OK."} in events
-    assert not any("hidden" in json.dumps(e) for e in events)  # thinking is never surfaced as reply text
+    # Thinking is surfaced as its own event type, never as reply text.
+    assert [e for e in events if "hidden" in json.dumps(e)] == [{"type": "thinking", "content": "hidden"}]
     req = seen[0]
     assert req["url"] == A.API_URL
     assert req["payload"]["model"] == "claude-opus-5-5"
     assert req["payload"]["output_config"] == {"effort": "high"}
     assert req["payload"]["tools"][0]["name"] == "click"
-    assert provider.total_tokens == 107
+    assert provider.total_tokens == 26  # 10 input + 90 cached at 1/10 + 7 output
 
 
 @pytest.mark.asyncio
